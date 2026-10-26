@@ -29,6 +29,10 @@ SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\s*\n+\s*")
 # Said once a call; later repeats are dropped ("Is there anything else I can help with?" after every answer).
 ANYTHING_ELSE = re.compile(r"\banything else (?:i|we) can (?:help|do)|^anything else\b|"
                            r"algo más en (?:que|lo que) (?:le )?pueda|(?:ayudarle|ayudar) (?:con|en) algo más", re.I)
+# Speech that isn't meant for the agent (the caller talking to someone next to them): the model answers with this
+# marker instead of words, and nothing is spoken.
+LISTENING = "(listening)"
+SILENT = re.compile(r"^\W*\(?\s*listening\s*\)?\W*$", re.I)
 # Sent once when everything the model said this turn was held back, so the caller isn't left with silence.
 NUDGE = ("(System note: the caller heard nothing from you this turn. Reply to them now in one or two short "
          "sentences, without explaining what you're doing or why.)")
@@ -47,6 +51,7 @@ class Sentences:
 
     def __init__(self, say: Callable[[str], None], budget: int | None = None, said_once: set | None = None):
         self.say, self.buf, self.kept, self.dropped, self.held = say, "", [], [], []
+        self.silent = False   # the model chose to stay quiet (LISTENING)
         self.budget, self.used, self.cut = budget, 0, False
         self.said_once = set(said_once or ())
 
@@ -68,6 +73,9 @@ class Sentences:
     def _release(self, sentence: str) -> None:
         sentence = sentence.strip()
         if not sentence:
+            return
+        if SILENT.match(sentence):
+            self.silent = True
             return
         words = len(sentence.split())
         repeat = bool(ANYTHING_ELSE.search(sentence)) and "anything_else" in self.said_once
@@ -300,7 +308,7 @@ class CallSession:
                     results.append({"type": "tool_result", "tool_use_id": b.id,
                                     "content": json.dumps(result, ensure_ascii=False), "is_error": is_error})
             if not results:
-                if spoken or self.ctx.ended or nudged:
+                if spoken or self.ctx.ended or nudged or words.silent:
                     break
                 # Everything it said was held back (thinking out loud, a repeat): ask once for words to say.
                 nudged = True
@@ -318,12 +326,13 @@ class CallSession:
                 break
 
         reply = " ".join(spoken)
-        if not reply and not self.ctx.ended:
+        silent = words.silent and not reply   # the caller wasn't talking to us: say nothing, not even a retry line
+        if not reply and not self.ctx.ended and not silent:
             reply = REPEAT_LINE
             emit(reply, True)
             steps.append({"say": reply})
         if messages[-1]["role"] == "user":   # keep the history alternating, ending on what was said
-            messages.append({"role": "assistant", "content": reply or REPEAT_LINE})
+            messages.append({"role": "assistant", "content": reply or (LISTENING if silent else REPEAT_LINE)})
         entry = {"role": "agent", "text": reply, "tools": used, "steps": steps}
         if words.dropped:
             entry["dropped"] = words.dropped   # for tests and reports; never spoken

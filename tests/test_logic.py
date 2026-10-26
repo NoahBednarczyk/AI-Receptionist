@@ -283,6 +283,14 @@ class AgentLoopTests(unittest.TestCase):
         self.assertFalse(turn.ended)
         self.assertIsNotNone(turn.first_text_s)
 
+    def test_speech_not_meant_for_the_agent_gets_no_reply(self):
+        s = session(reply("end_turn", text("(listening)")))
+        turn = s.respond("Hold on, what's the address, babe?")
+        self.assertEqual(turn.text, "")   # nothing spoken, not even the "say that again" line
+        self.assertEqual(s.messages[-1]["role"], "assistant")   # the history keeps alternating
+        self.assertTrue(s.revert_last())   # and the muttering joins the caller's next words
+        self.assertEqual(s.messages, [])
+
     def test_filler_line_covers_a_silent_tool_call(self):
         s = session(reply("tool_use", use("t1", "check_availability", {"service_id": "leak_repair"})),
                     reply("end_turn", text("I have 2 PM today.")))

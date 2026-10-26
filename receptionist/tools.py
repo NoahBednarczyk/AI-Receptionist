@@ -395,8 +395,9 @@ def transfer_call(ctx: ToolContext, a: dict) -> dict:
         raise ToolError("During business hours, transfer emergencies to office.")
     # A live call can't ring a placeholder number (555-01xx); treat it as nobody picking up.
     if ctx.transfer_outcome != "connected" or (ctx.real_transfers and fictional_phone(target["number"])):
-        return {"status": "no_answer", "note": "Nobody picked up. Take a message (urgent if it's an emergency) and "
-                                               "tell the caller when to expect a callback."}
+        return {"status": "no_answer", "note": "Nobody picked up. Tell the caller exactly that, in plain words and without "
+                                               "apologizing (\"The office isn't picking up.\"). Then take a message "
+                                               "(urgent if it's an emergency) and tell the caller when to expect a callback."}
     ctx.ended, ctx.end_reason, ctx.transferred_to = True, "transferred", a["target"]
     return {"status": "connected", "note": f"The caller is now connected to {target['label']}."}
 
