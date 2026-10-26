@@ -210,7 +210,7 @@ def run_scenario(client: anthropic.Anthropic, cfg: dict, biz: dict, sc: dict) ->
     session = CallSession(client, cfg, biz, store, now, caller=sc.get("caller_id"), call_id=f"sim-{sc['id']}",
                           platform="sim", transfer_outcome=sc.get("transfer_outcome", "connected"))
     caller = CallerSim(client, cfg, biz, sc["persona"])
-    agent_line, firsts, long_replies = biz["greeting"], [], 0
+    agent_line, firsts, long_replies = session.greeting, [], 0
     started = time.monotonic()
     for _ in range(cfg["simulate"]["max_turns"]):
         said, hangup = caller.reply(agent_line)

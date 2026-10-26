@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import random
+
 from datetime import datetime
 from pathlib import Path
 
@@ -133,7 +135,7 @@ def business_facts(biz: dict) -> str:
     lines = [
         "# Business facts",
         f"Business: {biz['name']} (say it as \"{biz['spoken_name']}\"). Your name: {biz['agent_name']}.",
-        f"Every call opens with this greeting, which has already been spoken: \"{biz['greeting']}\"",
+        "Every call opens with a short greeting that has already been spoken; it's in the call details.",
         f"Hours: {schedule.spoken_hours(biz)}.",
         *business_place(biz),
         "",
@@ -181,9 +183,32 @@ def booking_line(biz: dict, windows: str) -> str:
             f"only where the window fits inside that day's hours. {note}").strip()
 
 
+# One of these is picked for each call, so no two calls sound alike. They only change style, never facts or rules.
+FLAVORS = [
+    "Be dry and deadpan on this call, with at most one wry aside.",
+    "Be bright and upbeat on this call, a touch quicker than usual.",
+    "Be laid-back and chatty on this call, like talking across the front desk.",
+    "Be crisp and efficient on this call, almost no small talk, plus one unexpected friendly remark somewhere.",
+    "Be playful on this call: if the service allows a light, harmless pun, make one, once.",
+    "Be warm and a little cheeky on this call, teasing the situation or the day, never the caller.",
+    "Be calm and steady on this call, unhurried, with one small surprise in how you phrase something.",
+]
+
+
+def pick_greeting(biz: dict, now: datetime, rng=random) -> str:
+    """The opening line for this call: one of the business's `greetings` (with {daypart} filled in), or its one greeting."""
+    options = biz.get("greetings") or [biz["greeting"]]
+    daypart = "morning" if now.hour < 12 else "afternoon" if now.hour < 17 else "evening"
+    return rng.choice(options).format(daypart=daypart)
+
+
 def call_state(biz: dict, now: datetime, caller: str | None, customer: dict | None, upcoming: list[dict],
-               dialed: str | None = None) -> str:
-    lines = ["# This call", f"It is now {spoken_date(now.date())}, {now.year}, {spoken_time(now.strftime('%H:%M'))}, "
+               dialed: str | None = None, greeting: str | None = None, rng=random) -> str:
+    lines = ["# This call", f"The greeting already spoken on this call: \"{greeting or biz['greeting']}\"",
+             f"Style for this call: {rng.choice(FLAVORS)} Change up your wording from reply to reply and never use "
+             "the same acknowledgement twice in a row. Facts, prices, safety lines and the rules above never change, "
+             "and nothing here allows sympathy phrases or sounding human.",
+             f"It is now {spoken_date(now.date())}, {now.year}, {spoken_time(now.strftime('%H:%M'))}, "
              f"business local time. Today's date for tools is {now.date().isoformat()}."]
     ours = dialed or (biz.get("phone_numbers") or [None])[0]
     if ours:   # callers ask how to reach us again; without this the agent improvised

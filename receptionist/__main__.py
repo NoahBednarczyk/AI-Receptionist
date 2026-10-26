@@ -34,7 +34,7 @@ def cmd_chat(cfg, a):
     s = CallSession(client, cfg, biz, store, now, caller=a.caller, platform="text")
     note = " Pretend time, so nothing is saved." if a.at else ""
     print(f"{DIM}Call {s.call_id} at {now:%a %b %d %H:%M} ({biz['timezone']}).{note} Empty line or Ctrl-D hangs up.{RESET}\n")
-    print(f"{BOLD}{biz['agent_name']}>{RESET} {biz['greeting']}")
+    print(f"{BOLD}{biz['agent_name']}>{RESET} {s.greeting}")
     while not s.ended:
         try:
             said = input("you> ").strip()

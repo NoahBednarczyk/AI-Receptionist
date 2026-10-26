@@ -253,7 +253,7 @@ class ToolTests(unittest.TestCase):
 class PromptTests(unittest.TestCase):
     def test_stable_prompt_has_every_layer_and_no_placeholders(self):
         p = prompts.stable_prompt(BIZ)
-        for needle in ("You are Sam", "# Home services playbook", "# Business facts", "$89 diagnostic fee", BIZ["greeting"]):
+        for needle in ("You are Sam", "# Home services playbook", "# Business facts", "$89 diagnostic fee"):
             self.assertIn(needle, p)
         self.assertNotIn("{agent_name}", p)
         self.assertNotIn("It is now", p)                       # time belongs to the per-call block

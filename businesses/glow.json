@@ -305,5 +305,14 @@
     "denoising_mode": "noise-and-background-speech-cancellation",
     "voice_temperature": 1.3,
     "voice_speed": 1.25
-  }
+  },
+  "greetings": [
+    "Thanks for calling Lakeside Glow Med Spa, this is Sam.",
+    "Lakeside Glow Med Spa, this is Sam.",
+    "Good {daypart}, Lakeside Glow Med Spa, Sam speaking.",
+    "Hey, you've reached Lakeside Glow Med Spa. This is Sam.",
+    "Lakeside Glow Med Spa, Sam here.",
+    "You've got Sam at Lakeside Glow Med Spa.",
+    "Good {daypart}, this is Sam at Lakeside Glow Med Spa."
+  ]
 }

@@ -139,6 +139,53 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("address", state)
 
 
+class VarietyAndSpeedTests(unittest.TestCase):
+    def test_greetings_vary_but_always_name_the_business_and_never_ask_or_mention_recording(self):
+        seen = set()
+        for _ in range(200):
+            g = prompts.pick_greeting(GLOW, TUE_1015)
+            seen.add(g)
+            self.assertIn("Lakeside Glow Med Spa", g)
+            self.assertNotIn("{", g)
+            self.assertNotIn("?", g)
+            self.assertNotIn("record", g.lower())
+        self.assertGreaterEqual(len(seen), 5)
+        self.assertIn("Good morning", " ".join(prompts.pick_greeting({**GLOW, "greetings": ["Good {daypart}."]}, TUE_1015)
+                                               for _ in range(1)))
+
+    def test_a_business_with_one_greeting_keeps_it(self):
+        self.assertEqual(prompts.pick_greeting(ACME, TUE_1015), ACME["greeting"])
+
+    def test_the_greeting_and_style_are_per_call_not_in_the_cached_prompt(self):
+        self.assertNotIn(GLOW["greeting"], prompts.stable_prompt(GLOW))
+        s = CallSession(FakeClient(), CFG, GLOW, Store(":memory:"), TUE_1015, caller="+13125550177")
+        self.assertIn(s.greeting, s.system[1]["text"])
+        self.assertIn("Style for this call:", s.system[1]["text"])
+        self.assertEqual(s.transcript[0]["text"], s.greeting)
+        styles = {prompts.call_state(GLOW, TUE_1015, None, None, []).split("Style for this call: ")[1].split(" Change up")[0]
+                  for _ in range(100)}
+        self.assertGreaterEqual(len(styles), 4)
+
+    def test_the_first_clause_is_spoken_before_the_sentence_ends(self):
+        from receptionist.agent import Sentences
+        said = []
+        w = Sentences(said.append)
+        for piece in ("Got", " it,", " a slow", " leak under the sink.", " Can I get", " your name?"):
+            w.add(piece)
+        self.assertEqual(said[0], "Got it,")                       # out as soon as the clause was complete
+        self.assertEqual(said[1], "a slow leak under the sink.")
+        w.close()
+        self.assertEqual(said[-1], "Can I get your name?")
+
+    def test_no_early_clause_for_one_word_or_after_something_was_said(self):
+        from receptionist.agent import Sentences
+        said = []
+        w = Sentences(said.append)
+        w.add("Ah, the classic mystery puddle. Is it dripping, or just damp?")
+        w.close()
+        self.assertEqual(said, ["Ah, the classic mystery puddle.", "Is it dripping, or just damp?"])
+
+
 class ScenarioTests(unittest.TestCase):
     def test_scenarios_only_expect_things_this_business_has(self):
         scenarios = json.loads((Path(CFG["scenarios_dir"]) / "med_spa.json").read_text())

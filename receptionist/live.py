@@ -103,7 +103,7 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
                     await say({"response_type": "response", "response_id": 0, "content": "", "content_complete": True,
                                "end_call": True})
                     return
-                await say({"response_type": "response", "response_id": 0, "content": session.biz["greeting"],
+                await say({"response_type": "response", "response_id": 0, "content": session.greeting,
                            "content_complete": True})
             elif kind in ("response_required", "reminder_required"):
                 await requests.put(event)

@@ -25,6 +25,9 @@ IRREVERSIBLE = {"book_appointment", "reschedule_appointment", "cancel_appointmen
                 "transfer_call", "end_call"}
 REFUSAL_LINE = "I'm sorry, I can't help with that on this line. I can take a message for the office."
 REPEAT_LINE = "Sorry, could you say that again?"
+# The first short clause of a reply ("Got it,") can go to the voice before the sentence ends, which starts the speech
+# a few hundred milliseconds sooner. Two to eight words up to a comma, with more text already following.
+FIRST_CLAUSE = re.compile(r"^((?:\S+\s+){1,7}\S+,)\s+(?=\S)")
 SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\s*\n+\s*")
 # Said once a call; later repeats are dropped ("Is there anything else I can help with?" after every answer).
 ANYTHING_ELSE = re.compile(r"\banything else (?:i|we) can (?:help|do)|^anything else\b|"
@@ -63,6 +66,11 @@ class Sentences:
         *done, self.buf = SENTENCE_BREAK.split(self.buf + text)
         for sentence in done:
             self._release(sentence)
+        if not done and not self.used and not self.cut:   # nothing said yet this reply: start with the first clause
+            m = FIRST_CLAUSE.match(self.buf)
+            if m:
+                self.buf = self.buf[m.end():]
+                self._release(m.group(1))
 
     def close(self) -> str:
         """End of a text block: release the rest and return what was said of the block."""
@@ -134,19 +142,21 @@ class CallSession:
                  caller: str | None = None, call_id: str | None = None, platform: str = "text",
                  transfer_outcome: str = "connected", dialed: str | None = None, real_transfers: bool = False):
         self.client, self.cfg, self.biz, self.store = client, cfg, biz, store
+        self.greeting = prompts.pick_greeting(biz, now)   # varies from call to call when the business lists several
         self.call_id = call_id or f"{platform}-{uuid.uuid4().hex[:10]}"
         customer = store.get_customer(biz["id"], caller)
         upcoming = store.upcoming_appointments(biz["id"], caller, now) if customer else []
         # Stable layers first with the cache breakpoint; the per-call state comes after it.
         self.system = [
             {"type": "text", "text": prompts.stable_prompt(biz), "cache_control": {"type": "ephemeral"}},
-            {"type": "text", "text": prompts.call_state(biz, now, caller, customer, upcoming, dialed)},
+            {"type": "text", "text": prompts.call_state(biz, now, caller, customer, upcoming, dialed,
+                                                         self.greeting)},
         ]
         self.tools = [{**t, "strict": True} for t in tools.schemas(biz)]
         self.ctx = tools.ToolContext(biz, store, now, caller, self.call_id, transfer_outcome,
                                      real_transfers=real_transfers)
         self.messages: list[dict] = []
-        self.transcript: list[dict] = [{"role": "agent", "text": biz["greeting"]}]
+        self.transcript: list[dict] = [{"role": "agent", "text": self.greeting}]
         self.usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
         self._before = None   # see revert_last()
         self._said_once: set = set()   # once-a-call lines already said (see Sentences)
