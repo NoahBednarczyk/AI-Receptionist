@@ -17,8 +17,8 @@
   "agent": {
     "max_tokens": 2048,
     "max_tool_rounds": 6,
-    "long_reply_words": 45,
-    "reply_word_budget": 40
+    "long_reply_words": 32,
+    "reply_word_budget": 28
   },
   "prices_per_mtok": {
     "claude-haiku-5-5": [
