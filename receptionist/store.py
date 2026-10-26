@@ -180,6 +180,11 @@ class Store:
         self._write("UPDATE appointments SET window_id=COALESCE(?, window_id), status=COALESCE(?, status) WHERE id=?",
                     (window_id, status, appt_id))
 
+    def appointments_since(self, business_id: str, day: str) -> list[dict]:
+        """Every appointment (booked or cancelled) whose day is `day` (YYYY-MM-DD) or later, for the calendar feed."""
+        return self._rows("SELECT * FROM appointments WHERE business_id=? AND window_id >= ? ORDER BY window_id",
+                          (business_id, day))
+
     def appointments_for_call(self, call_id: str) -> list[dict]:
         return self._rows("SELECT * FROM appointments WHERE call_id=?", (call_id,))
 

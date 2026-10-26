@@ -203,3 +203,59 @@ class ScenarioTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CalendarFeedTests(unittest.TestCase):
+    def appt(self, **kw):
+        return {"confirmation": "G0901", "window_id": "2026-10-29T14:00", "service_id": "hydrafacial",
+                "name": "Taylor Brooks", "phone": "+13125550143", "address": None, "town": None,
+                "problem": "HydraFacial.", "access_notes": "Sensitive skin; allergic, mild", "status": "booked", **kw}
+
+    def test_an_event_has_the_right_time_title_and_escaped_notes(self):
+        from receptionist import calendar_feed
+        ics = calendar_feed.render(GLOW, [self.appt()], TUE_1015)
+        self.assertTrue(ics.startswith("BEGIN:VCALENDAR\r\n") and ics.endswith("END:VCALENDAR\r\n"))
+        self.assertIn("UID:G0901@receptionist", ics)
+        self.assertIn("SUMMARY:HydraFacial and signature facials - Taylor Brooks", ics)
+        self.assertIn("DTSTART:20261029T210000Z", ics)     # 2 PM Pacific daylight time
+        self.assertIn("DTEND:20261029T220000Z", ics)       # an hour long
+        self.assertIn("Sensitive skin\\; allergic\\, mild", ics.replace("\r\n ", ""))   # unfolded
+        self.assertIn("STATUS:CONFIRMED", ics)
+        self.assertNotIn("LOCATION", ics)                  # clients come to the clinic
+        self.assertTrue(all(len(line.encode()) <= 75 for line in ics.split("\r\n")))
+
+    def test_cancelled_events_stay_in_the_feed_marked_cancelled(self):
+        from receptionist import calendar_feed
+        ics = calendar_feed.render(GLOW, [self.appt(status="cancelled")], TUE_1015)
+        self.assertIn("STATUS:CANCELLED", ics)
+
+    def test_house_calls_show_the_address_and_their_window(self):
+        from receptionist import calendar_feed
+        a = self.appt(service_id="leak_repair", window_id="2026-10-29T10:00", address="14 Birch Lane", town="Sagle")
+        ics = calendar_feed.render(ACME, [a], schedule.local_now(ACME, "2026-10-27T10:15"))
+        self.assertIn("LOCATION:14 Birch Lane\\, Sagle", ics)
+        self.assertIn("DTSTART:20261029T170000Z", ics)
+        self.assertIn("DTEND:20261029T190000Z", ics)       # the two-hour arrival window
+
+    def test_tokens_differ_by_business_and_by_secret(self):
+        from receptionist.calendar_feed import feed_token
+        self.assertNotEqual(feed_token("s", "glow"), feed_token("s", "acme"))
+        self.assertNotEqual(feed_token("s", "glow"), feed_token("t", "glow"))
+        self.assertNotEqual(feed_token("s", "glow"), "s")
+        self.assertEqual(len(feed_token("s", "glow")), 32)
+
+    def test_the_route_needs_the_business_token(self):
+        import os
+        from unittest import mock
+        from fastapi.testclient import TestClient
+        from receptionist.calendar_feed import feed_token
+        from receptionist.server import create_app
+        with mock.patch.dict(os.environ, {"DASHBOARD_TOKEN": "dash"}):
+            client = TestClient(create_app(CFG, client=FakeClient(), warm_cache=False))
+            good = {"token": feed_token("dash", "glow"), "business": "glow"}
+            r = client.get("/calendar.ics", params=good)
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.headers["content-type"].startswith("text/calendar"))
+            self.assertEqual(client.get("/calendar.ics", params={**good, "token": "dash"}).status_code, 404)   # not the dashboard token
+            self.assertEqual(client.get("/calendar.ics", params={**good, "business": "acme"}).status_code, 404)
+            self.assertEqual(client.get("/calendar.ics").status_code, 404)

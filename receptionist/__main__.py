@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from .config import load_business, load_config
@@ -164,6 +165,15 @@ def cmd_retell_tune(cfg, a):
           f"voice {agent.get('voice_id')} {agent.get('voice_model') or ''}".rstrip())
 
 
+def cmd_calendar_url(cfg, a):
+    from .calendar_feed import feed_token
+    secret = os.environ.get("DASHBOARD_TOKEN")
+    if not secret:
+        raise SystemExit("Set DASHBOARD_TOKEN first (the same value the server uses).")
+    biz = load_business(cfg, a.business)
+    print(f"{a.base_url.rstrip('/')}/calendar.ics?token={feed_token(secret, biz['id'])}&business={biz['id']}")
+
+
 def cmd_serve(cfg, a):
     import logging
     import uvicorn
@@ -250,6 +260,11 @@ def main():
     sp.add_argument("--base-url", help="also point the agent at this server's https address (after moving hosts)")
     biz_args(sp, at=False)
     sp.set_defaults(fn=cmd_retell_tune)
+
+    sp = sub.add_parser("calendar-url", help="print the private calendar feed link (pipe it to pbcopy; don't paste it in chat)")
+    sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")
+    biz_args(sp, at=False)
+    sp.set_defaults(fn=cmd_calendar_url)
 
     sp = sub.add_parser("serve", help="webhook server for Vapi and Retell")
     sp.add_argument("--host", default="127.0.0.1")

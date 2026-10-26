@@ -24,13 +24,14 @@ import os
 import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
 
 import anthropic
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from . import dashboard, live, platforms, postcall, prompts, schedule
+from . import calendar_feed, dashboard, live, platforms, postcall, prompts, schedule
 from .agent import CallSession, prewarm, transcript_text
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
@@ -113,6 +114,16 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     @app.get("/health")
     def health():
         return {"ok": True, "businesses": [b["id"] for b in all_businesses(cfg)]}
+
+    @app.get("/calendar.ics")
+    def calendar_feed_route(token: str = "", business: str | None = None):
+        biz = next((b for b in all_businesses(cfg) if b["id"] == (business or cfg["default_business"])), None)
+        if not dashboard_token or not biz or not secrets.compare_digest(token, calendar_feed.feed_token(dashboard_token, biz["id"])):
+            raise HTTPException(404)
+        now = schedule.local_now(biz)
+        since = (now - timedelta(days=calendar_feed.KEEP_CANCELLED_DAYS)).date().isoformat()
+        return Response(calendar_feed.render(biz, store.appointments_since(biz["id"], since), now),
+                        media_type="text/calendar; charset=utf-8")
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def owner_dashboard(token: str = "", business: str | None = None):
