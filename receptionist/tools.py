@@ -82,13 +82,15 @@ def _obj(props: dict, required: list[str]) -> dict:
 
 def schemas(biz: dict) -> list[dict]:
     service_ids = [s["id"] for s in biz["services"]]
+    clinic = schedule.in_clinic(biz)
     targets = list(biz["transfer_targets"])
     text = {"type": "string"}
     return [
         {
             "name": "check_availability",
-            "description": "Get open arrival windows for a service. Call before offering any time; never guess. "
-                           "Returns up to 6 windows starting from earliest_date, or as soon as possible.",
+            "description": ("Get open appointment times" if clinic else "Get open arrival windows") + " for a service. "
+                           "Call before offering any time; never guess. "
+                           "Returns up to 6 starting from earliest_date, or as soon as possible.",
             "input_schema": _obj({
                 "service_id": {"type": "string", "enum": service_ids},
                 "earliest_date": {"type": "string", "description": "YYYY-MM-DD; omit for the soonest windows."},
@@ -96,8 +98,10 @@ def schemas(biz: dict) -> list[dict]:
         },
         {
             "name": "book_appointment",
-            "description": "Book an arrival window from check_availability, only after the caller confirmed the read-back "
-                           "of day and window, street address, town and callback number. "
+            "description": ("Book an appointment time from check_availability, only after the caller confirmed the "
+                            "read-back of day, time and callback number. " if clinic else
+                            "Book an arrival window from check_availability, only after the caller confirmed the "
+                            "read-back of day and window, street address, town and callback number. ")
                            + ("Texts the caller a confirmation. " if biz.get("texting_enabled") else "")
                            + "Calling it again for the same service on the same call updates that booking (new notes or "
                            "window) instead of making a second one; a different service makes a second booking.",
@@ -106,11 +110,14 @@ def schemas(biz: dict) -> list[dict]:
                 "service_id": {"type": "string", "enum": service_ids},
                 "customer_name": text,
                 "callback_number": {"type": "string", "description": "Full 10-digit number."},
-                "street_address": text,
-                "town": text,
-                "problem_summary": {"type": "string", "description": "One sentence for the technician."},
-                "access_notes": {"type": "string", "description": "Gate codes, pets, parking. Omit if none."},
-            }, ["window_id", "service_id", "customer_name", "callback_number", "street_address", "town", "problem_summary"]),
+                **({} if clinic else {"street_address": text, "town": text}),
+                "problem_summary": {"type": "string", "description": "One sentence for the " + (
+                    "provider: what the client wants to come in for." if clinic else "technician.")},
+                "access_notes": {"type": "string", "description": (
+                    "Anything the client wants the team to know. Omit if none." if clinic
+                    else "Gate codes, pets, parking. Omit if none.")},
+            }, ["window_id", "service_id", "customer_name", "callback_number",
+                *([] if clinic else ["street_address", "town"]), "problem_summary"]),
         },
         {
             "name": "lookup_customer",
@@ -241,13 +248,16 @@ def _sent_note(ctx: ToolContext, what: str) -> str:
     if ctx.biz.get("texting_enabled"):
         return f"A {what} text is on its way."
     return ("No confirmation text goes out, so give the caller the confirmation number to write down. Don't bring "
-            "up texts unless the caller asks; the technician still calls or texts before arriving.")
+            "up texts unless the caller asks"
+            + ("." if schedule.in_clinic(ctx.biz) else "; the technician still calls or texts before arriving."))
 
 def book_appointment(ctx: ToolContext, a: dict) -> dict:
     biz, bid = ctx.biz, ctx.biz["id"]
     wid = a["window_id"]
     service = _service(biz, a["service_id"])
-    town = _town(biz, a["town"])
+    clinic = schedule.in_clinic(biz)
+    street = None if clinic else a["street_address"]
+    town = None if clinic else _town(biz, a["town"])
     phone = _phone(a["callback_number"])
     name = a["customer_name"].strip()
     if not name:
@@ -260,7 +270,7 @@ def book_appointment(ctx: ToolContext, a: dict) -> dict:
     if wid not in open_ids and not keeps_own_window:
         raise ToolError("That window isn't available. Call check_availability again and offer a current window.")
     if earlier:
-        ctx.store.update_appointment(earlier["id"], wid, service["id"], a["street_address"], town,
+        ctx.store.update_appointment(earlier["id"], wid, service["id"], street, town,
                                      a["problem_summary"], a.get("access_notes"))
         spoken = schedule.spoken_window(biz, wid, ctx.now, ctx.language)
         moved = wid != earlier["window_id"]
@@ -269,19 +279,21 @@ def book_appointment(ctx: ToolContext, a: dict) -> dict:
         return {"status": "moved" if moved else "updated", "confirmation": earlier["confirmation"], "window": spoken,
                 "note": "Same booking and confirmation number, details updated."}
 
-    confirmation = ctx.store.add_appointment(bid, ctx.call_id, wid, service["id"], name, phone, a["street_address"],
+    confirmation = ctx.store.add_appointment(bid, ctx.call_id, wid, service["id"], name, phone, street,
                                              town, a["problem_summary"], a.get("access_notes"), ctx.now)
-    ctx.store.upsert_customer(bid, phone, name, a["street_address"], town)
+    ctx.store.upsert_customer(bid, phone, name, street, town)
     spoken = schedule.spoken_window(biz, wid, ctx.now, ctx.language)
     if ctx.language == "es":
-        body = (f"{biz['name']}: su cita está reservada para {spoken}. Confirmación {confirmation}. El técnico le "
-                "enviará un mensaje unos 30 minutos antes de llegar." + STOP_ES)
+        body = (f"{biz['name']}: su cita está reservada para {spoken}. Confirmación {confirmation}. "
+                + (biz["booking"].get("arrival_note_es") or "El técnico le enviará un mensaje unos 30 minutos antes de "
+                                                            "llegar.") + STOP_ES)
     else:
         body = (f"{biz['name']}: you're booked for {service['name'].lower()}, {spoken}. Confirmation {confirmation}. "
-                "Your technician will text about 30 minutes before arriving." + STOP_EN)
+                + (biz["booking"].get("arrival_note") or "Your technician will text about 30 minutes before arriving.")
+                + STOP_EN)
     _text(ctx, phone, body)
-    _text(ctx, biz["owner_sms"], f"New booking {confirmation}: {name}, {spoken_phone(phone)}, {a['street_address']}, "
-                                 f"{town}. {service['name']}: {a['problem_summary']} "
+    _text(ctx, biz["owner_sms"], f"New booking {confirmation}: {name}, {spoken_phone(phone)}, "
+                                 + (f"{street}, {town}. " if street else "") + f"{service['name']}: {a['problem_summary']} "
                                  f"Window: {schedule.spoken_window(biz, wid, ctx.now)}.")
     return {"status": "booked", "confirmation": confirmation, "window": spoken, "note": _sent_note(ctx, "confirmation")}
 
@@ -389,10 +401,16 @@ def transfer_call(ctx: ToolContext, a: dict) -> dict:
     if not target:
         raise ToolError(f"Unknown transfer target {a['target']!r}.")
     open_now = schedule.is_open(ctx.biz, ctx.now)
-    if a["target"] == "office" and not open_now:
-        raise ToolError("The office is closed. For an emergency transfer to on_call; otherwise take a message.")
-    if a["target"] == "on_call" and open_now:
-        raise ToolError("During business hours, transfer emergencies to office.")
+    # "available" is "open" (business hours only), "closed" (after hours only) or "always".
+    available = target.get("available") or {"office": "open", "on_call": "closed"}.get(a["target"], "always")
+    if available == "open" and not open_now:
+        raise ToolError("The office is closed. For an emergency transfer to on_call; otherwise take a message."
+                        if a["target"] == "office" else
+                        f"{target['label']} is reachable only during business hours. Take a message instead.")
+    if available == "closed" and open_now:
+        raise ToolError("During business hours, transfer emergencies to office."
+                        if a["target"] == "on_call" else
+                        f"{target['label']} is reachable only after hours. Use another target or take a message.")
     # A live call can't ring a placeholder number (555-01xx); treat it as nobody picking up.
     if ctx.transfer_outcome != "connected" or (ctx.real_transfers and fictional_phone(target["number"])):
         return {"status": "no_answer", "note": "Nobody picked up. Tell the caller exactly that, in plain words and without "

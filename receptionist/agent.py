@@ -209,7 +209,7 @@ class CallSession:
         if emergency and safety.must_leave(emergency[0], caller_text):
             # Gas or CO with the caller still inside: the playbook's whole turn is fixed, so no model call to wait on.
             go_on(irreversible=True)
-            line = f"{emergency[1]} {safety.CALL_BACK[self.ctx.language]}"
+            line = f"{emergency[1]} {safety.closing(emergency[0], self.ctx.language)}"
             emit(line, True)
             result, is_error = tools.run_tool(self.ctx, "end_call", {"reason": "safety"})
             call = {"name": "end_call", "args": {"reason": "safety"}, "result": result, "error": is_error}

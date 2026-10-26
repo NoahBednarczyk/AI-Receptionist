@@ -66,12 +66,54 @@ HOME_SERVICES_ES = [
                 r"\ben llamas\b", r"\bhay fuego\b"],
      "Si es seguro, apague la electricidad o el gas del aparato y mantenga a todos alejados."),
 ]
-VERTICALS = {"home_services": {"en": HOME_SERVICES, "es": HOME_SERVICES_ES}}
+
+# Med spa: the real risks are an allergic reaction, filler blocking a blood vessel (vision changes, skin turning white
+# or blue), heavy bleeding, and an infection or burn. None of these is judged by the receptionist: it says the line
+# and gets a provider.
+MED_SPA = [
+    ("allergic_reaction", [r"\b(?:can'?t|cannot|couldn'?t) breathe\b", r"\b(?:trouble|difficulty|hard to|hard time) breathing\b",
+                           r"\b(?:throat|tongue|lips?|face)(?: \S+){0,3} (?:swelling|swollen|closing|tight|puffing up)\b",
+                           r"\b(?:swelling|swollen)(?: \S+){0,2} (?:in|of|on) (?:my |the )?(?:throat|tongue|face|lips?)\b",
+                           r"\banaphyla", r"\bhives all over\b", r"\bpassing out\b|\bpassed out\b|\bfainted\b"],
+     "If you're having trouble breathing, or your face or throat is swelling, call 911 right now."),
+    ("vision_or_blockage", [r"\b(?:vision|eyesight)\b(?: \S+){0,4} (?:blurry|blurred|changed|changing|gone|dark|double|dim|doubled)\b",
+                            r"\b(?:blurry|double|blurred) vision\b", r"\b(?:went|going|gone) blind\b|\bcan'?t see\b",
+                            r"\b(?:skin|lip|lips|nose|area|forehead|cheek)(?: \S+){0,3} (?:turning|turned|went|looks|looking|gone|is) "
+                            r"(?:white|blue|gr[ae]y|purple|dark|mottled|dusky|blanched)\b",
+                            r"\b(?:severe|terrible|horrible|intense|excruciating) pain\b(?: \S+){0,6} (?:filler|injection|injected|botox)"],
+     "That needs a provider right away. If your vision has changed or you can't breathe, call 911 now."),
+    ("heavy_bleeding", [r"\b(?:won'?t|wont|doesn'?t|not) stop bleeding\b", r"\bbleeding (?:a lot|heavily|badly|everywhere|through)\b",
+                        r"\bsoaking through\b"],
+     "Press firmly on the area with a clean cloth, and call 911 if the bleeding doesn't stop in a few minutes."),
+    ("urgent_reaction", [r"\b(?:pus|oozing)\b", r"\bspreading redness\b|\bredness (?:is )?spreading\b",
+                         r"\bblisters?\b|\bblistering\b", r"\bburn(?:ed|t|s)? (?:my|the) (?:skin|face)\b",
+                         r"\bfever\b(?: \S+){0,6} (?:treatment|filler|botox|laser|peel)|(?:treatment|filler|botox|laser|peel)(?: \S+){0,10} fever\b"],
+     "That should be looked at by a provider soon, so I'm getting our nurse team for you."),
+]
+MED_SPA_ES = [
+    ("allergic_reaction", [r"\bno puedo respirar\b", r"\bdificultad (?:para|al) respirar\b",
+                           r"\b(?:garganta|lengua|labios|cara)(?: \S+){0,3} (?:hinchad[ao]s?|cerr[ao]ndose)\b", r"\banafilax"],
+     "Si le cuesta respirar, o se le hincha la cara o la garganta, llame al 911 ahora mismo."),
+    ("vision_or_blockage", [r"\bvisi[oó]n(?: \S+){0,4} (?:borrosa|doble|cambi[oó]|oscura)\b", r"\bvisi[oó]n borrosa\b",
+                            r"\bno puedo ver\b"],
+     "Eso necesita a un proveedor de inmediato. Si cambió su visión o no puede respirar, llame al 911 ahora."),
+    ("heavy_bleeding", [r"\bno (?:para|deja) de sangrar\b", r"\bsangr(?:a|ando) mucho\b"],
+     "Presione firmemente la zona con un paño limpio, y llame al 911 si el sangrado no para en unos minutos."),
+]
+VERTICALS = {"home_services": {"en": HOME_SERVICES, "es": HOME_SERVICES_ES},
+             "med_spa": {"en": MED_SPA, "es": MED_SPA_ES}}
 
 # Gas or CO with the caller still inside: after the line, this, then hang up (the playbook's rule).
-LEAVE_NOW = {"gas", "carbon_monoxide"}
+LEAVE_NOW = {"gas", "carbon_monoxide", "allergic_reaction"}
 CALL_BACK = {"en": "Once you're safe outside, you can call us back.",
              "es": "Cuando esté a salvo afuera, puede volver a llamarnos."}
+# A possible allergic reaction needs 911, not a callback: after the line, the call ends so they can dial.
+HANG_UP_NOW = {"en": "Please hang up now and make that call.", "es": "Por favor cuelgue ahora y haga esa llamada."}
+
+
+def closing(name: str, language: str) -> str:
+    """What the fixed hang-up turn says after the safety line."""
+    return (HANG_UP_NOW if name == "allergic_reaction" else CALL_BACK)[language]
 OUTSIDE = re.compile(r"\b(?:outside|out of the (?:house|home|building)|left the (?:house|home)|"
                      r"in (?:the|my) (?:car|yard|driveway)|at (?:a|my|the) neighbor\S*|afuera|fuera de la casa|"
                      r"(?:ya )?(?:sal[ií]|salimos)\b|en el (?:carro|coche|patio)|en la calle)")
@@ -113,4 +155,6 @@ def must_leave(name: str, text: str) -> bool:
     puts them outside already ("I'm outside", "we left the house"; "I haven't gone outside" doesn't count)."""
     if name not in LEAVE_NOW:
         return False
+    if name == "allergic_reaction":
+        return True   # someone who can't breathe needs 911 now, wherever they are
     return not any(not _negated(s, m.start()) for s in _sentences(text) for m in OUTSIDE.finditer(s))

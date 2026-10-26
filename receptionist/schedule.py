@@ -81,7 +81,7 @@ def open_windows(biz: dict, now: datetime, booked: dict[str, int], earliest: dat
             wid = window_id(d, start)
             if datetime.combine(d, _t(start), tzinfo=now.tzinfo) < cutoff:
                 continue
-            if booked.get(wid, 0) >= rules["technicians"]:
+            if booked.get(wid, 0) >= capacity(biz):
                 continue
             out.append({"window_id": wid, "date": d.isoformat(), "start": start, "end": end})
             if len(out) >= limit:
@@ -96,8 +96,22 @@ def window_end(biz: dict, wid: str) -> str | None:
     return next((e for s, e in biz["booking"]["windows"] if s == parsed[1]), None)
 
 
+def in_clinic(biz: dict) -> bool:
+    """Clients come to the business at a fixed time (a med spa) instead of a technician arriving in a window."""
+    return biz.get("visit_type") == "in_clinic"
+
+
+def capacity(biz: dict) -> int:
+    rules = biz["booking"]
+    return rules.get("providers", rules.get("technicians", 1))
+
+
 def spoken_window(biz: dict, wid: str, now: datetime, lang: str = "en") -> str:
     d, start = parse_window_id(wid)
+    if in_clinic(biz):
+        if lang == "es":
+            return f"{spoken_date_es(d, now.date())} a las {spoken_time_es(start)}"
+        return f"{spoken_date(d, now.date())} at {spoken_time(start)}"
     end = window_end(biz, wid) or start
     if lang == "es":
         return f"{spoken_date_es(d, now.date())}, entre {spoken_time_es(start)} y {spoken_time_es(end)}"

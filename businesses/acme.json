@@ -6,8 +6,7 @@
   "vertical": "home_services",
   "timezone": "America/Los_Angeles",
   "phone_numbers": [
-    "+13125550100",
-    "+12084286760"
+    "+13125550100"
   ],
   "greeting": "Thanks for calling Acme Plumbing and Heating, this is Sam.",
   "hours": {

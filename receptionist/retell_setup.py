@@ -41,7 +41,9 @@ TRADE_WORDS = ["sink", "faucet", "drain", "clog", "toilet", "leak", "drip", "pip
 def agent_settings(biz: dict) -> dict:
     """The business's voice and conversation settings (the "voice" block of its JSON) plus speech-recognition hints."""
     settings = dict(biz.get("voice", {}))
-    settings["boosted_keywords"] = [biz["agent_name"], biz["spoken_name"], *biz["service_area"]["towns"], *TRADE_WORDS]
+    settings["boosted_keywords"] = [biz["agent_name"], biz["spoken_name"],
+                                    *(biz.get("service_area") or {}).get("towns", []),
+                                    *biz.get("speech_keywords", TRADE_WORDS)]
     return settings
 
 

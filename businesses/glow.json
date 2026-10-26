@@ -1,0 +1,309 @@
+{
+  "id": "glow",
+  "name": "Lakeside Glow Med Spa",
+  "spoken_name": "Lakeside Glow Med Spa",
+  "agent_name": "Sam",
+  "vertical": "med_spa",
+  "visit_type": "in_clinic",
+  "timezone": "America/Los_Angeles",
+  "phone_numbers": [
+    "+12084286760",
+    "+13125550200"
+  ],
+  "greeting": "Thanks for calling Lakeside Glow Med Spa, this is Sam.",
+  "location": "312 Cedar Street in downtown Sandpoint, Idaho, with free parking behind the building. (Demo address.)",
+  "hours": {
+    "mon": null,
+    "tue": [
+      "09:00",
+      "18:00"
+    ],
+    "wed": [
+      "09:00",
+      "18:00"
+    ],
+    "thu": [
+      "09:00",
+      "18:00"
+    ],
+    "fri": [
+      "09:00",
+      "18:00"
+    ],
+    "sat": [
+      "09:00",
+      "15:00"
+    ],
+    "sun": null
+  },
+  "services": [
+    {
+      "id": "consultation",
+      "name": "Free consultation: a visit with one of our providers to talk through goals, go over options and get a treatment plan and exact quote. Required before a first injectable or laser treatment, and the right booking for anyone unsure what they need"
+    },
+    {
+      "id": "neuromodulators",
+      "name": "Botox and other wrinkle relaxers: forehead lines, frown lines, crow's feet, jaw and neck"
+    },
+    {
+      "id": "dermal_filler",
+      "name": "Dermal fillers: lips, cheeks, jawline, under-eyes and smile lines"
+    },
+    {
+      "id": "hydrafacial",
+      "name": "HydraFacial and signature facials"
+    },
+    {
+      "id": "chemical_peel",
+      "name": "Chemical peels"
+    },
+    {
+      "id": "microneedling",
+      "name": "Microneedling, with or without PRP"
+    },
+    {
+      "id": "laser_hair_removal",
+      "name": "Laser hair removal"
+    },
+    {
+      "id": "laser_skin",
+      "name": "Laser skin treatments: IPL photofacial for sun spots and redness, skin tightening"
+    },
+    {
+      "id": "iv_therapy",
+      "name": "IV hydration and vitamin therapy"
+    }
+  ],
+  "not_offered": [
+    "Surgery of any kind, such as facelifts, liposuction or breast procedures",
+    "Tattoo removal",
+    "Permanent makeup",
+    "Massage",
+    "Medical care for skin conditions, such as treating acne, rashes or moles (that's a dermatologist)",
+    "Weight-loss medication"
+  ],
+  "pricing": [
+    "Consultations are free.",
+    "Botox and other wrinkle relaxers are $13 per unit. A provider works out the number of units at the consultation.",
+    "Dermal fillers start at $750 per syringe.",
+    "HydraFacial is $199.",
+    "Chemical peels start at $125.",
+    "Microneedling is $350 per session.",
+    "Laser hair removal starts at $99 for a small area; packages are quoted at the consultation.",
+    "IPL photofacial is $325.",
+    "IV hydration starts at $149.",
+    "These are starting prices; a provider confirms the exact total at the visit."
+  ],
+  "booking": {
+    "windows": [
+      [
+        "09:00",
+        "10:00"
+      ],
+      [
+        "10:00",
+        "11:00"
+      ],
+      [
+        "11:00",
+        "12:00"
+      ],
+      [
+        "12:00",
+        "13:00"
+      ],
+      [
+        "13:00",
+        "14:00"
+      ],
+      [
+        "14:00",
+        "15:00"
+      ],
+      [
+        "15:00",
+        "16:00"
+      ],
+      [
+        "16:00",
+        "17:00"
+      ],
+      [
+        "17:00",
+        "18:00"
+      ]
+    ],
+    "providers": 2,
+    "min_lead_minutes": 120,
+    "days_ahead": 14,
+    "arrival_note": "Please arrive ten minutes early with a clean, makeup-free face.",
+    "arrival_note_es": "Por favor llegue diez minutos antes, con la cara limpia y sin maquillaje.",
+    "note": "Each service is its own booking and takes about an hour. Please arrive ten minutes early with a clean, makeup-free face; that is the only thing to add after a confirmation."
+  },
+  "transfer_targets": {
+    "office": {
+      "label": "the front desk",
+      "number": "+13125550211",
+      "when": "During business hours only: a caller who asks for a person, an upset client, or a billing question.",
+      "available": "open"
+    },
+    "provider": {
+      "label": "the on-call provider",
+      "number": "+13125550212",
+      "when": "Any hour, for urgent problems after a treatment only (vision changes, skin turning white, blue or dark near an injection, bleeding that won't stop, signs of infection or a burn).",
+      "available": "always"
+    }
+  },
+  "owner_sms": "+13125550211",
+  "texting_enabled": false,
+  "emergency_callback_minutes": 15,
+  "speech_keywords": [
+    "Botox",
+    "Dysport",
+    "filler",
+    "HydraFacial",
+    "microneedling",
+    "PRP",
+    "IPL",
+    "photofacial",
+    "chemical peel",
+    "laser hair removal",
+    "consultation",
+    "neuromodulator",
+    "Sandpoint",
+    "Lakeside Glow"
+  ],
+  "faqs": [
+    {
+      "q": "Do I need a consultation first?",
+      "a": "New clients do for injectables (Botox, fillers) and laser treatments. Consultations are free. Facials, HydraFacials and peels can be booked directly."
+    },
+    {
+      "q": "Who are the providers?",
+      "a": "A nurse practitioner and licensed estheticians, working under a medical director. I don't have individual names to share."
+    },
+    {
+      "q": "How old do you have to be?",
+      "a": "Clients must be 18 or older."
+    },
+    {
+      "q": "What is the cancellation policy?",
+      "a": "Please give 24 hours' notice to cancel or move an appointment. Late cancellations and no-shows for injectable appointments may be charged $50."
+    },
+    {
+      "q": "What payment methods do you take?",
+      "a": "Credit and debit cards, and cash, at the visit. Payment is never taken over the phone."
+    },
+    {
+      "q": "Do you take insurance?",
+      "a": "No. Cosmetic treatments aren't covered by insurance."
+    },
+    {
+      "q": "Do you offer financing?",
+      "a": "The front desk can go over financing options; I can take a message."
+    },
+    {
+      "q": "Do you sell gift cards?",
+      "a": "Yes, through the front desk. I can take a message for them."
+    },
+    {
+      "q": "What should I do before my appointment?",
+      "a": "Arrive ten minutes early with a clean, makeup-free face. A provider will go over anything else at the visit."
+    },
+    {
+      "q": "How long does an appointment take?",
+      "a": "About an hour."
+    }
+  ],
+  "never_say": [
+    "Never give medical advice, say a treatment is safe, painless or risk-free, or say whether someone is a good candidate.",
+    "Never promise or describe results, or compare us with another clinic.",
+    "Never say how many units or sessions a person will need; a provider decides at the consultation.",
+    "Never offer discounts, packages, coupons or promotions.",
+    "Never name or describe any client, or any client's treatments, to anyone but the client."
+  ],
+  "approved_tips": [
+    {
+      "when": "after Botox or another wrinkle relaxer",
+      "tip": "Stay upright for four hours, skip heavy workouts for 24 hours, and avoid rubbing the area."
+    },
+    {
+      "when": "after dermal filler",
+      "tip": "Skip heavy workouts and heat like saunas for 24 hours, and avoid pressing on the area."
+    },
+    {
+      "when": "after a facial or chemical peel",
+      "tip": "Use a gentle cleanser and sunscreen, and don't pick at or scrub your skin."
+    },
+    {
+      "when": "after microneedling",
+      "tip": "Skip makeup for 24 hours and use sunscreen when you go outside."
+    },
+    {
+      "when": "after laser treatment",
+      "tip": "Keep the area out of the sun and don't tan until the provider says it's okay."
+    }
+  ],
+  "demo_seed": {
+    "customers": [
+      {
+        "phone": "+13125550143",
+        "name": "Taylor Brooks",
+        "notes": "Regular facial client."
+      },
+      {
+        "phone": "+13125550161",
+        "name": "Jamie Ortiz",
+        "notes": "Regular client."
+      }
+    ],
+    "appointments": [
+      {
+        "day_offset": 1,
+        "window_start": "10:00",
+        "count": 2
+      },
+      {
+        "day_offset": 1,
+        "window_start": "14:00",
+        "count": 1
+      },
+      {
+        "day_offset": 2,
+        "window_start": "09:00",
+        "count": 2
+      },
+      {
+        "day_offset": 2,
+        "window_start": "11:00",
+        "count": 1
+      }
+    ],
+    "customer_appointments": [
+      {
+        "phone": "+13125550143",
+        "confirmation": "G0901",
+        "service_id": "hydrafacial",
+        "day_offset": 2,
+        "window_start": "14:00",
+        "problem": "HydraFacial."
+      }
+    ]
+  },
+  "voice": {
+    "voice_id": "11labs-Cimo",
+    "voice_model": "eleven_v4_turbo",
+    "fallback_voice_ids": [
+      "cartesia-Cimo"
+    ],
+    "enable_backchannel": false,
+    "ambient_sound": null,
+    "enable_dynamic_voice_speed": false,
+    "enable_dynamic_responsiveness": false,
+    "responsiveness": 1.0,
+    "interruption_sensitivity": 0.6,
+    "denoising_mode": "noise-and-background-speech-cancellation",
+    "voice_temperature": 1.3,
+    "voice_speed": 1.15
+  }
+}

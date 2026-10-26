@@ -828,7 +828,7 @@ class LiveCallTests(unittest.TestCase):
             self.assertIn("no_answer", self.fake.requests[-1]["messages"][-1]["content"][0]["content"])
         # The agent saw exactly what the caller said, and the call was stored with its summary.
         self.assertEqual(self.fake.requests[0]["messages"][-1], {"role": "user", "content": "My sink is leaking."})
-        page = self.client.get("/dashboard", params={"token": "dash"}).text
+        page = self.client.get("/dashboard", params={"token": "dash", "business": "acme"}).text
         self.assertIn("Booked a leak repair.", page)
         self.assertEqual(self.client.get("/dashboard", params={"token": "nope"}).status_code, 404)
 
