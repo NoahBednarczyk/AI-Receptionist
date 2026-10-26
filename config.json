@@ -1,0 +1,50 @@
+{
+  "data_dir": "data",
+  "businesses_dir": "businesses",
+  "scenarios_dir": "scenarios",
+  "default_business": "acme",
+  "models": {
+    "agent": "claude-sonnet-5-5",
+    "agent_effort": "low",
+    "agent_thinking": "between_tools",
+    "postcall": "claude-sonnet-5-5",
+    "postcall_effort": "medium",
+    "caller_sim": "claude-haiku-5-5",
+    "caller_sim_effort": "low",
+    "grader": "claude-sonnet-5-5",
+    "grader_effort": "low"
+  },
+  "agent": {
+    "max_tokens": 2048,
+    "max_tool_rounds": 6,
+    "long_reply_words": 45,
+    "reply_word_budget": 40
+  },
+  "prices_per_mtok": {
+    "claude-haiku-5-5": [
+      0.1,
+      0.5
+    ],
+    "claude-sonnet-5-5": [
+      2.0,
+      10.0
+    ]
+  },
+  "simulate": {
+    "max_turns": 16,
+    "budget_per_day": 1.0,
+    "estimated_cost_per_scenario": 0.03,
+    "quick": [
+      "new_leak_booking",
+      "returning_water_heater",
+      "burst_pipe_after_hours",
+      "transfer_fails_urgent",
+      "price_shopper",
+      "wants_person_after_hours"
+    ]
+  },
+  "platforms": {
+    "vapi_model": "claude-haiku-5-5",
+    "retell_model": "claude-5.5-haiku"
+  }
+}

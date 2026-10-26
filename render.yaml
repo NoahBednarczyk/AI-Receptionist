@@ -1,0 +1,28 @@
+# Render Blueprint: one always-on web service with a small disk for the database.
+# Secrets are not stored here: Render asks for the sync: false ones when you create the service.
+services:
+  - type: web
+    name: receptionist
+    runtime: python
+    region: oregon            # closest to Retell's servers (US West)
+    plan: starter             # the free plan sleeps when idle, which would make the first call very slow
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m receptionist serve --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: RECEPTIONIST_DATA_DIR
+        value: /var/data
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RETELL_API_KEY
+        sync: false
+      - key: RETELL_WS_SECRET
+        sync: false
+      - key: DASHBOARD_TOKEN
+        sync: false
+    disk:
+      name: receptionist-data
+      mountPath: /var/data
+      sizeGB: 1
