@@ -291,7 +291,7 @@
     ]
   },
   "voice": {
-    "voice_id": "11labs-Cimo",
+    "voice_id": "custom_voice_e930e1108cb707205e6942c028",
     "voice_model": "eleven_v4_turbo",
     "fallback_voice_ids": [
       "cartesia-Cimo"
