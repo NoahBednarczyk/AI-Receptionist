@@ -304,7 +304,7 @@
     "interruption_sensitivity": 0.9,
     "denoising_mode": "noise-and-background-speech-cancellation",
     "voice_temperature": 1.3,
-    "voice_speed": 1.25
+    "voice_speed": 1.15
   },
   "greetings": [
     "Thanks for calling Lakeside Glow Med Spa, this is Sam.",

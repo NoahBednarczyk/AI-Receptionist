@@ -27,7 +27,7 @@ REMINDER = {"en": "Are you still there?", "es": "¿Sigue ahí?"}
 NOT_HEARD = {"en": "Sorry, I didn't catch that. Could you say that again?",
              "es": "Perdón, no le entendí. ¿Me lo puede repetir?"}
 STILL_WORKING = {"en": "Okay, one sec.", "es": "A ver."}
-SLOW_REPLY_S = 2.5   # no words yet after this long: say something so the caller never hears dead air
+SLOW_REPLY_S = 2.0   # no words yet after this long: say something so the caller never hears dead air
 GARBLED = re.compile(r"^[\s(\[]*(unintelligible|inaudible|no speech|silence)[^)\]]*[)\]]?[\s.]*$", re.I)
 TROUBLE = {"en": "I'm sorry, we're having a technical problem. Please call back in a few minutes.",
            "es": "Lo siento, tenemos un problema técnico. Por favor llame de nuevo en unos minutos."}
