@@ -104,3 +104,5 @@ Product now niched to heating/cooling/plumbing shops in North Idaho, run as over
 - **Live bug fixed locally but present on the deployed line until a push:** an earlier push set `reply_word_budget` to 28, which cut the question off the end of the pre-booking read-back ("Shall I book it?" was never spoken). Restored to 40 in config.json.
 - Test budget: $1.00 spent on 2026-10-27 (quick 6 + full 12 + 3 reruns). Results: first full run 5/12; after fixes a 3-scenario rerun 1/3 (one inconclusive: the simulated Spanish caller went silent; burst_pipe still narrated). The tool-description fix is unrun. Next session: rerun `simulate --business hvac` (about $0.55) after the budget resets.
 - Email digest skipped (needs an email service).
+
+Pushed 0a0bcad and ran retell-tune --business hvac on 2026-10-27; Render serves the HVAC shop on the live number (greeting verified by a fake call, no real call yet).
