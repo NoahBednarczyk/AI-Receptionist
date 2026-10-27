@@ -161,6 +161,38 @@ The voice platform and the voice are about 90% of the cost; Claude is under 10%.
 
 The first deploy seeds the demo data. Calls, bookings and messages live on the disk, so they survive deploys. Set `PYTHON_VERSION` in `render.yaml` if a build complains about the Python version.
 
+## Heating and plumbing pilots (overflow mode)
+
+The product is now pitched to owner-operated heating, cooling and plumbing shops in North Idaho. A shop forwards its calls to us when nobody picks up (no answer or busy); the agent books the job, takes a message, or tries the owner's cell, and the owner reads every call on a phone-friendly dashboard. The demo shop is **Peak Heating & Plumbing (demo)**, `businesses/hvac.json`, which is also the default business and holds the live number. `acme` (plumbing, business hours) and `glow` (med spa) stay in the repo.
+
+- **Overflow mode:** `"mode": "overflow"` in the business JSON. Greetings say the crew is out on a job and never ask a question. The owner's cell is the `owner` transfer target (`available: always`); the agent takes the caller's message first, then tries the cell, and a 555-01xx placeholder never rings.
+- **Winter first:** `playbooks/hvac.md` and `safety.py`. Gas, carbon monoxide, flooding, sewage and sparking lines are exactly the home-services ones and come first. After them: no heat in freezing weather (needs a cold cue, such as "six degrees" or a baby in the house) and frozen pipes. Both get the earliest *emergency visit*, a service that books 30 minutes ahead (normal: 2 hours) into one reserved extra slot per window, or the owner's cell. No troubleshooting beyond approved tips. Wood and pellet stoves and fireplaces: a message, no advice.
+- **Sign up a shop:** `python -m receptionist new-client` (asks questions) or `--from intake.yaml` (see `.internal/intake.example.yaml`). It writes `businesses/<id>.json` with only that shop's own facts, checks that it loads, and prints (and saves beside the file) a one-page checklist for the owner: call-forwarding codes, a test, how to turn it off. Under 30 minutes for the owner; our side is assigning the shop its own number in Retell and adding it to `phone_numbers`.
+- **Owner view:** `/dashboard?token=...` shows every call as a card (caller, why they called, outcome, booked window, follow-up, full transcript), then bookings, messages and leads. Phone width tested in HTML only. `python -m receptionist calendar-url ...` gives a private calendar feed of bookings.
+- **No email digest.** Sending email needs an email account or API key, which this project doesn't have. The dashboard is the owner's end-of-day view.
+
+### Pilot day: what to check
+Before the first forwarded call:
+- [ ] The shop's own number is assigned in Retell, in `phone_numbers`, and `retell-tune --business <id>` has run. Call it yourself once.
+- [ ] The owner's cell in the JSON is a real number (the new-client command warns if it is a 555-01xx placeholder).
+- [ ] The owner has done the forwarding test on the checklist and knows the turn-off code.
+During the day, open the dashboard after each call and look for:
+- [ ] A call that ended without a booking, a message, a lead or a transfer (nothing should be lost).
+- [ ] The wrong town, name or number in a booking or message; a price that isn't in the shop's list; any advice beyond an approved tip.
+- [ ] Narration ("the number matches, so I'll...") or the same question asked twice.
+- [ ] Any no-heat or frozen-pipe call: was the line spoken, and was an emergency visit or the owner offered?
+- [ ] The owner's cell: did the transfer ring? (The agent can't tell if the owner answered; see below.)
+At the end of the day: read every transcript, count booked / message / lead / transferred, compare against the shop's own missed-call list, write down every misheard name or town, and check the spend with `budget`. **Turn forwarding off** the same day if a safety line was missed, a price was invented, or a caller was misled.
+
+### What is not verified
+- **No real call has been made on the HVAC shop.** All of it is tested by unit tests and simulated calls only. The live line runs whatever was last pushed to GitHub (see CLAUDE.md for what is and isn't pushed).
+- **Simulation:** the first full run of the 12 HVAC scenarios passed 5 of 12. Fixes followed (the reply word cap that cut off the read-back question, the "first in line" promise, tips, narration), and a 3-scenario rerun passed 1; one failure was the simulated caller going silent (inconclusive) and one still narrated before a tool call. The fix after that (a ban on pre-tool words in the tool descriptions) has not been run. The daily test budget was spent.
+- **Owner-cell transfers:** Retell hands the call over and our agent is gone, so it cannot detect "nobody answered". The fallback is the message taken *before* the transfer, not an automatic return to the agent.
+- **Forwarding codes:** the AT&T/T-Mobile (`**61*`, `##004#`) and Verizon (`*71`, `*73`) codes are the common ones and have not been tried on a phone. Business phone systems differ.
+- **Cold detection:** the winter tier needs a cold cue in the caller's words; speech recognition spellings and unusual phrasings ("it's brutal out") can miss it, in which case the model still has the same rules in its playbook but the line isn't spoken by code. Spanish coverage is thinner.
+- **Dashboard on a phone, the calendar feed in Google Calendar, `new-client` with a real shop, and the checklist:** not tried on a device or with a real owner.
+- **Open items I did not touch:** the recording notice and the legal review below are unchanged, and the AI-disclosure rule is intact.
+
 ## Going live: what's left
 
 | Step | Status |

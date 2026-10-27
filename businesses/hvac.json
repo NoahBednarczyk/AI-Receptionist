@@ -1,0 +1,344 @@
+{
+  "id": "hvac",
+  "name": "Peak Heating & Plumbing (demo)",
+  "spoken_name": "Peak Heating and Plumbing",
+  "agent_name": "Sam",
+  "vertical": "hvac",
+  "mode": "overflow",
+  "timezone": "America/Los_Angeles",
+  "phone_numbers": [
+    "+12084286760"
+  ],
+  "greeting": "Peak Heating and Plumbing, the crew's out on a job right now. This is Sam.",
+  "greetings": [
+    "Peak Heating and Plumbing, the crew's out on a job right now. This is Sam.",
+    "You've reached Peak Heating and Plumbing. The team's out on a call, so this is Sam.",
+    "Peak Heating and Plumbing, this is Sam. The crew's tied up on a job right now.",
+    "Thanks for calling Peak Heating and Plumbing. Everyone's out on a job, so you've got Sam.",
+    "Peak Heating and Plumbing, Sam here. The team's out on a job at the moment."
+  ],
+  "hours": {
+    "mon": [
+      "07:00",
+      "17:00"
+    ],
+    "tue": [
+      "07:00",
+      "17:00"
+    ],
+    "wed": [
+      "07:00",
+      "17:00"
+    ],
+    "thu": [
+      "07:00",
+      "17:00"
+    ],
+    "fri": [
+      "07:00",
+      "17:00"
+    ],
+    "sat": [
+      "08:00",
+      "12:00"
+    ],
+    "sun": null
+  },
+  "service_area": {
+    "towns": [
+      "Sandpoint",
+      "Ponderay",
+      "Kootenai",
+      "Dover",
+      "Sagle",
+      "Hope",
+      "East Hope",
+      "Clark Fork",
+      "Priest River",
+      "Oldtown",
+      "Laclede",
+      "Cocolalla",
+      "Careywood",
+      "Colburn",
+      "Samuels",
+      "Naples",
+      "Bonners Ferry",
+      "Priest Lake",
+      "Coolin",
+      "Nordman",
+      "Blanchard",
+      "Spirit Lake",
+      "Athol",
+      "Bayview"
+    ],
+    "note": "Homes and small businesses in Sandpoint, Idaho and the towns around it: north to Bonners Ferry, south to Athol and Bayview, west to Priest River and Priest Lake, and east to Clark Fork."
+  },
+  "services": [
+    {
+      "id": "furnace_repair",
+      "name": "Furnace repair: gas, propane, oil and electric furnaces that won't start, short-cycle, blow cold air or make noise"
+    },
+    {
+      "id": "boiler_repair",
+      "name": "Boiler and hydronic heat repair: radiant floors, baseboard and radiators"
+    },
+    {
+      "id": "heat_pump",
+      "name": "Heat pump and ductless mini-split repair and service"
+    },
+    {
+      "id": "ac_repair",
+      "name": "Air conditioning repair: an AC that isn't cooling or won't turn on"
+    },
+    {
+      "id": "hvac_tune_up",
+      "name": "Tune-up for a furnace, boiler, heat pump, mini-split or AC"
+    },
+    {
+      "id": "water_heater",
+      "name": "Water heater repair or replacement, tank and tankless"
+    },
+    {
+      "id": "leak_repair",
+      "name": "Leak, pipe and fixture repair: leaking pipes, dripping faucets, running or leaking toilets"
+    },
+    {
+      "id": "drain_cleaning",
+      "name": "Drain cleaning and clogs"
+    },
+    {
+      "id": "estimate",
+      "name": "Free estimate for a furnace, heat pump, boiler or water heater replacement, or a remodel"
+    },
+    {
+      "id": "emergency_visit",
+      "name": "Emergency visit: no heat in freezing weather, a burst or frozen pipe, or a leak that can't be stopped",
+      "emergency": true
+    }
+  ],
+  "not_offered": [
+    "Septic tank pumping",
+    "Well pump repair",
+    "Appliance repair such as dishwashers or washing machines",
+    "New-construction commercial work"
+  ],
+  "pricing": [
+    "Service visits have a $95 diagnostic fee, which is waived if the customer approves the repair.",
+    "A furnace or boiler tune-up is $149. A heat pump, mini-split or AC tune-up is $139.",
+    "Estimates for furnace, heat pump, boiler or water heater replacement are free.",
+    "Emergency visits on nights, Sundays and holidays add a $175 after-hours fee.",
+    "We don't quote repair or replacement prices over the phone. The technician gives a firm price on site before any work starts.",
+    "(These are demo prices for a fictional shop.)"
+  ],
+  "booking": {
+    "windows": [
+      [
+        "07:00",
+        "09:00"
+      ],
+      [
+        "09:00",
+        "11:00"
+      ],
+      [
+        "11:00",
+        "13:00"
+      ],
+      [
+        "13:00",
+        "15:00"
+      ],
+      [
+        "15:00",
+        "17:00"
+      ]
+    ],
+    "technicians": 2,
+    "min_lead_minutes": 120,
+    "days_ahead": 10,
+    "emergency_lead_minutes": 30,
+    "emergency_extra": 1,
+    "note": "Each service is its own booking. An emergency visit can be booked into the earliest window with a short lead time, even if that window is otherwise full."
+  },
+  "transfer_targets": {
+    "owner": {
+      "label": "the owner's cell",
+      "number": "+12085550101",
+      "when": "Any hour: an emergency, an upset customer, or a caller who asks for the owner. Take the caller's message first, so nothing is lost if nobody answers.",
+      "available": "always"
+    }
+  },
+  "owner_sms": "+12085550101",
+  "texting_enabled": false,
+  "emergency_callback_minutes": 15,
+  "speech_keywords": [
+    "furnace",
+    "boiler",
+    "heat pump",
+    "mini split",
+    "ductless",
+    "thermostat",
+    "propane",
+    "tankless",
+    "water heater",
+    "hydronic",
+    "pellet stove",
+    "Sandpoint",
+    "Peak Heating"
+  ],
+  "faqs": [
+    {
+      "q": "Are you licensed and insured?",
+      "a": "Yes. Peak is licensed and fully insured. (Demo shop.)"
+    },
+    {
+      "q": "What payment methods do you take?",
+      "a": "Credit and debit cards, checks and cash. The technician takes payment when the job is done."
+    },
+    {
+      "q": "Do you offer financing?",
+      "a": "Yes, for furnace, heat pump, boiler and water heater replacements. The technician can go over the options."
+    },
+    {
+      "q": "Is your work guaranteed?",
+      "a": "Labor is guaranteed for one year. Parts carry the manufacturer's warranty."
+    },
+    {
+      "q": "Which brands do you service?",
+      "a": "Most major brands of furnaces, boilers, heat pumps, mini-splits and water heaters, including tankless units."
+    },
+    {
+      "q": "Do you call before arriving?",
+      "a": "Yes. The technician calls or texts about 30 minutes before arriving."
+    },
+    {
+      "q": "Does someone need to be home for the visit?",
+      "a": "Yes. An adult needs to be home for the whole window to let the technician in."
+    },
+    {
+      "q": "Do you service wood or pellet stoves?",
+      "a": "I don't have details on stoves or fireplaces. I can take a message and the technician will call you back."
+    },
+    {
+      "q": "How fast can you get here if I have no heat?",
+      "a": "No heat in freezing weather and burst pipes get the earliest emergency slot, or I can try the owner's cell. I can't promise an arrival time beyond the window that's booked."
+    }
+  ],
+  "never_say": [
+    "Never promise an arrival time narrower than the booked two-hour window.",
+    "Never guess what is wrong or say a problem is probably minor.",
+    "Never give advice about gas, wood or pellet stoves, fireplaces or chimneys.",
+    "Never offer discounts, coupons or promotions."
+  ],
+  "approved_tips": [
+    {
+      "when": "a furnace that won't come on",
+      "tip": "You can check that the thermostat is set to heat, that its batteries aren't dead, and that the switch on or near the furnace is on."
+    },
+    {
+      "when": "a furnace that turns on and off every few minutes",
+      "tip": "You can check whether the furnace filter looks clogged and swap in a new one if it does."
+    },
+    {
+      "when": "a heat pump or mini-split that isn't heating or cooling",
+      "tip": "You can check that the thermostat or remote is on the right mode and that its breaker hasn't tripped; if it trips again, leave it off."
+    },
+    {
+      "when": "an air conditioner that isn't cooling",
+      "tip": "You can check that the thermostat is set to cool, that its batteries aren't dead, and that the air filter isn't clogged."
+    },
+    {
+      "when": "a frozen pipe that hasn't burst",
+      "tip": "You can open the faucet a little and keep that area warm, but please don't use an open flame to thaw it."
+    },
+    {
+      "when": "a slow leak or drip under a sink",
+      "tip": "You can turn off the small valve under the sink and keep a bucket or towel under it in the meantime."
+    },
+    {
+      "when": "a toilet that keeps running or leaks",
+      "tip": "You can turn off the valve on the wall behind the toilet, clockwise, to stop the water in the meantime."
+    },
+    {
+      "when": "a slow or clogged drain",
+      "tip": "Please don't use chemical drain cleaners on it; they can damage the pipes and make the repair unsafe."
+    },
+    {
+      "when": "no hot water from an electric water heater",
+      "tip": "You can check whether the water heater's breaker has tripped and switch it back on once; if it trips again, leave it off."
+    },
+    {
+      "when": "a tankless water heater showing an error code",
+      "tip": "Please write down the error code; you can also turn the unit off and back on once at its power switch."
+    }
+  ],
+  "demo_seed": {
+    "customers": [
+      {
+        "phone": "+12085550142",
+        "name": "Pat Rivera",
+        "address": "14 Birch Lane",
+        "town": "Sagle",
+        "notes": "Furnace tune-up in September 2026."
+      },
+      {
+        "phone": "+12085550160",
+        "name": "Morgan Ellis",
+        "address": "7 Willow Court",
+        "town": "Ponderay",
+        "notes": "Boiler serviced in 2025."
+      }
+    ],
+    "appointments": [
+      {
+        "day_offset": 1,
+        "window_start": "07:00",
+        "count": 2
+      },
+      {
+        "day_offset": 1,
+        "window_start": "09:00",
+        "count": 1
+      },
+      {
+        "day_offset": 2,
+        "window_start": "07:00",
+        "count": 2
+      }
+    ],
+    "customer_appointments": [
+      {
+        "phone": "+12085550160",
+        "confirmation": "P0901",
+        "service_id": "boiler_repair",
+        "day_offset": 2,
+        "window_start": "11:00",
+        "problem": "Baseboard heat not warming one zone."
+      }
+    ]
+  },
+  "simulate_quick": [
+    "no_heat_night",
+    "furnace_short_cycling",
+    "price_shopper",
+    "burst_pipe",
+    "ai_question",
+    "reschedule_existing"
+  ],
+  "voice": {
+    "voice_id": "custom_voice_e930e1108cb707205e6942c028",
+    "voice_model": "eleven_v4_turbo",
+    "fallback_voice_ids": [
+      "cartesia-Cimo"
+    ],
+    "enable_backchannel": false,
+    "ambient_sound": null,
+    "enable_dynamic_voice_speed": false,
+    "enable_dynamic_responsiveness": false,
+    "responsiveness": 1.0,
+    "interruption_sensitivity": 0.9,
+    "denoising_mode": "noise-and-background-speech-cancellation",
+    "voice_temperature": 1.3,
+    "voice_speed": 1.15
+  }
+}

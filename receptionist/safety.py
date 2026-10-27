@@ -100,7 +100,40 @@ MED_SPA_ES = [
     ("heavy_bleeding", [r"\bno (?:para|deja) de sangrar\b", r"\bsangr(?:a|ando) mucho\b"],
      "Presione firmemente la zona con un paño limpio, y llame al 911 si el sangrado no para en unos minutos."),
 ]
+
+# HVAC and plumbing, winter first. Every home-services line comes first and is untouched (first match wins, so gas,
+# carbon monoxide, flooding and the rest still win over the new tiers); the cold-weather tiers are added after them.
+_NUMBER_WORDS = (r"(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
+                 r"sixteen|seventeen|eighteen|nineteen|twenty|thirty)(?:[ -](?:one|two|three|four|five|six|seven|eight|nine))?")
+COLD_CUE = (r"\b(?:freezing|frozen|below zero|sub ?zero|snow|snowing|snowed|blizzard|frigid|ice storm|"
+            r"(?:[0-9]|[1-3][0-9]|" + _NUMBER_WORDS + r") degrees|(?:[0-9]+|" + _NUMBER_WORDS + r") below|"
+            r"baby|infant|newborn|elderly|oxygen|sick|cold)\b")
+COLD_CUE_ES = r"\b(?:congelando|helando|bajo cero|nieve|nevando|fr[ií]o|heladas?|beb[eé]|anciano|enferm[oa])\b"
+HVAC_WINTER = [
+    ("no_heat_freezing",
+     [r"\bno heat\b", r"\b(?:furnace|boiler|heater|heat pump|heat|mini ?split|thermostat)\b(?: \S+){0,3} "
+      r"(?:out|off|dead|died|quit|stopped|down|broke|broken|not working|won't (?:start|turn on|come on|kick on)|"
+      r"doesn't (?:work|start|come on)|not (?:coming|kicking) on|isn't working|stopped working)\b"],
+     "No heat in this cold is urgent. If anyone there is in danger from the cold, call 911.",
+     COLD_CUE),
+    ("frozen_pipe",
+     [r"\bfrozen (?:pipe|pipes|line|lines)\b", r"\b(?:pipe|pipes)(?: \S+){0,3} (?:froze|frozen|freezing)\b"],
+     "A frozen pipe can burst, so we're treating this as urgent. If it does burst, shut off the main water valve, "
+     "usually near the water meter."),
+]
+HVAC_WINTER_ES = [
+    ("no_heat_freezing",
+     [r"\bsin calefacci[oó]n\b", r"\bno hay calefacci[oó]n\b", r"\b(?:calefacci[oó]n|calentador|caldera|horno)\b"
+      r"(?: \S+){0,3} (?:no funciona|no enciende|se apag[oó]|est[aá] descompuest[oa]|dej[oó] de funcionar)\b"],
+     "Sin calefacción con este frío es urgente. Si alguien corre peligro por el frío, llame al 911.",
+     COLD_CUE_ES),
+    ("frozen_pipe",
+     [r"\btuber[ií]as? (?:congelad[ao]s?|heladas?)\b", r"\b(?:se )?congel[oó] (?:la|una) tuber[ií]a\b"],
+     "Una tubería congelada puede reventar, así que lo tratamos como urgente. Si revienta, cierre la llave de paso "
+     "principal, normalmente cerca del medidor."),
+]
 VERTICALS = {"home_services": {"en": HOME_SERVICES, "es": HOME_SERVICES_ES},
+             "hvac": {"en": HOME_SERVICES + HVAC_WINTER, "es": HOME_SERVICES_ES + HVAC_WINTER_ES},
              "med_spa": {"en": MED_SPA, "es": MED_SPA_ES}}
 
 # Gas or CO with the caller still inside: after the line, this, then hang up (the playbook's rule).
@@ -142,10 +175,13 @@ def match(vertical: str, text: str, language: str = "en") -> tuple[str, str] | N
     """(emergency name, safety line) if the caller describes one, else None. Ignores negated phrases
     ("I don't smell gas") so nobody gets an alarming instruction by mistake."""
     sentences = _sentences(text)
-    for name, patterns, line in VERTICALS.get(vertical, {}).get(language, []):
+    for name, patterns, line, *rest in VERTICALS.get(vertical, {}).get(language, []):
         for pattern in patterns:
             for s in sentences:
                 if any(not _negated(s, m.start()) for m in re.finditer(pattern, s)):
+                    # Some tiers also need a cue elsewhere in what the caller said (no heat AND cold weather).
+                    if rest and not any(re.search(rest[0], t) for t in sentences):
+                        continue
                     return name, line
     return None
 

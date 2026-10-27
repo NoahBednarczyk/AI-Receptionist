@@ -80,7 +80,20 @@ def _obj(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required, "additionalProperties": False}
 
 
+# The model tends to write a spoken "note" before a tool call ("the number matches, so I'll take the message"). The phone
+# system already speaks a short line while these tools run, so the strongest place to forbid the note is the tool itself.
+NO_WORDS_FIRST = (" Call this without writing any words first, and never describe your checks: the phone system "
+                  "speaks a short line while it runs.")
+QUIET_TOOLS = {"check_availability", "book_appointment", "lookup_customer", "reschedule_appointment",
+               "cancel_appointment", "take_message"}
+
+
 def schemas(biz: dict) -> list[dict]:
+    return [{**t, "description": t["description"] + NO_WORDS_FIRST} if t["name"] in QUIET_TOOLS else t
+            for t in _schemas(biz)]
+
+
+def _schemas(biz: dict) -> list[dict]:
     service_ids = [s["id"] for s in biz["services"]]
     clinic = schedule.in_clinic(biz)
     targets = list(biz["transfer_targets"])
@@ -220,7 +233,7 @@ def _town(biz: dict, raw: str) -> str:
 
 
 def check_availability(ctx: ToolContext, a: dict) -> dict:
-    _service(ctx.biz, a["service_id"])
+    service = _service(ctx.biz, a["service_id"])
     earliest = None
     if a.get("earliest_date"):
         try:
@@ -233,7 +246,8 @@ def check_availability(ctx: ToolContext, a: dict) -> dict:
                             "Check the year and try again.")
         if earliest > last:
             raise ToolError(f"Bookings open only through {last.isoformat()}. Offer to take a message for later dates.")
-    wins = schedule.open_windows(ctx.biz, ctx.now, ctx.store.booked_counts(ctx.biz["id"]), earliest)
+    wins = schedule.open_windows(ctx.biz, ctx.now, ctx.store.booked_counts(ctx.biz["id"]), earliest,
+                                 **schedule.emergency_rules(ctx.biz, service))
     if not wins:
         return {"windows": [], "note": "Nothing open in the booking range. Take a message so the office can fit them in."}
     return {
@@ -266,7 +280,8 @@ def book_appointment(ctx: ToolContext, a: dict) -> dict:
     earlier = next((x for x in ctx.store.appointments_for_call(ctx.call_id)
                     if x["phone"] == phone and x["status"] == "booked" and x["service_id"] == service["id"]), None)
     keeps_own_window = earlier is not None and wid == earlier["window_id"]   # full now only because of this booking
-    open_ids = {w["window_id"] for w in schedule.open_windows(biz, ctx.now, ctx.store.booked_counts(bid), limit=10_000)}
+    open_ids = {w["window_id"] for w in schedule.open_windows(biz, ctx.now, ctx.store.booked_counts(bid), limit=10_000,
+                                                              **schedule.emergency_rules(biz, service))}
     if wid not in open_ids and not keeps_own_window:
         raise ToolError("That window isn't available. Call check_availability again and offer a current window.")
     if earlier:

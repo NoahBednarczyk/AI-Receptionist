@@ -113,7 +113,7 @@ def cmd_simulate(cfg, a):
             print(f"  {s['id']:<28} {s['title']}")
         return
     if a.quick:
-        a.ids = a.ids or cfg["simulate"]["quick"]
+        a.ids = a.ids or biz.get("simulate_quick") or cfg["simulate"]["quick"]
     if a.effort:
         cfg["models"]["agent_effort"] = a.effort
     if a.thinking:
@@ -172,6 +172,18 @@ def cmd_calendar_url(cfg, a):
         raise SystemExit("Set DASHBOARD_TOKEN first (the same value the server uses).")
     biz = load_business(cfg, a.business)
     print(f"{a.base_url.rstrip('/')}/calendar.ics?token={feed_token(secret, biz['id'])}&business={biz['id']}")
+
+
+def cmd_new_client(cfg, a):
+    from . import onboarding
+    intake = None
+    if a.intake:
+        import yaml
+        intake = yaml.safe_load(Path(a.intake).read_text()) or {}
+    try:
+        onboarding.run(cfg, intake, force=a.force)
+    except onboarding.IntakeError as e:
+        raise SystemExit(f"Can't sign this shop up yet: {e}")
 
 
 def cmd_serve(cfg, a):
@@ -260,6 +272,11 @@ def main():
     sp.add_argument("--base-url", help="also point the agent at this server's https address (after moving hosts)")
     biz_args(sp, at=False)
     sp.set_defaults(fn=cmd_retell_tune)
+
+    sp = sub.add_parser("new-client", help="sign up a shop: writes businesses/<id>.json and prints the owner's checklist")
+    sp.add_argument("--from", dest="intake", metavar="INTAKE.YAML", help="read the answers from a YAML file instead of asking")
+    sp.add_argument("--force", action="store_true", help="overwrite an existing business file")
+    sp.set_defaults(fn=cmd_new_client)
 
     sp = sub.add_parser("calendar-url", help="print the private calendar feed link (pipe it to pbcopy; don't paste it in chat)")
     sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")

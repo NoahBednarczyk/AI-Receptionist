@@ -69,9 +69,19 @@ def windows_on(biz: dict, d: date) -> list[tuple[str, str]]:
     return [(s, e) for s, e in biz["booking"]["windows"] if _t(s) >= _t(span[0]) and _t(e) <= _t(span[1])]
 
 
-def open_windows(biz: dict, now: datetime, booked: dict[str, int], earliest: date | None = None, limit: int = 6) -> list[dict]:
+def emergency_rules(biz: dict, service: dict | None) -> dict:
+    """Booking limits for a service. An emergency service (no heat in freezing weather, a burst pipe) may be booked
+    closer to now and into a reserved extra slot per window; everything else uses the normal limits."""
+    if service and service.get("emergency"):
+        rules = biz["booking"]
+        return {"lead_minutes": rules.get("emergency_lead_minutes", 30), "extra": rules.get("emergency_extra", 1)}
+    return {}
+
+
+def open_windows(biz: dict, now: datetime, booked: dict[str, int], earliest: date | None = None, limit: int = 6,
+                 lead_minutes: int | None = None, extra: int = 0) -> list[dict]:
     rules = biz["booking"]
-    cutoff = now + timedelta(minutes=rules["min_lead_minutes"])
+    cutoff = now + timedelta(minutes=rules["min_lead_minutes"] if lead_minutes is None else lead_minutes)
     out = []
     for offset in range(rules["days_ahead"] + 1):
         d = now.date() + timedelta(days=offset)
@@ -81,7 +91,7 @@ def open_windows(biz: dict, now: datetime, booked: dict[str, int], earliest: dat
             wid = window_id(d, start)
             if datetime.combine(d, _t(start), tzinfo=now.tzinfo) < cutoff:
                 continue
-            if booked.get(wid, 0) >= capacity(biz):
+            if booked.get(wid, 0) >= capacity(biz) + extra:
                 continue
             out.append({"window_id": wid, "date": d.isoformat(), "start": start, "end": end})
             if len(out) >= limit:

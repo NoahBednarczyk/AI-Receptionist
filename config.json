@@ -2,7 +2,7 @@
   "data_dir": "data",
   "businesses_dir": "businesses",
   "scenarios_dir": "scenarios",
-  "default_business": "glow",
+  "default_business": "hvac",
   "models": {
     "agent": "claude-sonnet-5-5",
     "agent_effort": "low",
@@ -17,8 +17,8 @@
   "agent": {
     "max_tokens": 2048,
     "max_tool_rounds": 6,
-    "long_reply_words": 32,
-    "reply_word_budget": 28
+    "long_reply_words": 40,
+    "reply_word_budget": 40
   },
   "prices_per_mtok": {
     "claude-haiku-5-5": [
