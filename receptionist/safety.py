@@ -132,9 +132,42 @@ HVAC_WINTER_ES = [
      "Una tubería congelada puede reventar, así que lo tratamos como urgente. Si revienta, cierre la llave de paso "
      "principal, normalmente cerca del medidor."),
 ]
+# Lawn care, landscaping and snow removal. No gas or electrical lines: those are home-repair risks. What can hurt a
+# caller here is a downed power line, a fallen tree, a sprinkler line flooding the yard, and a driveway an ambulance
+# can't reach. Each line sends the caller to the right authority; the receptionist judges nothing.
+LAWN_CARE = [
+    ("power_line", [r"\b(?:power|electric(?:al)?|utility) (?:lines?|wires?|cables?)\b(?: \S+){0,6} (?:down|fell|fallen|on the ground|sparking|snapped|broke|hanging)",
+                    r"\b(?:downed|fallen|live) (?:power|electric(?:al)?) (?:lines?|wires?)\b", r"\bwires? (?:are |is )?(?:down|on the ground|sparking)\b",
+                    r"\btree(?: \S+){0,6} (?:on|across|took down|brought down) (?:the |a |our |my )?(?:power|electric)\w* (?:lines?|wires?)"],
+     "Please stay far away from it and keep everyone back, and call 911 or the power company right now."),
+    ("injury", [r"\b(?:someone|somebody|he|she|my \w+) (?:is |got |was )?(?:hurt|injured|trapped|pinned|bleeding)\b",
+                r"\bunder (?:the|a) tree\b", r"\bmedical emergency\b", r"\bambulance\b", r"\bparamedics?\b"],
+     "If anyone is hurt, call 911 right now."),
+    ("fallen_tree", [r"\b(?:tree|trees|big limb|large limb|branch(?:es)?)(?: \S+){0,4} (?:fell|fallen|came down|down|crashed|landed|is blocking|blocking|on (?:the|my|our) (?:house|roof|car|driveway|garage|fence|shed))",
+                     r"\b(?:fell|crashed)(?: \S+){0,3} (?:on|onto|across) (?:the |my |our )?(?:house|roof|car|driveway|garage|fence|shed)\b"],
+     "Please stay clear of the tree and anything it's touching, and if anyone is hurt, call 911."),
+    ("irrigation_break", [r"\b(?:sprinkler|irrigation)(?: \S+){0,3} (?:line|pipe|main|head|valve)(?: \S+){0,3} (?:broke|burst|snapped|geysering|spraying|flooding|shooting)",
+                          r"\b(?:sprinkler|irrigation)(?: \S+){0,2} (?:broke|burst|flooding|won't shut off|wont shut off|won't turn off)\b",
+                          r"\b(?:yard|lawn|garden|driveway|basement)(?: \S+){0,4} (?:flooding|flooded|underwater|is a lake)\b"],
+     "If it's safe, shut off the water to the sprinkler system at its main valve, usually near the water meter, and "
+     "keep clear of anything electrical near the water."),
+]
+LAWN_CARE_ES = [
+    ("power_line", [r"\b(?:cables?|l[ií]neas?) (?:el[eé]ctric\w+|de (?:luz|electricidad|poder))(?: \S+){0,4} (?:ca[ií]d\w+|en el suelo|chispe\w+)",
+                    r"\bcables? (?:ca[ií]dos?|en el suelo|chispeando)\b"],
+     "Por favor manténgase muy lejos y mantenga a todos atrás, y llame al 911 o a la compañía de luz ahora mismo."),
+    ("injury", [r"\bhay (?:un )?herid[oa]s?\b", r"\balguien (?:est[aá]|se) (?:herid[oa]|lastim\w+|atrapad[oa])\b", r"\bambulancia\b"],
+     "Si alguien está herido, llame al 911 ahora mismo."),
+    ("fallen_tree", [r"\b[aá]rbol(?: \S+){0,4} (?:cay[oó]|ca[ií]do|se cay[oó]|bloqueando)\b", r"\bse cay[oó] (?:un|el) [aá]rbol\b"],
+     "Por favor manténgase alejado del árbol y de lo que esté tocando, y si alguien está herido, llame al 911."),
+    ("irrigation_break", [r"\b(?:aspersor|riego|tuber[ií]a de riego)(?: \S+){0,4} (?:revent\w+|rompi\w+|inundando)\b"],
+     "Si es seguro, cierre el agua del sistema de riego en su llave principal, normalmente cerca del medidor, y "
+     "aléjese de cualquier cosa eléctrica cerca del agua."),
+]
 VERTICALS = {"home_services": {"en": HOME_SERVICES, "es": HOME_SERVICES_ES},
              "hvac": {"en": HOME_SERVICES + HVAC_WINTER, "es": HOME_SERVICES_ES + HVAC_WINTER_ES},
-             "med_spa": {"en": MED_SPA, "es": MED_SPA_ES}}
+             "med_spa": {"en": MED_SPA, "es": MED_SPA_ES},
+             "lawn_care": {"en": LAWN_CARE, "es": LAWN_CARE_ES}}
 
 # Gas or CO with the caller still inside: after the line, this, then hang up (the playbook's rule).
 LEAVE_NOW = {"gas", "carbon_monoxide", "allergic_reaction"}

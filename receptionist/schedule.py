@@ -26,8 +26,22 @@ def _t(hhmm: str) -> time:
     return time(h, m)
 
 
+def _in_season(season: dict, d: date) -> bool:
+    """A season runs from one MM-DD to another, and may wrap the new year (11-15 to 03-31)."""
+    today, a, b = d.strftime("%m-%d"), season["from"], season["to"]
+    return a <= today <= b if a <= b else today >= a or today <= b
+
+
+def hours_table(biz: dict, d: date) -> dict:
+    """The week's hours that apply on day `d`: a matching entry in `seasonal_hours`, else the regular `hours`."""
+    for season in biz.get("seasonal_hours", []):
+        if _in_season(season, d):
+            return season["hours"]
+    return biz["hours"]
+
+
 def hours_for(biz: dict, d: date) -> tuple[str, str] | None:
-    span = biz["hours"].get(DAYS[d.weekday()])
+    span = hours_table(biz, d).get(DAYS[d.weekday()])
     return tuple(span) if span else None
 
 
@@ -128,11 +142,22 @@ def spoken_window(biz: dict, wid: str, now: datetime, lang: str = "en") -> str:
     return f"{spoken_date(d, now.date())}, between {spoken_time(start)} and {spoken_time(end)}"
 
 
-def spoken_hours(biz: dict) -> str:
+def _week_hours(table: dict) -> str:
     parts = []
     for day in DAYS:
-        span = biz["hours"].get(day)
+        span = table.get(day)
         name = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday",
                 "fri": "Friday", "sat": "Saturday", "sun": "Sunday"}[day]
         parts.append(f"{name} {spoken_time(span[0])} to {spoken_time(span[1])}" if span else f"{name} closed")
     return "; ".join(parts)
+
+
+def _month_day(md: str) -> str:
+    return date(2000, int(md[:2]), int(md[3:])).strftime("%B ") + str(int(md[3:]))
+
+
+def spoken_hours(biz: dict) -> str:
+    text = _week_hours(biz["hours"])
+    for season in biz.get("seasonal_hours", []):
+        text += f". {season['label']}, {_month_day(season['from'])} through {_month_day(season['to'])}: {_week_hours(season['hours'])}"
+    return text

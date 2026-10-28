@@ -1,0 +1,417 @@
+{
+  "id": "lawn_care",
+  "name": "Cedar Ridge Lawn & Snow (demo)",
+  "spoken_name": "Cedar Ridge Lawn and Snow",
+  "agent_name": "Riley",
+  "vertical": "lawn_care",
+  "mode": "overflow",
+  "timezone": "America/Los_Angeles",
+  "phone_numbers": [],
+  "greeting": "Cedar Ridge Lawn and Snow, the crews are out on jobs right now. This is Riley.",
+  "greetings": [
+    "Cedar Ridge Lawn and Snow, the crews are out on jobs right now. This is Riley.",
+    "You've reached Cedar Ridge Lawn and Snow. Everyone's out in the field, so this is Riley.",
+    "Cedar Ridge Lawn and Snow, Riley here. The crew's tied up on a job at the moment.",
+    "Thanks for calling Cedar Ridge Lawn and Snow. The team's out working, so you've got Riley.",
+    "Cedar Ridge Lawn and Snow, this is Riley. The crews are out on a job right now."
+  ],
+  "hours": {
+    "mon": [
+      "07:00",
+      "17:00"
+    ],
+    "tue": [
+      "07:00",
+      "17:00"
+    ],
+    "wed": [
+      "07:00",
+      "17:00"
+    ],
+    "thu": [
+      "07:00",
+      "17:00"
+    ],
+    "fri": [
+      "07:00",
+      "17:00"
+    ],
+    "sat": [
+      "08:00",
+      "13:00"
+    ],
+    "sun": null
+  },
+  "seasonal_hours": [
+    {
+      "label": "Winter office hours",
+      "from": "11-15",
+      "to": "03-31",
+      "hours": {
+        "mon": [
+          "08:00",
+          "16:30"
+        ],
+        "tue": [
+          "08:00",
+          "16:30"
+        ],
+        "wed": [
+          "08:00",
+          "16:30"
+        ],
+        "thu": [
+          "08:00",
+          "16:30"
+        ],
+        "fri": [
+          "08:00",
+          "16:30"
+        ],
+        "sat": [
+          "08:00",
+          "12:00"
+        ],
+        "sun": null
+      }
+    }
+  ],
+  "service_area": {
+    "towns": [
+      "Sandpoint",
+      "Ponderay",
+      "Kootenai",
+      "Dover",
+      "Sagle",
+      "Hope",
+      "East Hope",
+      "Clark Fork",
+      "Priest River",
+      "Oldtown",
+      "Laclede",
+      "Cocolalla",
+      "Careywood",
+      "Colburn",
+      "Samuels",
+      "Naples",
+      "Bonners Ferry",
+      "Priest Lake",
+      "Coolin",
+      "Nordman",
+      "Blanchard",
+      "Spirit Lake",
+      "Athol",
+      "Bayview"
+    ],
+    "note": "Homes and small properties in Sandpoint and the towns around it, from Bonners Ferry to Athol and Priest Lake to Clark Fork."
+  },
+  "services": [
+    {
+      "id": "lawn_mowing",
+      "name": "Lawn mowing and trimming: weekly or every-other-week service from late April to October, per visit or on a seasonal contract"
+    },
+    {
+      "id": "spring_cleanup",
+      "name": "Spring cleanup: after snowmelt, raking, debris and winter-kill removal, bed cleanup and a first mow"
+    },
+    {
+      "id": "aeration_overseeding",
+      "name": "Core aeration and overseeding: May to June or September, quoted by lot size"
+    },
+    {
+      "id": "fertilizer_weed_control",
+      "name": "Fertilizer and weed-control program: scheduled rounds from spring through fall, applied by our licensed applicator"
+    },
+    {
+      "id": "irrigation_startup",
+      "name": "Sprinkler system start-up: spring turn-on, a walk through each zone, and adjusting heads"
+    },
+    {
+      "id": "irrigation_winterization",
+      "name": "Sprinkler system winterization: the fall blowout that clears the lines before the ground freezes"
+    },
+    {
+      "id": "beds_mulch",
+      "name": "Landscape bed care: weeding, edging, pruning small shrubs, and mulch or bark delivery and spreading"
+    },
+    {
+      "id": "fall_leaf_cleanup",
+      "name": "Fall leaf cleanup: raking, blowing and hauling leaves in October and November"
+    },
+    {
+      "id": "snow_removal_seasonal",
+      "name": "Snow plowing and removal on a seasonal contract: driveways, plus walkways and steps if wanted, November to March"
+    },
+    {
+      "id": "estimate_visit",
+      "name": "Free estimate visit for any job above: a crew lead walks the property, measures the lot and gives a firm quote"
+    },
+    {
+      "id": "urgent_visit",
+      "name": "Urgent visit: a fallen tree or limb to clear and haul, storm debris blocking access, or a broken sprinkler line flooding the yard. We do not climb, cut standing trees or work near power lines",
+      "emergency": true
+    }
+  ],
+  "not_offered": [
+    "Tree removal, climbing and pruning above head height",
+    "Work near power lines",
+    "Pest control inside buildings",
+    "Excavation, concrete, retaining walls and patios",
+    "Septic and well work",
+    "Plowing large commercial lots over about 10,000 square feet"
+  ],
+  "pricing": [
+    "Estimates are free on every job.",
+    "Mowing starts at $45 a visit, the minimum, and goes up with lot size: bigger lots cost more. Weekly or every-other-week service. The crew lead measures the lot and gives a firm price.",
+    "Spring cleanup starts at $175 for a small lot, priced by lot size and how much debris there is.",
+    "Fall leaf cleanup starts at $195 for a small lot, priced by lot size and leaf load.",
+    "Core aeration starts at $85 for a lot under a quarter acre. Overseeding is extra and quoted on site.",
+    "Fertilizer and weed control is a program of several rounds from spring through fall. A round starts at $55 for a lot under a quarter acre.",
+    "Sprinkler start-up is $95 and winterization is $95 for systems up to eight zones; extra zones are $8 each.",
+    "Snow plowing on a seasonal contract is priced by driveway length and extras like walkways. A one-time visit has a $25 trip fee.",
+    "Urgent and storm-damage visits start at $150, including the first hour.",
+    "These are starting points. The crew lead gives a firm quote after seeing the property, and we never quote a repair or job price over the phone for a specific lot.",
+    "(These are demo prices for a fictional business.)"
+  ],
+  "booking": {
+    "windows": [
+      [
+        "07:00",
+        "09:00"
+      ],
+      [
+        "09:00",
+        "11:00"
+      ],
+      [
+        "11:00",
+        "13:00"
+      ],
+      [
+        "13:00",
+        "15:00"
+      ],
+      [
+        "15:00",
+        "17:00"
+      ]
+    ],
+    "technicians": 2,
+    "crew_word": "crew leads",
+    "min_lead_minutes": 120,
+    "days_ahead": 10,
+    "emergency_lead_minutes": 30,
+    "emergency_extra": 1,
+    "note": "Each visit is a free estimate or an urgent visit, and each service is its own booking. An urgent visit can be booked into the earliest window with a short lead time, even if that window is otherwise full."
+  },
+  "transfer_targets": {
+    "owner": {
+      "label": "the owner's cell",
+      "number": "+12085550102",
+      "when": "Any hour: an urgent call, an upset customer, or a caller who asks for the owner. Take the caller's message first, so nothing is lost if nobody answers.",
+      "available": "always"
+    }
+  },
+  "owner_sms": "+12085550102",
+  "texting_enabled": false,
+  "emergency_callback_minutes": 15,
+  "speech_keywords": [
+    "aeration",
+    "overseeding",
+    "fertilizer",
+    "mulch",
+    "sprinkler",
+    "irrigation",
+    "winterization",
+    "blowout",
+    "plow",
+    "plowing",
+    "snow removal",
+    "leaf cleanup",
+    "spring cleanup",
+    "lawn",
+    "landscaping",
+    "Cedar Ridge",
+    "Sandpoint",
+    "Ponderay",
+    "Kootenai",
+    "Dover",
+    "Sagle",
+    "Hope",
+    "East Hope",
+    "Clark Fork",
+    "Priest River",
+    "Oldtown",
+    "Laclede",
+    "Cocolalla",
+    "Careywood",
+    "Colburn",
+    "Samuels",
+    "Naples",
+    "Bonners Ferry",
+    "Priest Lake",
+    "Coolin",
+    "Nordman",
+    "Blanchard",
+    "Spirit Lake",
+    "Athol",
+    "Bayview"
+  ],
+  "faqs": [
+    {
+      "q": "Do you give free quotes?",
+      "a": "Yes. Estimates are free. A crew lead walks the property, measures the lot and gives a firm quote. (Demo business.)"
+    },
+    {
+      "q": "How is mowing priced?",
+      "a": "By lot size, with a minimum per visit. The crew lead measures the lot at the estimate and gives a firm price."
+    },
+    {
+      "q": "Do I need to be home for the estimate?",
+      "a": "No, for outside work. Just make sure any gate is unlocked and any dog is put away. For something inside a fence or a locked area, leave a note with the access details."
+    },
+    {
+      "q": "Do you do weekly service?",
+      "a": "Yes. Mowing is weekly or every other week, per visit or on a seasonal contract. The crew lead sets the schedule at the estimate."
+    },
+    {
+      "q": "Do you handle snow plowing?",
+      "a": "Yes, snow removal is part of the business, mostly on seasonal contracts from November to March. Contract customers are served first, and I can book a free estimate."
+    },
+    {
+      "q": "What happens if the weather is bad?",
+      "a": "Rain, snow, and wet or frozen ground can move a job by a day or more. The crew lead will call or text if a visit has to move. I can't promise a date for the work itself."
+    },
+    {
+      "q": "When do you turn on and winterize sprinklers?",
+      "a": "Start-up is after the last hard freeze, usually late April into May. Winterization runs from early October until the ground freezes, usually by mid-November. Booking early in the season is best."
+    },
+    {
+      "q": "Can you aerate or fertilize in the spring?",
+      "a": "Aeration works best in May to June or in September, and we can't aerate or treat ground that is frozen or soaked. The crew lead decides the timing at the estimate."
+    },
+    {
+      "q": "Are you licensed and insured?",
+      "a": "Yes. Cedar Ridge is licensed and fully insured, and our applicator holds the state pesticide license. (Demo business.)"
+    },
+    {
+      "q": "What payment methods do you take?",
+      "a": "Credit and debit cards, checks and cash. Seasonal contracts are billed monthly."
+    },
+    {
+      "q": "Who clears snow at my business or a big lot?",
+      "a": "We plow homes and small properties. For large commercial lots over about 10,000 square feet, I can take a message for the owner."
+    },
+    {
+      "q": "Do you call before arriving?",
+      "a": "Yes. The crew lead calls or texts about 30 minutes before arriving for the estimate."
+    },
+    {
+      "q": "Can I get a text confirmation?",
+      "a": "I can't send texts right now. I'll give you a confirmation number to write down."
+    }
+  ],
+  "never_say": [
+    "Never promise a day or time for the work itself, only the estimate window that was booked.",
+    "Never name a price for the caller's own lot.",
+    "Never recommend, name or measure a chemical product, and never say a treatment is safe or unsafe for pets, kids, bees, a garden or a well beyond the approved tip.",
+    "Never diagnose a lawn, tree or plant problem or promise how it will look.",
+    "Never advise anyone to cut, climb or move a tree, or to go near a power line.",
+    "Never offer discounts, coupons or promotions.",
+    "Never promise a plow time.",
+    "Never say or imply that the crew will arrive before or outside the booked window."
+  ],
+  "approved_tips": [
+    {
+      "when": "a lawn that was just fertilized or treated, and the caller asks about kids or pets",
+      "tip": "Please keep kids and pets off the treated area until it's completely dry, and follow the instructions on the notice our crew left at the door."
+    },
+    {
+      "when": "a sprinkler system that won't shut off",
+      "tip": "You can turn off the water to the sprinkler system at its main shutoff valve; if you can't find it, I'll take a message so the crew can help."
+    },
+    {
+      "when": "a driveway or walkway that's icy",
+      "tip": "Please be careful walking on it, and a little sand or ice melt from the hardware store on the walking path helps with grip."
+    },
+    {
+      "when": "a lawn that is wet or muddy from spring thaw",
+      "tip": "It helps to keep heavy foot traffic and vehicles off soggy ground until it firms up, which protects the grass roots."
+    }
+  ],
+  "demo_seed": {
+    "customers": [
+      {
+        "phone": "+12085550142",
+        "name": "Pat Rivera",
+        "address": "14 Birch Lane",
+        "town": "Sagle",
+        "notes": "Weekly mowing customer since May 2026. (Demo data.)"
+      },
+      {
+        "phone": "+12085550160",
+        "name": "Morgan Ellis",
+        "address": "7 Willow Court",
+        "town": "Ponderay",
+        "notes": "Sprinkler winterization booked for this fall. (Demo data.)"
+      }
+    ],
+    "appointments": [
+      {
+        "day_offset": 1,
+        "window_start": "07:00",
+        "count": 2
+      },
+      {
+        "day_offset": 1,
+        "window_start": "09:00",
+        "count": 1
+      },
+      {
+        "day_offset": 2,
+        "window_start": "07:00",
+        "count": 2
+      }
+    ],
+    "customer_appointments": [
+      {
+        "phone": "+12085550160",
+        "confirmation": "L0901",
+        "service_id": "irrigation_winterization",
+        "day_offset": 2,
+        "window_start": "11:00",
+        "problem": "Eight-zone system blowout before the first hard freeze."
+      }
+    ]
+  },
+  "simulate_quick": [
+    "new_mowing_estimate",
+    "fallen_tree_driveway",
+    "price_shopper_lot",
+    "pesticide_advice_pets",
+    "ai_question_lawn",
+    "reschedule_existing_lawn"
+  ],
+  "voice": {
+    "voice_id": "custom_voice_e930e1108cb707205e6942c028",
+    "voice_model": "eleven_v4_turbo",
+    "fallback_voice_ids": [
+      "cartesia-Cimo"
+    ],
+    "enable_backchannel": false,
+    "ambient_sound": null,
+    "enable_dynamic_voice_speed": false,
+    "enable_dynamic_responsiveness": false,
+    "responsiveness": 1.0,
+    "interruption_sensitivity": 0.9,
+    "denoising_mode": "noise-and-background-speech-cancellation",
+    "voice_temperature": 1.3,
+    "voice_speed": 1.15
+  },
+  "recording_notice": "This call is recorded.",
+  "ai_disclosure_in_greeting": true,
+  "retention_days": 90,
+  "token_version": 1,
+  "calendars": [],
+  "demo": true
+}

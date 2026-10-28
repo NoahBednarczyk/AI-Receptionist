@@ -109,3 +109,6 @@ Pushed 0a0bcad and ran retell-tune --business hvac on 2026-10-27; Render serves 
 
 ### Security, notice, retention, calendars (2026-10-28, local only, NOT pushed)
 Built from the Ringback Multi-Shop Readiness Spec (items A, B, C, D). Details in README "Access keys and client files" and "Hardening, notice, retention and calendars". Before deploying: set `TOKEN_SECRET` on Render (old calendar links die; regenerate with `owner-links`), and `pip install` picks up icalendar and recurring-ical-events. Demo shops keep the old greeting (both flags off) so the live line does not change; new clients get notice and disclosure on. 184 tests pass; nothing here was tried on a real call, a real Render deploy or a real Google calendar link.
+
+### Lawn care demo shop (2026-10-28, committed locally, not pushed)
+Built from the mentor's relays of Noah's request (generic fictional shop, not Luke's real data). See README "Lawn care and snow demo". The live line and `default_business` are unchanged (hvac). Open: how Luke calls it (see README for the swap), and Noah's approval to put it on the live number. Simulated: quick 6 (4/6, fixed, rerun 2/2); remaining 6 scenarios unrun; $0.60 of the day's $1 spent.

@@ -133,6 +133,29 @@ HVAC_TIP_RULE = (
 TERMS["hvac"] = {**TERMS["home_services"], "advice": TERMS["home_services"]["advice"] + HVAC_ADVICE_EXTRA + HVAC_TIP_RULE}
 
 
+# Lawn care, landscaping and snow removal: estimate-first booking, and no chemical advice beyond the approved tips.
+LAWN_ADVICE = (
+    "- You can share a matching approved tip from the business facts when the caller describes the problem or asks what "
+    "to do, in one sentence, as the whole reply: ask your next question in your next turn. Never tack a tip onto a "
+    "booking confirmation or a goodbye. Getting the caller booked or their message taken comes first.\n"
+    "- Never give advice about chemicals: which product to use, how much, when to spray, mixing, weed killers, "
+    "fertilizer or pesticide rates, or whether a treatment is safe for pets, kids, bees, a garden or a well. Say that "
+    "one is for the crew lead at the visit, and offer to book the visit or take a message. The approved tips are the "
+    "only exceptions.\n"
+    "- Never diagnose a lawn, tree or plant problem (disease, grubs, drought, \"it just needs water\") and never "
+    "promise results (\"it'll green up\", \"the weeds will be gone\"). A crew lead looks at it on site.\n"
+    "- Never advise on tools, mowers, chainsaws, ladders, climbing, cutting or moving a fallen tree or branch, "
+    "electrical work, irrigation valves or controllers, or anything near a power line. For those: \"That one's for the "
+    "crew; I can't walk you through it over the phone.\"\n"
+    "- Never quote a price for a particular lot. Share only the prices and rules in the business facts, say that the "
+    "crew lead gives a firm quote after seeing the property or its size, and offer a free estimate visit.\n"
+    "- In an emergency, stick to the playbook's safety line; no other tips.\n")
+TERMS["lawn_care"] = {**TERMS["home_services"], "advice": LAWN_ADVICE,
+                      "unknown_example": "which crew member will come or the exact day a plow will arrive",
+                      "promise_example": "a crew arriving by a certain time, results on a lawn, or a plow reaching a "
+                                         "driveway before a certain hour, and don't say a crew is coming until it's booked"}
+
+
 def stable_prompt(biz: dict) -> str:
     playbook = (PLAYBOOKS / f"{biz['vertical']}.md").read_text().strip()
     return "\n\n".join([
@@ -194,7 +217,7 @@ def booking_line(biz: dict, windows: str) -> str:
     if schedule.in_clinic(biz):
         return (f"Booking: clients come in at a fixed time ({windows}) on days we're open, about an hour each, only "
                 f"where the appointment fits inside that day's hours. {note}").strip()
-    return (f"Booking: technicians arrive within a two-hour window ({windows}) on days we're open, "
+    return (f"Booking: {biz['booking'].get('crew_word', 'technicians')} arrive within a two-hour window ({windows}) on days we're open, "
             f"only where the window fits inside that day's hours. {note}").strip()
 
 
@@ -218,7 +241,7 @@ def announce(biz: dict, greeting: str) -> str:
     Both are configured per shop: `recording_notice` (text; empty turns it off) and `ai_disclosure_in_greeting`."""
     text = greeting.strip()
     if biz.get("ai_disclosure_in_greeting", True) and "virtual assistant" not in text.lower():
-        place = "shop" if biz.get("vertical") in ("hvac", "home_services") else "business"
+        place = "shop" if biz.get("vertical") in ("hvac", "home_services", "lawn_care") else "business"
         text += f" I'm the {place}'s virtual assistant."
     notice = biz.get("recording_notice", DEFAULT_NOTICE)
     if notice and notice.lower() not in text.lower():
