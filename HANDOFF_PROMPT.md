@@ -1,6 +1,6 @@
 # Handoff prompt: AI phone receptionist (paste this into the new session)
 
-You're taking over a project in `/Users/noahbednarczyk/Movies/claude-videos/receptionist`: an AI phone receptionist for small businesses, starting with home services. The demo business is "Acme Plumbing & Heating", set in Sandpoint, Idaho. **Read `CLAUDE.md` in that folder first**; it is the detailed handoff and is kept current. Then read `README.md` for the design, costs and go-live list. The design doc is a Claude Doc: https://claude.ai/artifact/GtSqWJL89vevGzkp3oeMUN
+You're taking over a project in `/Users/noahbednarczyk/Documents/receptionist`: an AI phone receptionist for small businesses, starting with home services. The demo business is "Acme Plumbing & Heating", set in Sandpoint, Idaho. **Read `CLAUDE.md` in that folder first**; it is the detailed handoff and is kept current. Then read `README.md` for the design, costs and go-live list. The design doc is a Claude Doc: https://claude.ai/artifact/GtSqWJL89vevGzkp3oeMUN
 
 ## State as of 2026-10-26
 - **It is live.** Retell answers +1 208-428-6760 and talks to our server over a custom-LLM websocket. Server: `PUBLIC_BASE_URL=https://spent-henna-rut.ngrok-free.dev .venv/bin/python -m receptionist serve --port 8000` (ngrok must also be running; the free static domain is `spent-henna-rut.ngrok-free.dev`). It runs in Terminal-panel tab `c1`, ngrok in `c2`.
