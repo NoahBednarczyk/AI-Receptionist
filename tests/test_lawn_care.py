@@ -18,15 +18,13 @@ class Shop(unittest.TestCase):
         self.assertIn("(demo)", LAWN["name"])
         self.assertTrue(LAWN["demo"])
         self.assertEqual(LAWN["mode"], "overflow")
-        self.assertEqual(LAWN["phone_numbers"], [])         # no number yet: nothing live is changed
+        self.assertEqual(LAWN["phone_numbers"], ["+12084286760"])     # the live number runs this demo for now
         self.assertNotEqual(LAWN["agent_name"], "Sam")
 
-    def test_the_live_hvac_line_and_default_are_untouched(self):
+    def test_the_number_moved_from_hvac_without_clashing(self):
         hvac = load_business(CFG, "hvac")
-        self.assertEqual(CFG["default_business"], "hvac")
-        self.assertEqual(hvac["phone_numbers"], ["+12084286760"])
+        self.assertEqual(hvac["phone_numbers"], [])          # swap back: move the number here and retell-tune
         self.assertEqual(hvac["agent_name"], "Sam")
-        self.assertEqual((hvac["recording_notice"], hvac["ai_disclosure_in_greeting"]), ("", False))
         all_businesses(CFG)                                  # no duplicate id or number across shops
 
     def test_services_cover_the_seasonal_calendar(self):
@@ -49,13 +47,18 @@ class Shop(unittest.TestCase):
         self.assertEqual(winter, ["09:00", "11:00", "13:00"])
         self.assertEqual(schedule.hours_for({"hours": {"tue": ["07:00", "17:00"]}}, datetime.date(2026, 6, 16)), ("07:00", "17:00"))
 
-    def test_greeting_discloses_and_the_prompt_carries_the_rules(self):
-        said = prompts.announce(LAWN, LAWN["greeting"])
-        self.assertIn("virtual assistant", said)
-        self.assertIn("recorded", said)
+    def test_the_greeting_is_plain_but_the_agent_owns_up_when_asked(self):
+        for g in LAWN["greetings"]:
+            said = prompts.announce(LAWN, g.format(daypart="morning"))
+            self.assertNotIn("virtual assistant", said.lower())
+            self.assertNotIn("recorded", said.lower())
         p = prompts.stable_prompt(LAWN)
+        self.assertIn("virtual assistant", p.lower())          # the standing rule: say so plainly when asked
+        self.assertIn("never claim", p.lower())
+        self.assertIn("Is this call recorded?", p)
+        self.assertTrue(LAWN["notice_waived"])
         for needle in ("Never give advice about chemicals", "Never quote a price for a particular lot", "never claim",
-                       "Season awareness", "Power line down", "urgent_visit"):
+                       "Season awareness", "Power line down", "urgent_visit", "How you sound", "never open with"):
             self.assertIn(needle.lower(), p.lower(), needle)
         for forbidden in ("gas smell", "carbon monoxide", "rotten-egg", "furnace"):
             self.assertNotIn(forbidden, p.lower(), forbidden)

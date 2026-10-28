@@ -154,9 +154,9 @@ class OverflowTests(unittest.TestCase):
         self.assertNotIn("med spa", p.lower())
         self.assertIn("virtual assistant", p)                      # the AI-disclosure rule is intact
 
-    def test_the_live_number_belongs_to_exactly_one_business_the_default(self):
+    def test_the_live_number_belongs_to_exactly_one_business(self):
         live = "+12084286760"
-        self.assertEqual(business_for_number(CFG, live)["id"], "hvac")
+        self.assertEqual(business_for_number(CFG, live)["id"], "lawn_care")     # moved 2026-10-28 for the lawn care demo; swap back by moving it to hvac.json
         self.assertEqual(CFG["default_business"], "hvac")
         numbers = [n for b in all_businesses(CFG) for n in b.get("phone_numbers", [])]
         self.assertEqual(len(numbers), len(set(numbers)))          # no number routes to two businesses

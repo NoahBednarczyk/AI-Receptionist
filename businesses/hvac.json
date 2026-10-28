@@ -6,9 +6,7 @@
   "vertical": "hvac",
   "mode": "overflow",
   "timezone": "America/Los_Angeles",
-  "phone_numbers": [
-    "+12084286760"
-  ],
+  "phone_numbers": [],
   "greeting": "Peak Heating and Plumbing, the crew's out on a job right now. This is Sam.",
   "greetings": [
     "Peak Heating and Plumbing, the crew's out on a job right now. This is Sam.",

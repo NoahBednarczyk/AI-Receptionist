@@ -6,7 +6,9 @@
   "vertical": "lawn_care",
   "mode": "overflow",
   "timezone": "America/Los_Angeles",
-  "phone_numbers": [],
+  "phone_numbers": [
+    "+12084286760"
+  ],
   "greeting": "Cedar Ridge Lawn and Snow, the crews are out on jobs right now. This is Riley.",
   "greetings": [
     "Cedar Ridge Lawn and Snow, the crews are out on jobs right now. This is Riley.",
@@ -309,6 +311,10 @@
     {
       "q": "Can I get a text confirmation?",
       "a": "I can't send texts right now. I'll give you a confirmation number to write down."
+    },
+    {
+      "q": "Is this call recorded?",
+      "a": "Yes. Calls are recorded and written up so the owner can read them."
     }
   ],
   "never_say": [
@@ -408,10 +414,11 @@
     "voice_temperature": 1.3,
     "voice_speed": 1.15
   },
-  "recording_notice": "This call is recorded.",
-  "ai_disclosure_in_greeting": true,
+  "recording_notice": "",
+  "ai_disclosure_in_greeting": false,
   "retention_days": 90,
   "token_version": 1,
   "calendars": [],
-  "demo": true
+  "demo": true,
+  "notice_waived": true
 }
