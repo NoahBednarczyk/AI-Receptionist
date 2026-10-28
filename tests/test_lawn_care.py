@@ -135,7 +135,7 @@ class Character(unittest.TestCase):
         self.assertGreater(len(seen), 30)
         text = "\n".join(seen)
         self.assertIn("Your character on this call:", text)
-        self.assertIn("never use the same one twice in a row", text)
+        self.assertIn("answer most of the time with no acknowledgement word at all", text)
         self.assertIn("leaf drop", text)                                   # an October aside
         self.assertNotIn("snowbanks", text)                                # but no deep-winter aside in October
         self.assertNotIn("one sec", text.lower())

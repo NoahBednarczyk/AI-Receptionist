@@ -35,6 +35,13 @@ ANYTHING_ELSE = re.compile(r"\banything else (?:i|we) can (?:help|do)|^anything 
 # Speech that isn't meant for the agent (the caller talking to someone next to them): the model answers with this
 # marker instead of words, and nothing is spoken.
 LISTENING = "(listening)"
+# A short acknowledgement ("Perfect.", "Alright,", "Sure thing.") at the start of a sentence. It must end in punctuation
+# so that "Right now we have..." is not mistaken for one.
+ACK = re.compile(r"^(?P<ack>al(?:l ?|)right|okay|ok|sure thing|sure|perfect|sounds good|you bet|gotcha|got it|right|makes sense|"
+                 r"yep|yeah|done|will do|understood|great|awesome|absolutely|of course|no problem|solid|nice|cool|excellent|"
+                 r"wonderful|fair enough|thanks|thank you|mm-?hmm|mm|ah|huh)(?:[,.!;]+|$)\s*(?P<rest>.*)$", re.I | re.S)
+RECENT_ACKS = 3   # an acknowledgement can't come back until three others have been used
+
 SILENT = re.compile(r"^\W*\(?\s*listening\s*\)?\W*$", re.I)
 # Sent once when everything the model said this turn was held back, so the caller isn't left with silence.
 NUDGE = ("(System note: the caller heard nothing from you this turn. Reply to them now in one or two short "
@@ -52,8 +59,10 @@ class Sentences:
     and `held` (the sentences cut for length) goes to the model with the caller's next words, so it knows what
     it still has to say instead of assuming it asked."""
 
-    def __init__(self, say: Callable[[str], None], budget: int | None = None, said_once: set | None = None):
+    def __init__(self, say: Callable[[str], None], budget: int | None = None, said_once: set | None = None,
+                 recent: list | None = None):
         self.say, self.buf, self.kept, self.dropped, self.held = say, "", [], [], []
+        self.recent = list(recent or ())   # acknowledgements used lately this call, oldest first
         self.silent = False   # the model chose to stay quiet (LISTENING)
         self.budget, self.used, self.cut = budget, 0, False
         self.said_once = set(said_once or ())
@@ -74,14 +83,34 @@ class Sentences:
 
     def close(self) -> str:
         """End of a text block: release the rest and return what was said of the block."""
-        self._release(self.buf)
+        self._release(self.buf, final=True)
         said, self.buf, self.kept = " ".join(self.kept), "", []
         return said
 
-    def _release(self, sentence: str) -> None:
+    def _fresh(self, sentence: str, final: bool) -> str | None:
+        """Drops an acknowledgement the caller heard a moment ago ("Perfect." again) so a call doesn't repeat itself.
+        A lone repeat goes (unless it is all there is to say); a repeat leading a longer sentence is stripped."""
+        m = ACK.match(sentence)
+        if not m:
+            return sentence
+        ack, rest = re.sub(r"\W", "", m.group("ack").lower()), m.group("rest").strip()
+        if ack not in self.recent:
+            self.recent = (self.recent + [ack])[-RECENT_ACKS:]
+            return sentence
+        if rest:
+            self.dropped.append(sentence)      # history then keeps only what was said
+            return rest[0].upper() + rest[1:]
+        return sentence if final and not self.kept and not self.used else None
+
+    def _release(self, sentence: str, final: bool = False) -> None:
         sentence = sentence.strip()
         if not sentence:
             return
+        fresh = self._fresh(sentence, final)
+        if fresh is None:
+            self.dropped.append(sentence)
+            return
+        sentence = fresh
         if SILENT.match(sentence):
             self.silent = True
             return
@@ -160,6 +189,7 @@ class CallSession:
         self.usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
         self._before = None   # see revert_last()
         self._said_once: set = set()   # once-a-call lines already said (see Sentences)
+        self._recent_acks: list = []   # acknowledgements used lately, so a call doesn't keep saying "Perfect."
         self._held_back: list[str] = []   # sentences of the last reply cut for length (see Sentences)
         store.start_call(self.call_id, biz["id"], platform, caller, now)
 
@@ -237,7 +267,7 @@ class CallSession:
                 first = time.monotonic() - start   # a whole sentence is ready for text-to-speech
             emit(sentence, True)
 
-        words = Sentences(speak, a.get("reply_word_budget"), self._said_once)
+        words = Sentences(speak, a.get("reply_word_budget"), self._said_once, self._recent_acks)
         if emergency:
             first = 0.0
             emit(emergency[1], True)
@@ -352,13 +382,13 @@ class CallSession:
         final = any(c["name"] in IRREVERSIBLE for c in used)
         go_on(irreversible=True)
         self._save(messages, caller_text, entry, emergency, final)
-        self._said_once, self._held_back = words.said_once, words.held
+        self._said_once, self._held_back, self._recent_acks = words.said_once, words.held, words.recent
         return Turn(reply, used, first, time.monotonic() - start, self.ctx.ended)
 
     def _save(self, messages: list[dict], caller_text: str, entry: dict, emergency, final: bool) -> None:
         # The state before this turn, kept so revert_last() can take back a reply the caller never heard.
         self._before = None if final else (len(self.messages), len(self.transcript), self.ctx.safety_given,
-                                           self._held_back, self._said_once)
+                                           self._held_back, self._said_once, self._recent_acks)
         self.messages = messages
         self.transcript += [{"role": "caller", "text": caller_text}, entry]
         if emergency:
@@ -369,7 +399,7 @@ class CallSession:
         Only turns that changed nothing outside the conversation (no booking, message, transfer or hang-up)."""
         if not self._before:
             return False
-        n_messages, n_transcript, self.ctx.safety_given, self._held_back, self._said_once = self._before
+        n_messages, n_transcript, self.ctx.safety_given, self._held_back, self._said_once, self._recent_acks = self._before
         del self.messages[n_messages:], self.transcript[n_transcript:]
         self._before = None
         return True

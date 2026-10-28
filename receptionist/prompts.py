@@ -246,8 +246,9 @@ def character_kit(biz: dict, now: datetime, rng=random) -> list[str]:
     lines = []
     if quirks:
         lines.append(f"Your character on this call: {rng.choice(quirks)}")
-    lines.append("Acknowledgement words you favor on this call (rotate them, and never use the same one twice in a "
-                 "row): " + ", ".join(rng.sample(ACKS, 4)) + ".")
+    lines.append("Acknowledgement words you lean on this call: " + ", ".join(rng.sample(ACKS, 4)) + ". Use each at most "
+                 "once or twice in the whole call, and answer most of the time with no acknowledgement word at all: "
+                 "just go to your next question or the answer.")
     fits = [a["text"] for a in asides if now.month in a.get("months", range(1, 13))]
     if fits and rng.random() < 0.6:
         lines.append(f"If the caller seems relaxed, you may make one small aside about the season, at most once: "

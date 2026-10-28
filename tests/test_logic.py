@@ -531,6 +531,47 @@ class SpokenFilterTests(unittest.TestCase):
         self.assertEqual(s.messages[-1]["content"], [{"type": "text", "text": "Is the water still spreading?"}])
         self.assertTrue(s.transcript[-1]["dropped"][0].startswith("Wait, I should"))
 
+    def test_an_acknowledgement_is_not_repeated_within_a_call(self):
+        from receptionist.agent import Sentences
+        heard, recent = [], []
+        for text in ("Perfect. What's the address? ", "Perfect. And your name? ", "Alright, what town is that? ",
+                     "Alright, and a callback number? ", "Right now we have two openings. "):
+            words = Sentences(heard.append, recent=recent)
+            words.add(text)
+            words.close()
+            recent = words.recent
+        self.assertEqual(heard, ["Perfect.", "What's the address?", "And your name?", "Alright, what town is that?",
+                                 "And a callback number?", "Right now we have two openings."])
+
+    def test_a_lone_repeated_acknowledgement_is_dropped_unless_it_is_all_there_is(self):
+        from receptionist.agent import Sentences
+        heard = []
+        words = Sentences(heard.append, recent=["perfect"])
+        words.add("Perfect. What town is that? ")
+        words.close()
+        self.assertEqual(heard, ["What town is that?"])
+        self.assertEqual(words.dropped, ["Perfect."])
+        heard.clear()
+        only = Sentences(heard.append, recent=["perfect"])
+        only.add("Perfect.")
+        only.close()
+        self.assertEqual(heard, ["Perfect."])          # a reply never goes silent
+
+    def test_acknowledgements_come_back_after_others_and_a_taken_back_turn_forgets_them(self):
+        from receptionist.agent import Sentences
+        recent = []
+        for ack in ("Perfect.", "Alright.", "Okay.", "Sure thing.", "Perfect."):
+            heard = []
+            words = Sentences(heard.append, recent=recent)
+            words.add(ack + " Next question? ")
+            words.close()
+            recent = words.recent
+        self.assertEqual(heard[0], "Perfect.")          # three others have been used since, so it may return
+        s = session(reply("end_turn", text("Perfect. What town?")), reply("end_turn", text("Perfect. And your name?")))
+        s.respond("Hi")
+        self.assertEqual(s._recent_acks, ["perfect"])
+        self.assertEqual(s.respond("Mine is on Oak").text, "And your name?")
+
     def test_a_long_reply_stops_after_the_answer(self):
         from receptionist.agent import Sentences
         heard = []
