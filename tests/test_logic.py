@@ -20,6 +20,7 @@ from receptionist.speech import normalize_phone, ordinal, spoken_date, spoken_ti
 from receptionist.store import Store
 from receptionist.tools import ToolContext, run_tool, schemas
 
+os.environ.setdefault("ALLOW_UNVERIFIED_WEBHOOKS", "1")   # tests post to the platform routes without signing
 CFG = load_config()
 BIZ = load_business(CFG, "acme")
 TUE_1015 = schedule.local_now(BIZ, "2026-10-27T10:15")
@@ -776,7 +777,7 @@ class LiveCallTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         from receptionist.server import create_app
         self.tmp = tempfile.TemporaryDirectory()
-        os.environ.update(RETELL_WS_SECRET="s3cret", DASHBOARD_TOKEN="dash")
+        os.environ.update(RETELL_WS_SECRET="s3cret", DASHBOARD_TOKEN="dash-admin-key-" + "x" * 16)
         summary = {"summary": "Booked a leak repair.", "caller_name": "Jordan", "callback_number": "3125550177",
                    "intent": "new_job", "outcome": "booked", "urgency": "this_week", "follow_up": "", "flags": []}
         now = schedule.local_now(BIZ)
@@ -828,7 +829,7 @@ class LiveCallTests(unittest.TestCase):
             self.assertIn("no_answer", self.fake.requests[-1]["messages"][-1]["content"][0]["content"])
         # The agent saw exactly what the caller said, and the call was stored with its summary.
         self.assertEqual(self.fake.requests[0]["messages"][-1], {"role": "user", "content": "My sink is leaking."})
-        page = self.client.get("/dashboard", params={"token": "dash", "business": "acme"}).text
+        page = self.client.get("/dashboard", params={"token": "dash-admin-key-" + "x" * 16, "business": "acme"}).text   # follows the redirect, keeping the cookie
         self.assertIn("Booked a leak repair.", page)
         self.assertEqual(self.client.get("/dashboard", params={"token": "nope"}).status_code, 404)
 

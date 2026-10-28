@@ -1,4 +1,4 @@
-"""Sign up a new shop: write businesses/<id>.json from a short intake and print the owner's one-page checklist.
+"""Sign up a new shop: write <data dir>/clients/<id>.json from a short intake and print the owner's one-page checklist.
 
     python -m receptionist new-client                 # asks the questions, with defaults in [brackets]
     python -m receptionist new-client --from intake.yaml
@@ -6,6 +6,9 @@
 The shop starts from the Peak Heating & Plumbing demo (businesses/hvac.json): same agent, playbook, safety lines and
 overflow mode; only the shop's own facts change. Nothing here calls the API, so it costs nothing and a new client's
 file can be written, checked and corrected in a few minutes.
+
+Real shops are written to the clients folder (`cfg["clients_dir"]`, under the data directory and so never in git),
+not to `businesses/`, which holds the demo shops in the public repo. A shop's owner cell and prices stay off GitHub.
 """
 from __future__ import annotations
 
@@ -157,6 +160,18 @@ def build(intake: dict, template: dict) -> dict:
     biz["transfer_targets"]["owner"]["number"] = owner
     biz["greeting"] = biz["greetings"][0].replace("Peak Heating and Plumbing", spoken)
     biz["greetings"] = [g.replace("Peak Heating and Plumbing", spoken) for g in biz["greetings"]]
+    # The recording notice and AI disclosure are on for every new shop (the demo shops' own switches are not inherited).
+    biz["recording_notice"] = intake.get("recording_notice", prompts.DEFAULT_NOTICE)
+    biz["ai_disclosure_in_greeting"] = bool(intake.get("ai_disclosure_in_greeting", True))
+    biz["retention_days"] = int(intake.get("retention_days") or 90)
+    biz["token_version"] = 1
+    biz["calendars"] = []
+    if intake.get("calendar_url"):
+        url = str(intake["calendar_url"]).strip()
+        if not re.match(r"^(https|webcal)://[^\s]+$", url, re.I):
+            raise IntakeError("The calendar link must start with https:// (or webcal://).")
+        biz["calendars"] = [{"type": "ical", "url": url, "label": intake.get("calendar_label") or "shop calendar"}]
+    biz.pop("notice_waived", None)
     # Keep only the answers that describe how the agent itself works; everything else comes from the shop.
     keep = ("stove", "no heat")
     biz["faqs"] = [f for f in template["faqs"] if any(k in f["q"].lower() for k in keep)]
@@ -170,11 +185,28 @@ def build(intake: dict, template: dict) -> dict:
 
 def check(biz: dict) -> None:
     """Everything the live server does with a business, run once so a bad file is caught now, not on a call."""
+    if not biz.get("recording_notice", prompts.DEFAULT_NOTICE) and not biz.get("ai_disclosure_in_greeting", True) \
+            and not biz.get("notice_waived"):
+        raise IntakeError("Both the recording notice and the AI disclosure are off. Turn one on, or pass --allow-no-notice "
+                          "if the shop's lawyer has cleared a greeting without them.")
     prompts.stable_prompt(biz)
     tools.schemas(biz)
     safety.match(biz["vertical"], "my furnace is out and it is freezing")
     schedule.spoken_hours(biz)
     assert schedule.open_windows(biz, schedule.local_now(biz), {}), "no booking windows fit inside the shop's hours"
+
+
+def check_unique(cfg: dict, biz: dict, replacing: bool = False) -> None:
+    """The id and the phone numbers must not already belong to another shop, demo or real."""
+    from .config import all_businesses
+    for other in all_businesses(cfg):
+        if other["id"] == biz["id"]:
+            if replacing and other["id"] not in {Path(p).stem for p in Path(cfg["businesses_dir"]).glob("*.json")}:
+                continue
+            raise IntakeError(f"A shop with the id {biz['id']!r} already exists. Choose a different name or pass --force.")
+        shared = {normalize_phone(n) for n in biz.get("phone_numbers", [])} & {normalize_phone(n) for n in other.get("phone_numbers", [])}
+        if shared:
+            raise IntakeError(f"That number already belongs to {other['name']}.")
 
 
 def ask_interactively(input_fn=input, out=print) -> dict:
@@ -245,20 +277,24 @@ THE RULES OF THE PILOT
 """
 
 
-def write(biz: dict, businesses_dir: Path, force: bool = False) -> Path:
-    path = Path(businesses_dir) / f"{biz['id']}.json"
+def write(biz: dict, clients_dir: Path, force: bool = False) -> Path:
+    Path(clients_dir).mkdir(parents=True, exist_ok=True)
+    path = Path(clients_dir) / f"{biz['id']}.json"
     if path.exists() and not force:
         raise IntakeError(f"{path.name} already exists. Choose a different shop name or pass --force.")
     path.write_text(json.dumps(biz, indent=2, ensure_ascii=False) + "\n")
     return path
 
 
-def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print) -> Path:
+def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print, allow_no_notice: bool = False) -> Path:
     template = json.loads((Path(cfg["businesses_dir"]) / f"{TEMPLATE_ID}.json").read_text())
     intake = intake or ask_interactively()
     biz = build(intake, template)
+    if allow_no_notice:
+        biz["notice_waived"] = True
     check(biz)
-    path = write(biz, cfg["businesses_dir"], force)
+    check_unique(cfg, biz, force)
+    path = write(biz, cfg["clients_dir"], force)
     sheet = checklist(biz, biz["phone_numbers"][0] if biz["phone_numbers"] else None)
     sheet_path = path.with_suffix(".checklist.txt")
     sheet_path.write_text(sheet)
@@ -269,6 +305,22 @@ def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print) -
         out("No forwarding number yet. Assign one, add it to phone_numbers in the file, and regenerate the checklist.")
     out(f"Owner checklist (also saved to {sheet_path.name}):\n\n{sheet}")
     out("OUR SIDE: assign the shop its own number in Retell, point it at the existing agent, add the number to "
-        f"phone_numbers in {path.name}, run the tests, push, and run `retell-tune --business {biz['id']}`. "
+        f"phone_numbers in {path.name}, then `client-upload --business {biz['id']} --base-url <server>` to put the file "
+        f"on the server (it is kept out of git on purpose), and run `retell-tune --business {biz['id']}`. "
         "Then call it yourself once before the owner turns forwarding on.")
     return path
+
+
+ID_OK = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
+
+
+def accept_upload(cfg: dict, biz: dict) -> Path:
+    """A client file sent to the server: it must load like any other shop and clash with none. Raises IntakeError."""
+    if not isinstance(biz, dict) or not ID_OK.match(str(biz.get("id", ""))):
+        raise IntakeError("the file needs an id of lowercase letters, digits and dashes")
+    try:
+        check(biz)
+    except Exception as e:   # a bad file is the sender's mistake, whatever it tripped over
+        raise IntakeError(f"the file does not load: {e}") from e
+    check_unique(cfg, biz, replacing=True)
+    return write(biz, cfg["clients_dir"], force=True)

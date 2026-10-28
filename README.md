@@ -226,3 +226,19 @@ Accounts and keys needed: Anthropic API key (have), a Retell or Vapi account and
 ## Tests
 
 `python -m unittest discover tests` covers phone and time formatting, scheduling, tool guardrails, the prompt layers, the agent loop against a scripted fake client, both platform adapters (including Retell signature checks) and the webhook server. Set `RECEPTIONIST_CONFIG=/path/to/other.json` to run against a separate config and data folder.
+
+
+## Access keys and client files (2026-10-28)
+
+- **Keys:** `DASHBOARD_TOKEN` is the admin key (opens any dashboard, never a calendar feed). `TOKEN_SECRET` (new Render env var, never shown) derives each shop's own dashboard and calendar keys, bound to the shop id and its `token_version`. `python -m receptionist owner-links --base-url URL --business ID | pbcopy` prints one shop's links (set `TOKEN_SECRET` in the shell first; do not paste links in chat). Raise `token_version` in a shop's file to revoke only that shop's links. **Old calendar-feed links stop working; regenerate them.**
+- **Dashboard:** the key in the link becomes an HttpOnly cookie and the address is redirected to one without it. Responses send `no-store`, `no-referrer` and `noindex`; the access log masks `token=`; 10 failed tries a minute per address are refused, and every failure is the same 404.
+- **Client files:** `new-client` writes to `<data dir>/clients/<id>.json` (on Render, the disk), never `businesses/`, which holds demo shops only. Ids and phone numbers must be unique across both folders. Put a file on the server with `python -m receptionist client-upload --business ID --base-url URL` (needs `DASHBOARD_TOKEN`; it PUTs to `/admin/clients`). It is live at once, no deploy. The `clients/` folder is on the disk with the database, so back up the disk.
+- Git history of `businesses/` holds only 555 placeholder numbers (checked 2026-10-28).
+- Not built yet: recording notice and AI-disclosure flags, retention and purge (C), calendar read and block button (D). They wait on Noah's decisions in the spec.
+
+### Hardening, notice, retention and calendars (2026-10-28, local, not pushed)
+
+- **Fail closed:** the Vapi and Retell routes refuse every request when `VAPI_SERVER_TOKEN` / `RETELL_API_KEY` is unset (set `ALLOW_UNVERIFIED_WEBHOOKS=1` for local development only). `DASHBOARD_TOKEN` and `TOKEN_SECRET` under 24 characters are ignored (`openssl rand -hex 32`). `/docs`, `/redoc` and `/openapi.json` are off; `/health` names no shops; bodies over 1 MB get 413. Every response sends `nosniff` and `X-Frame-Options: DENY`; the dashboard has a Content-Security-Policy that allows only its own refresh script.
+- **Greeting:** `recording_notice` (text; empty = off) and `ai_disclosure_in_greeting` are appended to every greeting variant by `prompts.announce`. New shops get both on. The three demo shops keep both off so the live line is unchanged on deploy. `new-client` and `/admin/clients` refuse a file with both off unless `--allow-no-notice` (stored as `notice_waived`).
+- **Retention:** `retention_days` (default 90) deletes calls (transcript, summary, tool log) twice a day from the server; bookings, customers, leads and messages stay. `python -m receptionist purge --business ID [--phone N]` shows what it would delete; add `--yes` to do it (run it in the Render shell, where the database is). Recordings live at Retell, not here: delete them there on request. Retell's own data-storage setting has not been checked.
+- **Calendars:** `calendars: [{"type": "ical", "url": ..., "label": ...}]` in a shop's file (intake key `calendar_url`). Events overlapping a window use one technician each; `busy_keywords` all-day events count. Fetches are https only, to public addresses only, 5 s timeout, 3 MB cap, cached 5 minutes; unreadable for 30 minutes means windows come from our bookings and the dashboard and the agent say so. The dashboard has a Block time form (whole shop). Not tried against a real Google or Outlook link.

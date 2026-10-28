@@ -22,6 +22,8 @@ services:
         sync: false
       - key: DASHBOARD_TOKEN
         sync: false
+      - key: TOKEN_SECRET
+        sync: false
     disk:
       name: receptionist-data
       mountPath: /var/data

@@ -238,24 +238,25 @@ class CalendarFeedTests(unittest.TestCase):
         self.assertIn("DTEND:20261029T190000Z", ics)       # the two-hour arrival window
 
     def test_tokens_differ_by_business_and_by_secret(self):
-        from receptionist.calendar_feed import feed_token
-        self.assertNotEqual(feed_token("s", "glow"), feed_token("s", "acme"))
-        self.assertNotEqual(feed_token("s", "glow"), feed_token("t", "glow"))
-        self.assertNotEqual(feed_token("s", "glow"), "s")
-        self.assertEqual(len(feed_token("s", "glow")), 32)
+        from receptionist.access import shop_key
+        glow, acme = {"id": "glow"}, {"id": "acme"}
+        self.assertNotEqual(shop_key("s", glow, "calendar"), shop_key("s", acme, "calendar"))
+        self.assertNotEqual(shop_key("s", glow, "calendar"), shop_key("t", glow, "calendar"))
+        self.assertNotEqual(shop_key("s", glow, "calendar"), "s")
+        self.assertEqual(len(shop_key("s", glow, "calendar")), 32)
 
     def test_the_route_needs_the_business_token(self):
         import os
         from unittest import mock
         from fastapi.testclient import TestClient
-        from receptionist.calendar_feed import feed_token
+        from receptionist.access import shop_key
         from receptionist.server import create_app
-        with mock.patch.dict(os.environ, {"DASHBOARD_TOKEN": "dash"}):
+        with mock.patch.dict(os.environ, {"DASHBOARD_TOKEN": "dash" * 7, "TOKEN_SECRET": "sec" * 9}):
             client = TestClient(create_app(CFG, client=FakeClient(), warm_cache=False))
-            good = {"token": feed_token("dash", "glow"), "business": "glow"}
+            good = {"token": shop_key("sec" * 9, {"id": "glow"}, "calendar"), "business": "glow"}
             r = client.get("/calendar.ics", params=good)
             self.assertEqual(r.status_code, 200)
             self.assertTrue(r.headers["content-type"].startswith("text/calendar"))
-            self.assertEqual(client.get("/calendar.ics", params={**good, "token": "dash"}).status_code, 404)   # not the dashboard token
+            self.assertEqual(client.get("/calendar.ics", params={**good, "token": "dash" * 7}).status_code, 404)   # not the dashboard token
             self.assertEqual(client.get("/calendar.ics", params={**good, "business": "acme"}).status_code, 404)
             self.assertEqual(client.get("/calendar.ics").status_code, 404)

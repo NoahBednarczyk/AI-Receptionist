@@ -239,7 +239,7 @@ class NewClientTests(unittest.TestCase):
             shutil_dir = Path(d) / "businesses"
             shutil_dir.mkdir()
             (shutil_dir / "hvac.json").write_text(json.dumps(HVAC))
-            cfg = {**CFG, "businesses_dir": str(shutil_dir)}
+            cfg = {**CFG, "businesses_dir": str(shutil_dir), "clients_dir": str(Path(d) / "clients")}
             lines = []
             path = onboarding.run(cfg, {**self.INTAKE, "our_number": "208-555-0199"}, out=lines.append)
             self.assertEqual(json.loads(path.read_text())["phone_numbers"], ["+12085550199"])
@@ -255,12 +255,12 @@ class NewClientTests(unittest.TestCase):
             bdir = Path(d)
             (bdir / "hvac.json").write_text(json.dumps(HVAC))
             lines = []
-            onboarding.run({**CFG, "businesses_dir": str(bdir)}, {**self.INTAKE, "owner_cell": "208-555-0142"}, out=lines.append)
+            onboarding.run({**CFG, "businesses_dir": str(bdir), "clients_dir": str(bdir / "clients")}, {**self.INTAKE, "owner_cell": "208-555-0142"}, out=lines.append)
             self.assertTrue(any("placeholder" in x for x in lines))
         with tempfile.TemporaryDirectory() as d2:
             (Path(d2) / "hvac.json").write_text(json.dumps(HVAC))
             lines = []
-            onboarding.run({**CFG, "businesses_dir": d2}, {**self.INTAKE, "owner_cell": "208-555-0200"}, out=lines.append)
+            onboarding.run({**CFG, "businesses_dir": d2, "clients_dir": d2 + "/clients"}, {**self.INTAKE, "owner_cell": "208-555-0200"}, out=lines.append)
             self.assertFalse(any("placeholder" in x for x in lines))   # a real-looking number raises no warning
 
     def test_the_checklist_never_contains_secrets_or_the_demo_shop(self):

@@ -313,5 +313,7 @@
     "Lakeside Glow Med Spa, Sam here.",
     "You've got Sam at Lakeside Glow Med Spa.",
     "Good {daypart}, this is Sam at Lakeside Glow Med Spa."
-  ]
+  ],
+  "recording_notice": "",
+  "ai_disclosure_in_greeting": false
 }

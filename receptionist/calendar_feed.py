@@ -5,19 +5,11 @@ take a while to appear, and events added by hand in the calendar do not block av
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 from datetime import datetime, timedelta, timezone
 
 from . import schedule
 
 KEEP_CANCELLED_DAYS = 30
-
-
-def feed_token(secret: str, business_id: str) -> str:
-    """A link-only password for one business's feed, derived from the dashboard token so it can't be used to open the
-    dashboard and needs no new setting."""
-    return hmac.new(secret.encode(), f"calendar:{business_id}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
 def _escape(value: str) -> str:

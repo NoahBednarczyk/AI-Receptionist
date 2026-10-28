@@ -1,17 +1,21 @@
 """The owner's page: every call with who called, why, what happened, the booked window and the full transcript, plus
-bookings, messages and leads. Served by `serve` at /dashboard?token=<DASHBOARD_TOKEN>; it refreshes every 30 seconds
+bookings, messages and leads. Served by `serve` at /dashboard (a shop key in the link, then a cookie); it refreshes every 30 seconds
 (not while a transcript is open) and works on a phone: calls are cards, and the tables stack into rows."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from datetime import datetime
 from html import escape
 
-from . import schedule
+from . import calendar_busy, schedule
 from .speech import spoken_phone
 from .store import Store
 
 STYLE = """
+form label { display: inline-block; margin: 4px 10px 4px 0; }
+input, button { font: inherit; padding: 6px 8px; }
 :root { --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --card: #fff; --accent: #2563eb; --warn: #b45309; }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --line: #44403c; --card: #292524; --accent: #60a5fa; --warn: #fbbf24; }
@@ -129,7 +133,29 @@ def _call_card(biz: dict, store: Store, c: dict, now: datetime) -> str:
             + "</article>")
 
 
-def render(biz: dict, store: Store, limit: int = 25) -> str:
+REFRESH_JS = 'setInterval(function () { if (!document.querySelector("details[open], form:focus-within")) location.reload(); }, 30000);'
+CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; base-uri 'none'; "
+       "frame-ancestors 'none'; script-src 'sha256-" + base64.b64encode(hashlib.sha256(REFRESH_JS.encode()).digest()).decode() + "'")
+
+
+def _blocked_time(biz: dict, store: Store, now, problems: list) -> str:
+    bid = escape(biz["id"])
+    warn = f'<p class="muted"><span class="tag urgent">calendar</span> {escape(calendar_busy.problem_line(problems))}</p>' if problems else ""
+    rows = "".join(
+        f'<tr><td data-label="From">{escape(_when(b["start_at"]))}</td><td data-label="To">{escape(_when(b["end_at"]))}</td>'
+        f'<td data-label="Note">{escape(b["note"] or "")}</td><td><form method="post" action="/dashboard/block/delete">'
+        f'<input type="hidden" name="business" value="{bid}"><input type="hidden" name="id" value="{b["id"]}">'
+        f'<button>Remove</button></form></td></tr>' for b in store.blocks(biz["id"], now))
+    table = (f'<table><thead><tr><th>From</th><th>To</th><th>Note</th><th></th></tr></thead><tbody>{rows}</tbody></table>'
+             if rows else '<div class="card"><div class="empty">Nothing blocked.</div></div>')
+    return (f'<h2>Block time</h2>{warn}<p class="muted">Hours you cannot take jobs. The assistant will not offer booking windows '
+            f'that overlap them.</p>{table}<form method="post" action="/dashboard/block"><input type="hidden" name="business" value="{bid}">'
+            f'<label>Date <input type="date" name="date" required></label> <label>From <input type="time" name="start" required></label> '
+            f'<label>To <input type="time" name="end" required></label> <label>Note <input name="note" maxlength="80"></label> '
+            f'<button>Block it</button></form>')
+
+
+def render(biz: dict, store: Store, limit: int = 25, problems: list | None = None) -> str:
     now = schedule.local_now(biz)
     bid = biz["id"]
     calls = "".join(_call_card(biz, store, c, now) for c in store.recent("calls", bid, limit))
@@ -154,6 +180,7 @@ def render(biz: dict, store: Store, limit: int = 25) -> str:
 <h2>Bookings</h2>{_table(["Confirmation", "Window", "Service", "Name", "Phone", "Address", "Notes", "Status"], bookings)}
 <h2>Messages</h2>{_table(["When", "", "Name", "Phone", "Message"], messages)}
 <h2>Leads</h2>{_table(["When", "Urgency", "Name", "Phone", "Problem", "Why not booked"], leads)}
+{_blocked_time(biz, store, now, problems or [])}
 </main>
-<script>setInterval(function () {{ if (!document.querySelector("details[open]")) location.reload(); }}, 30000);</script>
+<script>{REFRESH_JS}</script>
 </body></html>"""

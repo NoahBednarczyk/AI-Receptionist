@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS sms_outbox (
   id INTEGER PRIMARY KEY, business_id TEXT, call_id TEXT, to_number TEXT, body TEXT,
   status TEXT DEFAULT 'queued', created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS blocks (
+  id INTEGER PRIMARY KEY, business_id TEXT, start_at TEXT, end_at TEXT, note TEXT, created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS tool_events (
   id INTEGER PRIMARY KEY, call_id TEXT, name TEXT, args TEXT, result TEXT, created_at TEXT
 );
@@ -216,3 +219,60 @@ class Store:
         extra = " AND call_id != 'seed'" if table == "appointments" else ""
         return self._rows(f"SELECT * FROM {table} WHERE business_id=?{extra} ORDER BY rowid DESC LIMIT ?",
                           (business_id, limit))
+
+    # ---- blocked time: the owner marks hours the shop can't take jobs (no digital calendar needed) -----------------
+    def add_block(self, business_id: str, start_at: datetime, end_at: datetime, note: str, now: datetime) -> int:
+        return self._write("INSERT INTO blocks (business_id, start_at, end_at, note, created_at) VALUES (?, ?, ?, ?, ?)",
+                           (business_id, start_at.isoformat(), end_at.isoformat(), note, now.isoformat()))
+
+    def delete_block(self, business_id: str, block_id: int) -> None:
+        self._write("DELETE FROM blocks WHERE business_id=? AND id=?", (business_id, block_id))
+
+    def blocks(self, business_id: str, since: datetime) -> list[dict]:
+        """Blocks that have not ended before `since`, soonest first (ISO strings with offsets sort within one zone)."""
+        rows = self._rows("SELECT * FROM blocks WHERE business_id=? ORDER BY start_at", (business_id,))
+        return [r for r in rows if datetime.fromisoformat(r["end_at"]) > since]
+
+    # ---- retention and deletion --------------------------------------------
+    def purge_calls_before(self, business_id: str, cutoff: datetime) -> int:
+        """Delete calls (transcript and summary) that started before `cutoff`, with their tool logs. Bookings,
+        customers, leads and messages are the shop's own records and stay."""
+        old = [r["id"] for r in self._rows("SELECT id, started_at FROM calls WHERE business_id=?", (business_id,))
+               if r["started_at"] and datetime.fromisoformat(r["started_at"]) < cutoff]
+        return self._delete_calls(old)
+
+    def _delete_calls(self, ids: list[str]) -> int:
+        with self.lock:
+            for i in ids:
+                self.db.execute("DELETE FROM tool_events WHERE call_id=?", (i,))
+                self.db.execute("DELETE FROM calls WHERE id=?", (i,))
+            self.db.commit()
+        return len(ids)
+
+    def purge(self, business_id: str, phone: str | None = None, dry_run: bool = False) -> dict[str, int]:
+        """Everything held for a shop, or for one caller's number. Returns how many rows of each kind went (or would)."""
+        counts: dict[str, int] = {}
+        who = normalize_phone(phone) if phone else None
+        if phone and not who:
+            raise ValueError("That is not a phone number.")
+        call_ids = [r["id"] for r in self._rows("SELECT id, caller FROM calls WHERE business_id=?", (business_id,))
+                    if not who or normalize_phone(r["caller"]) == who]
+        counts["calls"] = len(call_ids)
+        with self.lock:
+            counts["tool_events"] = sum(self.db.execute("SELECT COUNT(*) FROM tool_events WHERE call_id=?", (i,)).fetchone()[0]
+                                        for i in call_ids)
+            for table in ("customers", "appointments", "leads", "messages"):
+                where, args = ("business_id=?", [business_id]) if not who else ("business_id=? AND phone=?", [business_id, who])
+                counts[table] = self.db.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}", args).fetchone()[0]
+                if not dry_run:
+                    self.db.execute(f"DELETE FROM {table} WHERE {where}", args)
+            if not who:
+                counts["blocks"] = self.db.execute("SELECT COUNT(*) FROM blocks WHERE business_id=?", (business_id,)).fetchone()[0]
+                counts["sms_outbox"] = self.db.execute("SELECT COUNT(*) FROM sms_outbox WHERE business_id=?", (business_id,)).fetchone()[0]
+                if not dry_run:
+                    self.db.execute("DELETE FROM blocks WHERE business_id=?", (business_id,))
+                    self.db.execute("DELETE FROM sms_outbox WHERE business_id=?", (business_id,))
+            self.db.commit()
+        if not dry_run:
+            self._delete_calls(call_ids)
+        return counts

@@ -106,3 +106,6 @@ Product now niched to heating/cooling/plumbing shops in North Idaho, run as over
 - Email digest skipped (needs an email service).
 
 Pushed 0a0bcad and ran retell-tune --business hvac on 2026-10-27; Render serves the HVAC shop on the live number (greeting verified by a fake call, no real call yet).
+
+### Security, notice, retention, calendars (2026-10-28, local only, NOT pushed)
+Built from the Ringback Multi-Shop Readiness Spec (items A, B, C, D). Details in README "Access keys and client files" and "Hardening, notice, retention and calendars". Before deploying: set `TOKEN_SECRET` on Render (old calendar links die; regenerate with `owner-links`), and `pip install` picks up icalendar and recurring-ical-events. Demo shops keep the old greeting (both flags off) so the live line does not change; new clients get notice and disclosure on. 184 tests pass; nothing here was tried on a real call, a real Render deploy or a real Google calendar link.

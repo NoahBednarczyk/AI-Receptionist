@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
-from . import schedule
+from . import calendar_busy, schedule
 from .speech import fictional_phone, normalize_phone, spoken_date, spoken_phone, spoken_time
 from .store import Store
 
@@ -29,6 +29,7 @@ class ToolContext:
     safety_given: bool = False           # an emergency safety line was already spoken by code this call
     real_transfers: bool = False         # a live phone call: a transfer really dials the target's number
     log: list = field(default_factory=list)
+    calendar_problems: list = field(default_factory=list)   # calendars the last availability check could not read
 
 
 # Lines the phone system plays the moment a tool call starts, so the caller doesn't wait in silence. They play
@@ -232,6 +233,13 @@ def _town(biz: dict, raw: str) -> str:
     raise ToolError(f"{raw} is outside the service area. Don't book; tell the caller politely that we don't cover it.")
 
 
+def _booked(ctx: "ToolContext") -> dict[str, int]:
+    """Our bookings plus whatever the shop's calendars and blocked time already use. If a calendar can't be read, the
+    windows come from our bookings alone and the problem is kept for check_availability to tell the agent."""
+    counts, ctx.calendar_problems = calendar_busy.booked_counts(ctx.biz, ctx.store, ctx.now)
+    return counts
+
+
 def check_availability(ctx: ToolContext, a: dict) -> dict:
     service = _service(ctx.biz, a["service_id"])
     earliest = None
@@ -246,11 +254,15 @@ def check_availability(ctx: ToolContext, a: dict) -> dict:
                             "Check the year and try again.")
         if earliest > last:
             raise ToolError(f"Bookings open only through {last.isoformat()}. Offer to take a message for later dates.")
-    wins = schedule.open_windows(ctx.biz, ctx.now, ctx.store.booked_counts(ctx.biz["id"]), earliest,
+    wins = schedule.open_windows(ctx.biz, ctx.now, _booked(ctx), earliest,
                                  **schedule.emergency_rules(ctx.biz, service))
+    unread = ({"calendar_note": "The shop's own calendar could not be read just now, so these windows come from our "
+                                "bookings only. Never say you checked the calendar; the office confirms the time."}
+              if ctx.calendar_problems else {})
     if not wins:
-        return {"windows": [], "note": "Nothing open in the booking range. Take a message so the office can fit them in."}
-    return {
+        return {"windows": [], "note": "Nothing open in the booking range. Take a message so the office can fit them in.",
+                **unread}
+    return {**unread,
         "windows": [{"window_id": w["window_id"],
                      "spoken": schedule.spoken_window(ctx.biz, w["window_id"], ctx.now, ctx.language)} for w in wins],
         "note": "Soonest first. Offer the caller at most two of these.",
@@ -280,7 +292,7 @@ def book_appointment(ctx: ToolContext, a: dict) -> dict:
     earlier = next((x for x in ctx.store.appointments_for_call(ctx.call_id)
                     if x["phone"] == phone and x["status"] == "booked" and x["service_id"] == service["id"]), None)
     keeps_own_window = earlier is not None and wid == earlier["window_id"]   # full now only because of this booking
-    open_ids = {w["window_id"] for w in schedule.open_windows(biz, ctx.now, ctx.store.booked_counts(bid), limit=10_000,
+    open_ids = {w["window_id"] for w in schedule.open_windows(biz, ctx.now, _booked(ctx), limit=10_000,
                                                               **schedule.emergency_rules(biz, service))}
     if wid not in open_ids and not keeps_own_window:
         raise ToolError("That window isn't available. Call check_availability again and offer a current window.")
@@ -359,7 +371,7 @@ def _callers_appointment(ctx: ToolContext, a: dict) -> dict:
 def reschedule_appointment(ctx: ToolContext, a: dict) -> dict:
     appt = _callers_appointment(ctx, a)
     wid = a["new_window_id"]
-    open_ids = {w["window_id"] for w in schedule.open_windows(ctx.biz, ctx.now, ctx.store.booked_counts(ctx.biz["id"]),
+    open_ids = {w["window_id"] for w in schedule.open_windows(ctx.biz, ctx.now, _booked(ctx),
                                                               limit=10_000)}
     if wid == appt["window_id"]:
         raise ToolError("That's the window the appointment already has.")

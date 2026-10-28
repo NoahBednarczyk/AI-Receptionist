@@ -210,11 +210,27 @@ FLAVORS = [
 ]
 
 
+DEFAULT_NOTICE = "This call is recorded."
+
+
+def announce(biz: dict, greeting: str) -> str:
+    """The greeting with the shop's recording notice and AI disclosure added, so a shop's own wording can't drop them.
+    Both are configured per shop: `recording_notice` (text; empty turns it off) and `ai_disclosure_in_greeting`."""
+    text = greeting.strip()
+    if biz.get("ai_disclosure_in_greeting", True) and "virtual assistant" not in text.lower():
+        place = "shop" if biz.get("vertical") in ("hvac", "home_services") else "business"
+        text += f" I'm the {place}'s virtual assistant."
+    notice = biz.get("recording_notice", DEFAULT_NOTICE)
+    if notice and notice.lower() not in text.lower():
+        text += f" {notice}"
+    return text
+
+
 def pick_greeting(biz: dict, now: datetime, rng=random) -> str:
     """The opening line for this call: one of the business's `greetings` (with {daypart} filled in), or its one greeting."""
     options = biz.get("greetings") or [biz["greeting"]]
     daypart = "morning" if now.hour < 12 else "afternoon" if now.hour < 17 else "evening"
-    return rng.choice(options).format(daypart=daypart)
+    return announce(biz, rng.choice(options).format(daypart=daypart))
 
 
 def call_state(biz: dict, now: datetime, caller: str | None, customer: dict | None, upcoming: list[dict],

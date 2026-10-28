@@ -87,7 +87,8 @@ def cmd_availability(cfg, a):
     now = schedule.local_now(biz, a.at)
     store.seed_demo(biz, now)
     print(f"{'Open' if schedule.is_open(biz, now) else 'Closed'} at {now:%a %b %d %H:%M}")
-    for w in schedule.open_windows(biz, now, store.booked_counts(biz["id"]), limit=a.limit):
+    from . import calendar_busy
+    for w in schedule.open_windows(biz, now, calendar_busy.booked_counts(biz, store, now)[0], limit=a.limit):
         print(f"  {w['window_id']}  {schedule.spoken_window(biz, w['window_id'], now)}")
 
 
@@ -165,13 +166,52 @@ def cmd_retell_tune(cfg, a):
           f"voice {agent.get('voice_id')} {agent.get('voice_model') or ''}".rstrip())
 
 
-def cmd_calendar_url(cfg, a):
-    from .calendar_feed import feed_token
-    secret = os.environ.get("DASHBOARD_TOKEN")
+def _links(cfg, a) -> dict:
+    from . import access
+    secret = os.environ.get("TOKEN_SECRET")
     if not secret:
-        raise SystemExit("Set DASHBOARD_TOKEN first (the same value the server uses).")
+        raise SystemExit("Set TOKEN_SECRET first (the same value the server uses).")
     biz = load_business(cfg, a.business)
-    print(f"{a.base_url.rstrip('/')}/calendar.ics?token={feed_token(secret, biz['id'])}&business={biz['id']}")
+    base = a.base_url.rstrip("/")
+    return {"dashboard": f"{base}/dashboard?token={access.shop_key(secret, biz, 'dashboard')}&business={biz['id']}",
+            "calendar": f"{base}/calendar.ics?token={access.shop_key(secret, biz, 'calendar')}&business={biz['id']}"}
+
+
+def cmd_owner_links(cfg, a):
+    links = _links(cfg, a)
+    print(f"Dashboard: {links['dashboard']}\nCalendar:  {links['calendar']}")
+
+
+def cmd_calendar_url(cfg, a):
+    print(_links(cfg, a)["calendar"])
+
+
+def cmd_client_upload(cfg, a):
+    import urllib.error
+    import urllib.request
+    admin = os.environ.get("DASHBOARD_TOKEN")
+    if not admin:
+        raise SystemExit("Set DASHBOARD_TOKEN first (the admin key the server uses).")
+    biz = load_business(cfg, a.business)
+    req = urllib.request.Request(a.base_url.rstrip("/") + "/admin/clients", data=json.dumps(biz).encode(), method="PUT",
+                                 headers={"Authorization": f"Bearer {admin}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            print(f"Uploaded {biz['id']}: {json.loads(r.read())}")
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"The server refused it ({e.code}): {e.read().decode()[:300]}")
+
+
+def cmd_purge(cfg, a):
+    from .store import Store
+    store = Store(str(Path(cfg["data_dir"]) / "receptionist.sqlite"))
+    counts = store.purge(a.business, a.phone, dry_run=not a.yes)
+    scope = f"caller {a.phone} at {a.business}" if a.phone else f"everything held for {a.business}"
+    print(("Deleted " if a.yes else "Would delete (add --yes to do it) ") + scope + ":")
+    for table, n in counts.items():
+        print(f"  {table}: {n}")
+    if a.yes:
+        print("Recordings are kept by Retell, not here: delete them in the Retell dashboard if the shop asks.")
 
 
 def cmd_new_client(cfg, a):
@@ -181,7 +221,7 @@ def cmd_new_client(cfg, a):
         import yaml
         intake = yaml.safe_load(Path(a.intake).read_text()) or {}
     try:
-        onboarding.run(cfg, intake, force=a.force)
+        onboarding.run(cfg, intake, force=a.force, allow_no_notice=a.allow_no_notice)
     except onboarding.IntakeError as e:
         raise SystemExit(f"Can't sign this shop up yet: {e}")
 
@@ -290,10 +330,27 @@ def main():
     biz_args(sp, at=False)
     sp.set_defaults(fn=cmd_retell_tune)
 
-    sp = sub.add_parser("new-client", help="sign up a shop: writes businesses/<id>.json and prints the owner's checklist")
+    sp = sub.add_parser("new-client", help="sign up a shop: writes <data>/clients/<id>.json and prints the owner's checklist")
     sp.add_argument("--from", dest="intake", metavar="INTAKE.YAML", help="read the answers from a YAML file instead of asking")
     sp.add_argument("--force", action="store_true", help="overwrite an existing business file")
+    sp.add_argument("--allow-no-notice", action="store_true", help="allow a greeting with neither the recording notice nor the AI disclosure")
     sp.set_defaults(fn=cmd_new_client)
+
+    sp = sub.add_parser("purge", help="delete a shop's stored data, or one caller's (shows what it would delete unless --yes)")
+    sp.add_argument("--business", required=True)
+    sp.add_argument("--phone", help="only this caller's number")
+    sp.add_argument("--yes", action="store_true", help="actually delete")
+    sp.set_defaults(fn=cmd_purge)
+
+    sp = sub.add_parser("owner-links", help="print one shop's dashboard and calendar links (pipe to pbcopy; don't paste them in chat)")
+    sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")
+    biz_args(sp, at=False)
+    sp.set_defaults(fn=cmd_owner_links)
+
+    sp = sub.add_parser("client-upload", help="send a real shop's file to the server's disk (it is never committed to git)")
+    sp.add_argument("--base-url", required=True, help="the server's https address")
+    biz_args(sp, at=False)
+    sp.set_defaults(fn=cmd_client_upload)
 
     sp = sub.add_parser("calendar-url", help="print the private calendar feed link (pipe it to pbcopy; don't paste it in chat)")
     sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")

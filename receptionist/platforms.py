@@ -51,7 +51,7 @@ def vapi_assistant(cfg: dict, biz: dict, base_url: str, call_state_text: str | N
         for key, t in biz["transfer_targets"].items()]}
     return {
         "name": f"{biz['name']} receptionist"[:40],
-        "firstMessage": biz["greeting"],
+        "firstMessage": prompts.announce(biz, biz["greeting"]),
         "model": {"provider": "anthropic", "model": cfg["platforms"]["vapi_model"],
                   "messages": [{"role": "system", "content": system}],
                   "tools": fn_tools + [transfer, {"type": "endCall"}]},
@@ -113,7 +113,7 @@ def retell_llm(cfg: dict, biz: dict, base_url: str) -> dict:
     return {
         "model_config": {"type": "cascading", "primary": {"model": cfg["platforms"]["retell_model"]}},
         "general_prompt": prompt,
-        "begin_message": biz["greeting"],
+        "begin_message": prompts.announce(biz, biz["greeting"]),
         "start_speaker": "agent",
         "general_tools": general_tools,
         "default_dynamic_variables": {"call_state": "# This call\nCall details are unavailable."},
