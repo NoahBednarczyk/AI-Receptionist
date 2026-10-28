@@ -13,9 +13,10 @@ NOW = datetime(2026, 10, 28, 13, 0, tzinfo=timezone.utc)
 def fake_http(calls):
     def http(method, url, headers, body=None):
         calls.append((method, url, headers, body))
-        if "list-calls" in url:
-            return [{"call_id": "a", "call_cost": {"combined_cost": 250, "total_duration_seconds": 120}},
-                    {"call_id": "b", "call_cost": {"combined_cost": 50.5, "total_duration_seconds": 30}}]
+        if "/v3/list-calls" in url:
+            return {"items": [{"call_id": "a", "call_cost": {"combined_cost": 250, "total_duration_seconds": 120}},
+                              {"call_id": "b", "call_cost": {"combined_cost": 50.5, "total_duration_seconds": 30}}],
+                    "has_more": False}
         if "cost_report" in url:
             return {"data": [{"results": [{"amount": "123.45"}, {"amount": "10"}]}], "has_more": False}
         if "subscription" in url:
@@ -55,10 +56,19 @@ class SpendReportTests(unittest.TestCase):
 
     def test_pagination_stops_instead_of_looping_forever(self):
         def endless(method, url, headers, body=None):
-            return [{"call_id": str(i), "call_cost": {"combined_cost": 1}} for i in range(1000)]
+            return {"items": [{"call_id": str(i), "call_cost": {"combined_cost": 1}} for i in range(1000)],
+                    "has_more": True, "pagination_key": "next"}
         with mock.patch.object(spend_report, "_http", endless):
             row = spend_report.retell(NOW, "r")
         self.assertEqual(row["status"], "error")
+
+    def test_the_retell_request_uses_v3_and_the_documented_filter(self):
+        calls = []
+        with mock.patch.object(spend_report, "_http", fake_http(calls)):
+            spend_report.retell(NOW, "r")
+        method, url, _, body = calls[0]
+        self.assertEqual((method, url), ("POST", "https://api.retellai.com/v3/list-calls"))
+        self.assertEqual(body["filter_criteria"]["start_timestamp"]["op"], "ge")
 
     def test_keys_never_appear_in_the_output(self):
         with mock.patch.object(spend_report, "_http", fake_http([])):

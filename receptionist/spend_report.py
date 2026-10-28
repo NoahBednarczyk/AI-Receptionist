@@ -3,7 +3,7 @@
     python -m receptionist spend-report [--since 2026-10-01] [--json] [--out data/spend_report.json]
 
 Keys come from environment variables and a missing key just skips that service (it is listed as "skipped"):
-  RETELL_API_KEY       the key the project already uses. Per-call cost from the list-calls endpoint.
+  RETELL_API_KEY       the key the project already uses. Per-call cost from the v3 list-calls endpoint.
   ANTHROPIC_ADMIN_KEY  an Admin key (sk-ant-admin...), made by an organization admin in the Console. The normal
                        ANTHROPIC_API_KEY cannot read costs. Cost report endpoint.
   ELEVENLABS_API_KEY   optional. Only useful if the custom voice lives in your own ElevenLabs account: reports the plan
@@ -57,20 +57,21 @@ def retell(since: datetime, key: str | None) -> dict:
     cents, calls, seconds, pagination_key = 0.0, 0, 0.0, None
     try:
         for _ in range(MAX_PAGES):
-            body = {"filter_criteria": {"start_timestamp": {"lower_threshold": int(since.timestamp() * 1000)}},
+            # v3 list-calls (the v2 list endpoints were removed in June 2026). combined_cost is in cents.
+            body = {"filter_criteria": {"start_timestamp": {"type": "number", "op": "ge",
+                                                           "value": int(since.timestamp() * 1000)}},
                     "limit": 1000, "sort_order": "descending"}
             if pagination_key:
                 body["pagination_key"] = pagination_key
-            page = _http("POST", f"{RETELL}/v2/list-calls", {"Authorization": f"Bearer {key}"}, body)
-            items = page if isinstance(page, list) else page.get("calls", [])
-            for c in items:
+            page = _http("POST", f"{RETELL}/v3/list-calls", {"Authorization": f"Bearer {key}"}, body)
+            for c in page.get("items", []):
                 cost = c.get("call_cost") or {}
                 cents += float(cost.get("combined_cost") or 0)
                 seconds += float(cost.get("total_duration_seconds") or (c.get("duration_ms") or 0) / 1000)
                 calls += 1
-            if len(items) < 1000:
+            pagination_key = page.get("pagination_key")
+            if not page.get("has_more") or not pagination_key:
                 break
-            pagination_key = items[-1].get("call_id")
         else:
             return _row(name, "error", detail="stopped after too many pages; the total would be incomplete")
     except RuntimeError as e:

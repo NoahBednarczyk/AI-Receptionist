@@ -199,12 +199,12 @@ At the end of the day: read every transcript, count booked / message / lead / tr
 
 | Service | Source | Needs |
 |---|---|---|
-| Retell (platform, telephony, voice) | list-calls, `combined_cost` per call | `RETELL_API_KEY` (already used) |
+| Retell (platform, telephony, voice) | v3 list-calls, `combined_cost` per call (cents) | `RETELL_API_KEY` (already used) |
 | Anthropic API | Admin cost report, whole organization | `ANTHROPIC_ADMIN_KEY` (an Admin key from the Console; the normal key cannot read costs) |
 | ElevenLabs | plan and next invoice (not counted in the total) | `ELEVENLABS_API_KEY`, only if the voice is in your own account |
 | Render, Retell number | `spend_report.fixed_monthly_estimates` in `config.json` | nothing; these are estimates from list prices, so check them against the billing pages |
 
-A service without a key is listed as skipped and the total is then labelled a floor. The Anthropic figure is not limited to this project if the organization has other uses. Amounts come back as cents (Retell `combined_cost`, Anthropic `amount`); that unit and the Retell pagination have not been run against the live APIs yet, so compare the first report with the billing pages.
+A service without a key is listed as skipped and the total is then labelled a floor. The Anthropic figure is not limited to this project if the organization has other uses. Retell uses the v3 list-calls endpoint (the v2 one was removed in June 2026; cents and paging are per Retell's docs). The Anthropic cost report and its cents unit have not been run live yet, so compare the first report with the billing pages.
 
 ## Going live: what's left
 
