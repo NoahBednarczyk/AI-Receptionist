@@ -259,6 +259,7 @@ class CallSession:
             ) as stream:
                 said_in = {}   # text block index -> the part of it the caller heard
                 dropped_before = len(words.dropped)
+                self._filler_line = None   # the stall line this round actually played, if any
                 for ev in stream:
                     if control and control.dropped:
                         break   # closing the stream stops generation; go_on() below raises
@@ -266,7 +267,8 @@ class CallSession:
                         if ev.content_block.name in fillers and not said and not spoken:
                             if first is None:
                                 first = time.monotonic() - start   # the filler line starts playing here
-                            emit(fillers[ev.content_block.name], True)
+                            self._filler_line = tools.pick_filler(self.ctx, ev.content_block.name)
+                            emit(self._filler_line, True)
                     elif ev.type == "content_block_delta" and ev.delta.type == "text_delta":
                         words.add(ev.delta.text)
                     elif ev.type == "content_block_stop" and ev.content_block.type == "text":
@@ -309,8 +311,9 @@ class CallSession:
                     elif not spoken and b.name in fillers:
                         # The phone platforms play a fixed line while a tool runs; so do we, so the caller
                         # never waits through a tool call in silence. It's speech only, not model history.
-                        spoken.append(fillers[b.name])
-                        steps.append({"say": fillers[b.name]})
+                        line = self._filler_line or tools.pick_filler(self.ctx, b.name)
+                        spoken.append(line)
+                        steps.append({"say": line})
                     result, is_error = tools.run_tool(self.ctx, b.name, b.input)
                     call = {"name": b.name, "args": b.input, "result": result, "error": is_error}
                     used.append(call)

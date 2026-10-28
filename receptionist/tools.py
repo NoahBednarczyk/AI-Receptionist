@@ -5,6 +5,7 @@ The voice platforms call the same run_tool() through the webhook server.
 """
 from __future__ import annotations
 
+import random
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -29,6 +30,7 @@ class ToolContext:
     safety_given: bool = False           # an emergency safety line was already spoken by code this call
     real_transfers: bool = False         # a live phone call: a transfer really dials the target's number
     log: list = field(default_factory=list)
+    last_filler: str | None = None       # the last spoken stall line, so the next one is different
     calendar_problems: list = field(default_factory=list)   # calendars the last availability check could not read
 
 
@@ -54,6 +56,40 @@ FILLERS = {
         "transfer_call": "Le comunico ahora.",
     },
 }
+# The same lines in several wordings, so a call never hears one phrase over and over. FILLERS stays the canonical set
+# (the phone platforms play those); pick_filler chooses among these and never repeats the last one in a call.
+FILLER_VARIANTS = {
+    "en": {
+        "check_availability": ["Let me take a look at the schedule.", "Let me see what's open.", "Checking the schedule.",
+                               "Let's see what we've got.", "Pulling up the schedule."],
+        "book_appointment": ["Okay, let me get that booked.", "Locking that in.", "Alright, booking it now.",
+                             "Putting that on the books."],
+        "lookup_customer": ["Let me pull that up.", "Let me find your record.", "Looking you up.", "Let me see what I've got."],
+        "take_message": ["Let me write that down.", "Alright, getting that down.", "Noting that now.", "Let me get that on paper."],
+        "reschedule_appointment": ["Okay, let me move that for you.", "Moving that over.", "Alright, shifting it."],
+        "cancel_appointment": ["Okay, let me cancel that for you.", "Canceling that now.", "Alright, taking that off."],
+        "transfer_call": ["Let me connect you now.", "Connecting you now.", "Let me try them for you."],
+    },
+    "es": {
+        "check_availability": ["Un momento, reviso la agenda.", "Déjeme ver qué hay.", "Reviso la agenda."],
+        "book_appointment": ["Un momento, lo reservo.", "Lo reservo ahora mismo.", "Listo, lo agendo."],
+        "lookup_customer": ["Un momento, lo busco.", "Déjeme buscarlo.", "Lo busco ahora."],
+        "take_message": ["Déjeme anotar su mensaje.", "Voy anotando eso.", "Lo anoto ahora."],
+        "reschedule_appointment": ["Un momento, lo cambio.", "Lo muevo ahora.", "Listo, lo cambio."],
+        "cancel_appointment": ["Un momento, lo cancelo.", "Lo cancelo ahora.", "Listo, lo cancelo."],
+        "transfer_call": ["Le comunico ahora.", "Le comunico en un momento.", "Voy a comunicarle."],
+    },
+}
+
+
+def pick_filler(ctx: "ToolContext", name: str, rng=random) -> str:
+    """A stall line for tool `name` in the caller's language, different from the last one this call used."""
+    options = FILLER_VARIANTS[ctx.language].get(name) or [FILLERS[ctx.language][name]]
+    choice = rng.choice([o for o in options if o != ctx.last_filler] or options)
+    ctx.last_filler = choice
+    return choice
+
+
 # Spoken if the agent hangs up without having said anything this turn, so no call ever ends in silence,
 # and a safety hang-up always carries the safety instruction.
 END_LINES = {

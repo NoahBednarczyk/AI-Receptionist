@@ -117,3 +117,55 @@ class Scenarios(unittest.TestCase):
             self.assertTrue(s["rubric"] and s["persona"] and s["at"], s["id"])
         for quick in LAWN["simulate_quick"]:
             self.assertIn(quick, {s["id"] for s in SCENARIOS})
+
+
+class Character(unittest.TestCase):
+    def test_many_greetings_none_announce_the_ai_or_recording(self):
+        self.assertGreaterEqual(len(LAWN["greetings"]), 12)
+        for g in LAWN["greetings"]:
+            self.assertIn("Cedar Ridge Lawn and Snow", g)
+            self.assertIn("Riley", g)
+            g.format(daypart="morning")
+            self.assertNotRegex(g.lower(), r"virtual|assistant|recorded|\bai\b")
+
+    def test_every_call_draws_a_different_character(self):
+        import random
+        now = schedule.local_now(LAWN, "2026-10-20T10:15")
+        seen = {prompts.call_state(LAWN, now, None, None, [], rng=random.Random(i)) for i in range(40)}
+        self.assertGreater(len(seen), 30)
+        text = "\n".join(seen)
+        self.assertIn("Your character on this call:", text)
+        self.assertIn("never use the same one twice in a row", text)
+        self.assertIn("leaf drop", text)                                   # an October aside
+        self.assertNotIn("snowbanks", text)                                # but no deep-winter aside in October
+        self.assertNotIn("one sec", text.lower())
+
+    def test_other_shops_get_no_character_kit(self):
+        import random
+        now = schedule.local_now(LAWN, "2026-10-20T10:15")
+        self.assertNotIn("Your character", prompts.call_state(load_business(CFG, "hvac"), now, None, None, [], rng=random.Random(1)))
+
+    def test_the_prompt_keeps_the_character_inside_the_rules(self):
+        p = prompts.stable_prompt(LAWN).lower()
+        for needle in ("riley has real character", "no body", "made-up personal history", "don't reuse a phrase twice"):
+            self.assertIn(needle, p)
+
+    def test_thinking_sounds_and_stall_lines_vary_and_never_say_one_sec(self):
+        import random
+        from receptionist import live, tools
+        for lang, pool in live.STILL_WORKING.items():
+            self.assertGreaterEqual(len(pool), 4)
+            self.assertFalse(any("sec" in x.lower() for x in pool))
+        for lang, tool_pools in tools.FILLER_VARIANTS.items():
+            self.assertEqual(set(tool_pools), set(tools.FILLERS[lang]))
+            for name, pool in tool_pools.items():
+                self.assertIn(tools.FILLERS[lang][name], pool)
+        ctx = tools.ToolContext(LAWN, None, None, None, "c")
+        lines = [tools.pick_filler(ctx, "check_availability", random.Random(i)) for i in range(5)]
+        ctx.last_filler = None
+        run = []
+        for _ in range(30):
+            run.append(tools.pick_filler(ctx, "check_availability"))
+        self.assertTrue(all(a != b for a, b in zip(run, run[1:])))          # never the same line twice running
+        self.assertGreater(len(set(run)), 2)
+        self.assertTrue(live.SLOW_REPLY_S >= 3.0)

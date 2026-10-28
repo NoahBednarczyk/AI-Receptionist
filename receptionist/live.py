@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 from collections.abc import Awaitable, Callable
 
@@ -26,8 +27,10 @@ log = logging.getLogger("receptionist")
 REMINDER = {"en": "Are you still there?", "es": "¿Sigue ahí?"}
 NOT_HEARD = {"en": "Sorry, I didn't catch that. Could you say that again?",
              "es": "Perdón, no le entendí. ¿Me lo puede repetir?"}
-STILL_WORKING = {"en": "Okay, one sec.", "es": "A ver."}
-SLOW_REPLY_S = 2.0   # no words yet after this long: say something so the caller never hears dead air
+STILL_WORKING = {"en": ["Hmm.", "Let's see.", "Okay, so.", "Mm, let me think.", "Alright, let's see here.",
+                        "Bear with me.", "Okay, looking at that."],
+                 "es": ["A ver.", "Mm, déjeme ver.", "Veamos.", "Bueno, a ver."]}
+SLOW_REPLY_S = 3.0   # no words yet after this long: a short thinking sound, never the same one twice running
 GARBLED = re.compile(r"^[\s(\[]*(unintelligible|inaudible|no speech|silence)[^)\]]*[)\]]?[\s.]*$", re.I)
 TROUBLE = {"en": "I'm sorry, we're having a technical problem. Please call back in a few minutes.",
            "es": "Lo siento, tenemos un problema técnico. Por favor llame de nuevo en unos minutos."}
@@ -63,7 +66,7 @@ def _words(text: str) -> list[str]:
 def cut_short(heard: str, said: str) -> str | None:
     """What the caller heard of our last reply if they talked over it partway, else None. Retell's transcript keeps
     only the part of an interrupted reply that was played (its last word may be cut mid-way)."""
-    for line in STILL_WORKING.values():   # played before the reply itself, so not part of what the session said
+    for line in [x for pool in STILL_WORKING.values() for x in pool]:   # played before the reply itself, so not part of what the session said
         if heard.strip().startswith(line):
             heard = heard.strip()[len(line):]
     h, s = _words(heard), _words(said)
@@ -156,6 +159,14 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
             else:   # dropped: the session is as it was, so are we
                 heard_before, consumed = before
 
+    last_still = []
+
+    def still_working(lang: str) -> str:
+        pool = [x for x in STILL_WORKING[lang] if x not in last_still] or STILL_WORKING[lang]
+        line = random.choice(pool)
+        last_still[:] = [line]
+        return line
+
     async def answer(rid: int, caller_text: str, heard_only: str | None = None) -> bool:
         """Plays the reply to the caller's words. False when the turn was dropped because they kept talking."""
         chunks: asyncio.Queue = asyncio.Queue()
@@ -183,7 +194,7 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
                     getter.cancel()
                     spoke = True
                     await say({"response_type": "response", "response_id": rid,
-                               "content": STILL_WORKING[session.ctx.language] + " ", "content_complete": False})
+                               "content": still_working(session.ctx.language) + " ", "content_complete": False})
                     continue
                 if getter in done:
                     if first is None:

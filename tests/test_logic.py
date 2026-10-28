@@ -22,6 +22,17 @@ from receptionist.tools import ToolContext, run_tool, schemas
 
 os.environ.setdefault("ALLOW_UNVERIFIED_WEBHOOKS", "1")   # tests post to the platform routes without signing
 CFG = load_config()
+from receptionist.tools import FILLER_VARIANTS
+
+
+class FillerAssertions:
+    """A reply starts with one of a tool's stall lines (they vary), then the rest."""
+    def assertFiller(self, text, tool, rest):
+        for f in FILLER_VARIANTS["en"][tool]:
+            if text == (f + " " + rest).strip():
+                return
+        self.fail(f"{text!r} is not a {tool} filler followed by {rest!r}")
+
 BIZ = load_business(CFG, "acme")
 TUE_1015 = schedule.local_now(BIZ, "2026-10-27T10:15")
 SAT_2340 = schedule.local_now(BIZ, "2026-10-31T23:40")
@@ -269,7 +280,7 @@ class PromptTests(unittest.TestCase):
         self.assertIn("open now", prompts.call_state(BIZ, TUE_1015, None, None, []))
 
 
-class AgentLoopTests(unittest.TestCase):
+class AgentLoopTests(FillerAssertions, unittest.TestCase):
     def test_tool_round_trip(self):
         s = session(reply("tool_use", text("One moment while I check."),
                           use("t1", "check_availability", {"service_id": "leak_repair"})),
@@ -296,7 +307,7 @@ class AgentLoopTests(unittest.TestCase):
         s = session(reply("tool_use", use("t1", "check_availability", {"service_id": "leak_repair"})),
                     reply("end_turn", text("I have 2 PM today.")))
         turn = s.respond("Can someone come today?")
-        self.assertEqual(turn.text, "Let me take a look at the schedule. I have 2 PM today.")
+        self.assertFiller(turn.text, "check_availability", "I have 2 PM today.")
         self.assertIsNotNone(turn.first_text_s)
         self.assertEqual(s.messages[1]["content"][0].type, "tool_use")   # the filler never enters model history
         # No filler when the agent already spoke; a silent transfer gets its own line.
@@ -304,7 +315,7 @@ class AgentLoopTests(unittest.TestCase):
                     reply("end_turn", text("I have 2 PM today.")))
         self.assertEqual(s.respond("Today?").text, "Sure. I have 2 PM today.")
         s = session(reply("tool_use", use("t1", "transfer_call", {"target": "office", "reason": "x"})))
-        self.assertEqual(s.respond("A person please.").text, "Let me connect you now.")
+        self.assertFiller(s.respond("A person please.").text, "transfer_call", "")
         s = session(reply("tool_use", use("t1", "create_lead", {"customer_name": "x", "callback_number": "3125550100",
                                                                "problem_summary": "x", "urgency": "flexible",
                                                                "reason_not_booked": "x"})),
@@ -362,7 +373,7 @@ class AgentLoopTests(unittest.TestCase):
                     reply("end_turn", text("Let me check the schedule again.")))
         turn = s.respond("Book me.")
         self.assertTrue(s.messages[2]["content"][0]["is_error"])
-        self.assertEqual(turn.text, "Okay, let me get that booked. Let me check the schedule again.")
+        self.assertFiller(turn.text, "book_appointment", "Let me check the schedule again.")
 
     def test_refusal_and_cut_off_replies(self):
         s = session(reply("refusal"))
@@ -393,7 +404,7 @@ class CheckTests(unittest.TestCase):
         self.assertTrue(lines[3].startswith("  [tool transfer_call"))
 
 
-class UpgradeTests(unittest.TestCase):
+class UpgradeTests(FillerAssertions, unittest.TestCase):
     """Appointment changes, several services per call, Spanish, tips and the AI-honesty rule."""
 
     def test_reschedule_and_cancel_check_the_callers_number(self):
@@ -428,7 +439,7 @@ class UpgradeTests(unittest.TestCase):
                     reply("end_turn", text("Tengo mañana por la tarde.")))
         turn = s.respond("Hola, necesito una cita para el lavabo, por favor.")
         self.assertEqual(s.ctx.language, "es")
-        self.assertTrue(turn.text.startswith("Un momento, reviso la agenda."))
+        self.assertTrue(any(turn.text.startswith(f) for f in FILLER_VARIANTS["es"]["check_availability"]), turn.text)
         self.assertIn("mañana, miércoles 28 de octubre, entre las 10 de la mañana y el mediodía",
                       s.messages[2]["content"][0]["content"])
         c = ctx(biz=TEXTING_BIZ)
@@ -770,7 +781,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(r, {"call_inbound": {"reject": True}})
 
 
-class LiveCallTests(unittest.TestCase):
+class LiveCallTests(FillerAssertions, unittest.TestCase):
     """A simulated Retell on the other end of the custom-LLM websocket, with a scripted fake Claude."""
 
     def setUp(self):
@@ -818,13 +829,13 @@ class LiveCallTests(unittest.TestCase):
             ws.send_json({"interaction_type": "response_required", "response_id": 1, "transcript": [
                 {"role": "agent", "content": greeting}, {"role": "user", "content": "My sink is leaking."}]})
             said, final = self.until_complete(ws, 1)
-            self.assertEqual(said, "Let me take a look at the schedule. I have an opening soon.")
+            self.assertFiller(said, "check_availability", "I have an opening soon.")
             self.assertNotIn("end_call", final)
             ws.send_json({"interaction_type": "response_required", "response_id": 2, "transcript": [
                 {"role": "agent", "content": "I have an opening soon."}, {"role": "user", "content": "I want a person."}]})
             said, final = self.until_complete(ws, 2)
             # The demo's transfer numbers are 555-01xx placeholders: a live call never dials them.
-            self.assertEqual(said, "Let me connect you now. Nobody picked up. Can I take a message?")
+            self.assertFiller(said, "transfer_call", "Nobody picked up. Can I take a message?")
             self.assertNotIn("transfer_number", final)
             self.assertIn("no_answer", self.fake.requests[-1]["messages"][-1]["content"][0]["content"])
         # The agent saw exactly what the caller said, and the call was stored with its summary.
@@ -953,7 +964,10 @@ class LiveCallTests(unittest.TestCase):
                 said, _ = self.until_complete(ws, 1)
         finally:
             self.fake.stream, live.SLOW_REPLY_S = original_stream, original_wait
-        self.assertTrue(said.startswith("Okay, one sec. Let me take a look at the schedule."), said)
+        still = next((x for x in live.STILL_WORKING["en"] if said.startswith(x + " ")), None)
+        self.assertIsNotNone(still, said)                          # a thinking sound first, never "one sec"
+        self.assertNotIn("sec", " ".join(live.STILL_WORKING["en"]).lower())
+        self.assertFiller(said[len(still) + 1:], "check_availability", "I have an opening soon.")
 
     def test_new_caller_text(self):
         from receptionist.live import new_caller_text
@@ -978,7 +992,7 @@ class InterruptionTests(unittest.TestCase):
                          "That's today between 2 PM and 4 PM at 14 Bir")
         self.assertIsNone(cut_short(said, said))                       # heard it all
         self.assertIsNone(cut_short("Something else entirely was said", said))
-        self.assertEqual(cut_short("Okay, one sec. That's today between 2", said), "That's today between 2")
+        self.assertEqual(cut_short("Hmm. That's today between 2", said), "That's today between 2")
 
     def test_the_agent_is_told_what_the_caller_missed(self):
         s = session(reply("end_turn", text("Sure, what's the address?")))

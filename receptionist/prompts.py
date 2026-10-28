@@ -233,6 +233,28 @@ FLAVORS = [
 ]
 
 
+# A shop can list `quirks` (speech habits), `asides` (small-talk topics by month) and `flavors` (overall styles) in its
+# file. Each call draws a different mix, so no two calls sound alike. They shape wording only, never facts or rules.
+ACKS = ["Alright", "Sure thing", "Perfect", "Sounds good", "Okay", "You bet", "Gotcha", "Right", "Makes sense", "Yep",
+        "Done", "Got it", "Will do", "Understood"]
+
+
+def character_kit(biz: dict, now: datetime, rng=random) -> list[str]:
+    quirks, asides = biz.get("quirks", []), biz.get("asides", [])
+    if not quirks and not asides:
+        return []
+    lines = []
+    if quirks:
+        lines.append(f"Your character on this call: {rng.choice(quirks)}")
+    lines.append("Acknowledgement words you favor on this call (rotate them, and never use the same one twice in a "
+                 "row): " + ", ".join(rng.sample(ACKS, 4)) + ".")
+    fits = [a["text"] for a in asides if now.month in a.get("months", range(1, 13))]
+    if fits and rng.random() < 0.6:
+        lines.append(f"If the caller seems relaxed, you may make one small aside about the season, at most once: "
+                     f"{rng.choice(fits)} Skip it entirely if they are stressed, hurt, or reporting damage.")
+    return lines
+
+
 DEFAULT_NOTICE = "This call is recorded."
 
 
@@ -259,9 +281,10 @@ def pick_greeting(biz: dict, now: datetime, rng=random) -> str:
 def call_state(biz: dict, now: datetime, caller: str | None, customer: dict | None, upcoming: list[dict],
                dialed: str | None = None, greeting: str | None = None, rng=random) -> str:
     lines = ["# This call", f"The greeting already spoken on this call: \"{greeting or biz['greeting']}\"",
-             f"Style for this call: {rng.choice(FLAVORS)} Change up your wording from reply to reply and never use "
+             f"Style for this call: {rng.choice(biz.get('flavors') or FLAVORS)} Change up your wording from reply to reply and never use "
              "the same acknowledgement twice in a row. Facts, prices, safety lines and the rules above never change, "
              "and nothing here allows sympathy phrases or sounding human.",
+             *character_kit(biz, now, rng),
              f"It is now {spoken_date(now.date())}, {now.year}, {spoken_time(now.strftime('%H:%M'))}, "
              f"business local time. Today's date for tools is {now.date().isoformat()}."]
     ours = dialed or (biz.get("phone_numbers") or [None])[0]
