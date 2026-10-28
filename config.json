@@ -46,5 +46,28 @@
   "platforms": {
     "vapi_model": "claude-haiku-5-5",
     "retell_model": "claude-5.5-haiku"
+  },
+  "spend_report": {
+    "project_budget_usd": [
+      100,
+      300
+    ],
+    "fixed_monthly_estimates": [
+      {
+        "service": "Render web service (Starter)",
+        "usd": 7.0,
+        "note": "estimate from Render's list price; confirm on the billing page"
+      },
+      {
+        "service": "Render disk (1 GB)",
+        "usd": 0.25,
+        "note": "estimate from Render's list price; confirm on the billing page"
+      },
+      {
+        "service": "Retell phone number",
+        "usd": 2.0,
+        "note": "estimate from the README cost table"
+      }
+    ]
   }
 }

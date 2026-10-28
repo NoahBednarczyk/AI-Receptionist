@@ -193,6 +193,19 @@ At the end of the day: read every transcript, count booked / message / lead / tr
 - **Dashboard on a phone, the calendar feed in Google Calendar, `new-client` with a real shop, and the checklist:** not tried on a device or with a real owner.
 - **Open items I did not touch:** the recording notice and the legal review below are unchanged, and the AI-disclosure rule is intact.
 
+## Spend report
+
+`python -m receptionist spend-report [--since YYYY-MM-DD] [--json] [--out FILE]` adds up what the paid services have cost this month. Read-only (GET and list queries only), costs nothing, and prints no keys.
+
+| Service | Source | Needs |
+|---|---|---|
+| Retell (platform, telephony, voice) | list-calls, `combined_cost` per call | `RETELL_API_KEY` (already used) |
+| Anthropic API | Admin cost report, whole organization | `ANTHROPIC_ADMIN_KEY` (an Admin key from the Console; the normal key cannot read costs) |
+| ElevenLabs | plan and next invoice (not counted in the total) | `ELEVENLABS_API_KEY`, only if the voice is in your own account |
+| Render, Retell number | `spend_report.fixed_monthly_estimates` in `config.json` | nothing; these are estimates from list prices, so check them against the billing pages |
+
+A service without a key is listed as skipped and the total is then labelled a floor. The Anthropic figure is not limited to this project if the organization has other uses. Amounts come back as cents (Retell `combined_cost`, Anthropic `amount`); that unit and the Retell pagination have not been run against the live APIs yet, so compare the first report with the billing pages.
+
 ## Going live: what's left
 
 | Step | Status |

@@ -204,6 +204,17 @@ def cmd_export(cfg, a):
     print(f"Wrote {out}")
 
 
+def cmd_spend_report(cfg, a):
+    from datetime import datetime, timezone
+    from . import spend_report
+    since = datetime.strptime(a.since, "%Y-%m-%d").replace(tzinfo=timezone.utc) if a.since else None
+    rep = spend_report.build(cfg, since)
+    if a.out:
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.out).write_text(json.dumps(rep, indent=1))
+    print(json.dumps(rep, indent=1) if a.json else spend_report.render(rep))
+
+
 def main():
     cfg = load_config()
     p = argparse.ArgumentParser(prog="python -m receptionist")
@@ -251,6 +262,12 @@ def main():
     sp = sub.add_parser("budget", help="today's testing spend and what runs cost")
     sp.add_argument("--raise-today", type=float, metavar="DOLLARS", help="set a higher limit for today only")
     sp.set_defaults(fn=cmd_budget)
+
+    sp = sub.add_parser("spend-report", help="what the paid services have cost so far, from their APIs (read-only)")
+    sp.add_argument("--since", metavar="YYYY-MM-DD", help="start date, UTC (default: the 1st of this month)")
+    sp.add_argument("--json", action="store_true", help="print JSON instead of a table")
+    sp.add_argument("--out", metavar="FILE", help="also write the JSON here")
+    sp.set_defaults(fn=cmd_spend_report)
 
     sp = sub.add_parser("record", help="turn a simulated call into audio (macOS voices, free)")
     sp.add_argument("report", help="a run report, e.g. data/runs/<time>.json")
