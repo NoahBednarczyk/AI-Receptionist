@@ -34,7 +34,7 @@ import anthropic
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import access, calendar_busy, calendar_feed, dashboard, live, platforms, postcall, prompts, schedule
+from . import access, calendar_busy, calendar_feed, dashboard, live, outbound_live, platforms, postcall, prompts, schedule
 from .agent import CallSession, prewarm, transcript_text
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
@@ -204,6 +204,16 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
             raise HTTPException(422, str(e))
         return {"ok": True, "saved": path.name}
 
+    @app.get("/admin/outbound")
+    async def outbound_state(request: Request):
+        """The discovery caller's results, bookings and do-not-call list (admin key). The Mac pulls this to update the dashboard."""
+        who = _who(request)
+        sent = request.headers.get("authorization", "").removeprefix("Bearer ")
+        if limiter.blocked(who) or not (dashboard_token and secrets.compare_digest(sent, dashboard_token)):
+            limiter.record(who)
+            raise HTTPException(404)
+        return outbound_live.State(Path(cfg["data_dir"]) / "outbound.json").data
+
     @app.get("/calendar.ics")
     def calendar_feed_route(request: Request, token: str = "", business: str | None = None):
         biz = _checked(request, token, business, "calendar")
@@ -281,6 +291,32 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         def finish(session: CallSession) -> None:
             finish_call(session.biz, session.call_id, session.transcript, session.ctx.end_reason or "caller hung up",
                         session.system[1]["text"])
+
+        try:
+            await live.run_retell_call(websocket.receive_json, websocket.send_json, start_session, finish)
+        except WebSocketDisconnect:
+            pass
+
+    # ---- Retell, outbound discovery caller (off unless data/retell_outbound.json exists) -------------
+    @app.websocket("/llm-websocket-out/{secret}/{retell_call_id}")
+    async def retell_llm_out(websocket: WebSocket, secret: str, retell_call_id: str):
+        if not ws_secret or not secrets.compare_digest(secret, ws_secret):
+            await websocket.close(code=1008)
+            return
+        await websocket.accept()
+        out_state = outbound_live.State(Path(cfg["data_dir"]) / "outbound.json")
+
+        def start_session(call: dict):
+            lead = (call.get("metadata") or {}).get("lead")
+            if not lead or not (Path(cfg["data_dir"]) / "retell_outbound.json").exists():
+                log.error("outbound socket opened without a lead or without retell_outbound.json; hanging up")
+                return None
+            return outbound_live.OutboundSession(client, cfg, lead, out_state, store, datetime.datetime.now(datetime.timezone.utc),
+                                                 call_id=f"retell-{call.get('call_id') or retell_call_id}")
+
+        def finish(session) -> None:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            session.finish(now, (now - session.started).total_seconds() / 60, session.ctx.end_reason)
 
         try:
             await live.run_retell_call(websocket.receive_json, websocket.send_json, start_session, finish)

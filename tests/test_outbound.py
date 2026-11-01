@@ -94,3 +94,20 @@ class CrmTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PromptLintTests(unittest.TestCase):
+    def test_no_banned_phrases_and_reasonable_size(self):
+        text = "\n".join(b["text"] for b in outbound.build_prompt(LEAD, TUE_10AM, cfg()))
+        # these may appear only inside "never say" instructions
+        for phrase in ("I'd be happy to assist", "How may I assist"):
+            self.assertNotIn(phrase, text)
+        self.assertLess(len(text) / 4, 6000)   # roughly tokens: a bigger prompt costs more on every cache write
+        self.assertEqual(text.count("# Hard stops"), 1)
+
+    def test_every_objection_has_an_answer_and_ladder_has_three_asks(self):
+        text = outbound.PLAYBOOK.read_text()
+        for o in ("Not interested", "Send me some info", "already have someone", "How much", "Is this a robot", "don't trust AI", "bad time", "how'd you get my number"):
+            self.assertIn(o.lower(), text.lower())
+        for ask in ("Ask 1", "Ask 2", "Ask 3"):
+            self.assertIn(ask, text)

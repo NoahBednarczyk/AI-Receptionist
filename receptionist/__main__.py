@@ -248,6 +248,40 @@ def cmd_outbound_plan(cfg, a):
         print("\n\n".join(b["text"] for b in outbound.build_prompt(leads[0], now, cfg)))
 
 
+def _admin_get(url, path):
+    import urllib.request
+    token = os.environ.get("DASHBOARD_TOKEN")
+    if not token:
+        raise SystemExit("Set DASHBOARD_TOKEN (the admin key) first.")
+    req = urllib.request.Request(url.rstrip("/") + path, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+def cmd_outbound_sync(cfg, a):
+    from . import outbound_live
+    data = _admin_get(a.server, "/admin/outbound")
+    for p in outbound_live.crm_files(data, a.out):
+        print(f"Wrote {p}")
+    print(f"{len(data.get('calls', []))} calls, {len(data.get('bookings', []))} meetings, {len(data.get('dnc', []))} on the do-not-call list.")
+
+
+def cmd_outbound_agent(cfg, a):
+    from . import outbound_live, retell_setup
+    secret = os.environ.get("RETELL_WS_SECRET") or "<RETELL_WS_SECRET>"
+    payload = outbound_live.agent_payload(cfg, a.base_url, secret if a.create else "<RETELL_WS_SECRET>", a.voice)
+    if not a.create:
+        print(json.dumps(payload, indent=1))
+        print("\nThis only printed the settings. Nothing was created. Add --create (and --number +1...) once you approve the Retell change.")
+        return
+    if not a.number or not os.environ.get("RETELL_WS_SECRET"):
+        raise SystemExit("--create needs --number (an outbound-capable Retell number you bought) and RETELL_WS_SECRET.")
+    agent = retell_setup._call("POST", "/create-agent", payload)
+    retell_setup._call("POST", f"/publish-agent-version/{agent['agent_id']}", {"version": agent.get("version", 0), "version_title": "Initial setup"})
+    (Path(cfg["data_dir"]) / "retell_outbound.json").write_text(json.dumps({"agent_id": agent["agent_id"], "number": a.number}, indent=2))
+    print(f"Created outbound agent {agent['agent_id']}. No calls placed. Calls need outbound.mode changed, OUTBOUND_LIVE=1 and a lead that passes the gate.")
+
+
 def cmd_serve(cfg, a):
     import logging
     import uvicorn
@@ -387,6 +421,18 @@ def main():
     sp.add_argument("--leads", metavar="FILE", help="JSON list of leads exported from the dashboard (name, phone, stage, consent...)")
     sp.add_argument("--prompt", action="store_true", help="also print the system prompt for the first lead")
     sp.set_defaults(fn=cmd_outbound_plan)
+
+    sp = sub.add_parser("outbound-sync", help="pull the discovery caller's results from the server into data/reports for the dashboard")
+    sp.add_argument("--server", default="https://receptionist-575z.onrender.com")
+    sp.add_argument("--out", default="data/reports")
+    sp.set_defaults(fn=cmd_outbound_sync)
+
+    sp = sub.add_parser("outbound-agent", help="print (default) or create the Retell outbound agent; never places a call")
+    sp.add_argument("--base-url", default="https://receptionist-575z.onrender.com")
+    sp.add_argument("--voice")
+    sp.add_argument("--number", help="E.164 outbound number for --create")
+    sp.add_argument("--create", action="store_true", help="really create it in Retell (a change to your account)")
+    sp.set_defaults(fn=cmd_outbound_agent)
 
     sp = sub.add_parser("calendar-url", help="print the private calendar feed link (pipe it to pbcopy; don't paste it in chat)")
     sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")

@@ -32,6 +32,7 @@ class ToolContext:
     log: list = field(default_factory=list)
     last_filler: str | None = None       # the last spoken stall line, so the next one is different
     calendar_problems: list = field(default_factory=list)   # calendars the last availability check could not read
+    extra: dict = field(default_factory=dict)   # per-call data for tools outside the receptionist (the outbound caller)
 
 
 # Lines the phone system plays the moment a tool call starts, so the caller doesn't wait in silence. They play

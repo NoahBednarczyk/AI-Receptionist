@@ -1,6 +1,8 @@
 # Outbound bot plan: discovery caller + self-tester
 
-Status: PLAN ONLY. Nothing here is built, and nothing calls anyone yet.
+Status (2026-11-01): built and tested offline, wired but switched off. Nothing has been run live or against the API.
+Built: `outbound.py` (gate, queue, slots, prompt, CRM rows), `outbound_live.py` (OutboundSession, tools, state file, Retell payload, guarded place_call, dashboard hand-off), websocket `/llm-websocket-out/...` and `GET /admin/outbound` in server.py, CLI `outbound-plan`, `outbound-agent`, `outbound-sync`.
+Not done: the Retell outbound agent (needs Noah's yes + a bought number), any live or simulated call, the legal check, an Outbound panel on the dashboard, the self-tester (A).
 
 ## Two bots, one engine
 

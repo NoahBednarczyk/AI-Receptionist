@@ -1,0 +1,173 @@
+import json
+import tempfile
+import unittest
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from receptionist import outbound, outbound_live as ol, tools
+from receptionist.store import Store
+
+TZ = ZoneInfo("America/Los_Angeles")
+NOW = datetime(2026, 11, 3, 10, 0, tzinfo=TZ)
+LEAD = {"id": "L01", "name": "Case Plumbing", "phone": "208-304-3883", "stage": "leads", "type": "Plumbing"}
+CFG = {"data_dir": "", "models": {"agent": "a", "agent_effort": "low", "outbound": "b", "outbound_effort": "high"},
+       "agent": {"cache_ttl": "1h"}, "outbound": {"mode": "warm-only"}}
+
+
+class Fixture(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.state = ol.State(Path(self.dir.name) / "outbound.json")
+        self.store = Store(str(Path(self.dir.name) / "db.sqlite"))
+        self.s = ol.OutboundSession(None, {**CFG, "data_dir": self.dir.name}, LEAD, self.state, self.store, NOW, call_id="t1")
+
+
+class StopTests(unittest.TestCase):
+    def test_hard_and_soft_stops(self):
+        for t in ("stop calling me", "Take me off your list", "remove my number please", "put us on the do not call list", "I said don't call again"):
+            self.assertTrue(ol.stop_request(t), t)
+
+    def test_picking_another_time_is_not_a_stop(self):
+        for t in ("don't call me today, try Thursday", "Don't call back until after lunch", "not now, call me tomorrow"):
+            self.assertFalse(ol.stop_request(t), t)
+
+    def test_ai_question(self):
+        for t in ("Is this a robot?", "Are you a real person?", "am I talking to an AI", "wait are you a bot"):
+            self.assertTrue(ol.asked_if_ai(t), t)
+        self.assertFalse(ol.asked_if_ai("we get about ten calls a week"))
+
+
+class SessionTests(Fixture):
+    def test_opener_says_ai_in_first_sentence_every_variant(self):
+        for o in ol.OPENERS:
+            first = o.split(".")[0] + "." if "AI" in o.split(".")[0] else o
+            self.assertIn("AI assistant", o)
+            self.assertIn("AI assistant", " ".join(o.split(",")[:3]) + o[:90])
+        self.assertIn("AI assistant", self.s.greeting)
+
+    def test_uses_the_outbound_model_and_cached_prompt(self):
+        self.assertEqual(self.s.cfg["models"]["agent"], "b")
+        self.assertEqual(self.s.cfg["models"]["agent_effort"], "high")
+        self.assertIn("cache_control", self.s.system[0])
+        self.assertNotIn("cache_control", self.s.system[1])
+
+    def test_stop_request_ends_the_call_without_a_model_and_marks_dnc(self):
+        said = []
+        turn = self.s.respond("please stop calling me", said.append)
+        self.assertTrue(turn.ended and self.s.ended)
+        self.assertIn("+12083043883", self.state.dnc())
+        self.assertTrue(said and "list" in said[0])
+        self.assertEqual({c["name"] for c in turn.tools}, {"mark_do_not_call", "log_call", "end_call"})
+        row = self.s.finish(NOW, 0.4, "asked to stop")
+        self.assertEqual(row["outcome"], "Not interested")
+        self.assertEqual(self.state.data["lead_updates"]["L01"]["stage"], "contacted")
+        self.assertEqual(len(self.state.attempts("+12083043883")), 1)
+
+
+class ToolTests(Fixture):
+    def run_tool(self, name, args):
+        return tools.run_tool(self.s.ctx, name, args)
+
+    def test_booking_only_from_offered_slots_and_needs_ten_digits(self):
+        res, err = self.run_tool("book_meeting", {"start": NOW.isoformat(), "owner_name": "Dale", "callback_number": "2083043883"})
+        self.assertTrue(err)
+        slots, _ = self.run_tool("check_meeting_slots", {})
+        start = slots["open"][0]["start"]
+        res, err = self.run_tool("book_meeting", {"start": start, "owner_name": "Dale", "callback_number": "304-3883"})
+        self.assertTrue(err)
+        res, err = self.run_tool("book_meeting", {"start": start, "owner_name": "Dale", "callback_number": "208-304-3883"})
+        self.assertFalse(err)
+        self.assertIn("4:30", res["booked"])
+        again, _ = self.run_tool("check_meeting_slots", {})
+        self.assertNotIn(start, [s["start"] for s in again["open"]])   # booked times are gone
+
+    def test_demo_booked_cannot_be_logged_without_a_booking(self):
+        res, err = self.run_tool("log_call", {"outcome": "Demo booked", "summary": "x"})
+        self.assertTrue(err)
+        res, err = self.run_tool("log_call", {"outcome": "Callback requested", "summary": "wants a call Friday"})
+        self.assertFalse(err)
+
+    def test_state_survives_a_restart(self):
+        self.state.add_dnc("+12085550100")
+        self.assertIn("+12085550100", ol.State(self.state.path).dnc())
+
+
+class RetellTests(Fixture):
+    def test_agent_payload_uses_its_own_socket_and_discloses_on_voicemail(self):
+        p = ol.agent_payload(CFG, "https://x.onrender.com/", "SECRET", "voice_1")
+        self.assertEqual(p["response_engine"]["llm_websocket_url"], "wss://x.onrender.com/llm-websocket-out/SECRET")
+        self.assertIn("AI assistant", p["voicemail_option"]["action"]["text"])
+        self.assertIsNone(p["post_call_analysis_model"])
+
+    def test_place_call_is_refused_until_everything_allows_it(self):
+        calls = []
+        fn = lambda *a: calls.append(a) or {"call_id": "c"}
+        cfg = {**CFG, "data_dir": self.dir.name}
+        warm = {**LEAD, "consent": "yes"}
+        with self.assertRaises(RuntimeError):   # switch not set
+            ol.place_call(cfg, warm, NOW, self.state, fn, env={})
+        with self.assertRaises(RuntimeError):   # dry-run mode
+            ol.place_call({**cfg, "outbound": {"mode": "dry-run"}}, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
+        with self.assertRaises(RuntimeError):   # no consent in warm-only
+            ol.place_call(cfg, LEAD, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
+        (Path(self.dir.name) / "retell_outbound.json").write_text(json.dumps({"number": "+12085550100", "agent_id": "ag"}))
+        ol.place_call(cfg, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
+        self.assertEqual(calls[0][1], "/v2/create-phone-call")
+        self.assertEqual(calls[0][2]["metadata"]["lead"]["id"], "L01")
+        self.state.add_dnc("+12083043883")
+        with self.assertRaises(RuntimeError):   # do-not-call wins over consent
+            ol.place_call(cfg, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class HandoffTests(unittest.TestCase):
+    def test_crm_files_hold_calls_leads_and_meeting_tasks(self):
+        data = {"calls": [{"n": 3, "business": "Case Plumbing", "outcome": "Demo booked"}], "lead_updates": {"L01": {"stage": "pain"}},
+                "bookings": [{"start": "2026-11-03T16:30:00-08:00", "owner": "Dale", "phone": "+12083043883", "business": "Case Plumbing"}]}
+        with tempfile.TemporaryDirectory() as d:
+            files = ol.crm_files(data, d)
+            by = {f.name: json.loads(f.read_text()) for f in files}
+        self.assertEqual(list(by["outbound-calls.json"]), ["ai3"])
+        self.assertEqual(by["outbound-leads.json"]["L01"]["stage"], "pain")
+        self.assertEqual(by["outbound-tasks.json"]["ai-meet-0"]["due"], "2026-11-03")
+
+
+class SocketTests(Fixture):
+    def test_full_socket_flow_for_a_stop_request_needs_no_model(self):
+        import asyncio
+        from receptionist import live
+        events = [{"interaction_type": "call_details", "call": {"call_id": "c1", "metadata": {"lead": LEAD}}},
+                  {"interaction_type": "response_required", "response_id": 1,
+                   "transcript": [{"role": "agent", "content": self.s.greeting}, {"role": "user", "content": "Yeah stop calling me."}]}]
+        sent, finished = [], []
+
+        async def run():
+            queue = asyncio.Queue()
+            for e in events:
+                queue.put_nowait(e)
+
+            async def receive():
+                if queue.empty():
+                    await asyncio.sleep(0.3)   # the call stays open until the worker has answered
+                    raise ConnectionError("hung up")
+                return await queue.get()
+
+            async def send(m):
+                sent.append(m)
+            try:
+                await live.run_retell_call(receive, send, lambda call: self.s, finished.append)
+            except ConnectionError:
+                pass
+        asyncio.run(run())
+        greeting = next(m for m in sent if m.get("response_id") == 0)
+        self.assertIn("AI assistant", greeting["content"])
+        last = [m for m in sent if m.get("response_id") == 1]
+        self.assertTrue(any(m.get("end_call") for m in last))
+        self.assertTrue(any("list" in m.get("content", "") for m in last))
+        self.assertEqual(finished, [self.s])
+        self.assertIn("+12083043883", self.state.dnc())
