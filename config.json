@@ -74,7 +74,9 @@
   "live": {
     "interject": {
       "enabled": true,
-      "min_words": 60,
+      "min_words": 25,
+      "min_seconds": 12,
+      "fast_words": 45,
       "max_per_call": 2,
       "min_gap_s": 30
     }

@@ -146,8 +146,8 @@ class CutInTests(unittest.TestCase):
             self.assertIsNone(s.interject("blah " * 70))
 
 
-class LiveCutInTests(unittest.TestCase):
-    """A simulated Retell sends live transcript updates while the caller talks."""
+class CutInHarness:
+    """A simulated Retell sends live transcript updates while the caller talks. Shared by the cut-in test classes."""
 
     RAMBLE = " ".join(["so", "my", "lawn", "is", "a", "mess", "and", "the", "neighbor"] * 8)      # 72 words
 
@@ -191,6 +191,8 @@ class LiveCutInTests(unittest.TestCase):
     def interrupts(self, seen):
         return [m for m in seen if m.get("response_type") == "agent_interrupt"]
 
+
+class LiveCutInTests(CutInHarness, unittest.TestCase):
     def test_a_rambling_caller_gets_one_polite_cut_in(self):
         seen = self.interrupts(self.call(self.start(), [self.RAMBLE, self.RAMBLE + " and also the fence"]))
         self.assertEqual(len(seen), 1)                              # once per turn, even as the transcript keeps growing
@@ -217,6 +219,32 @@ class LiveCutInTests(unittest.TestCase):
         self.assertEqual(self.interrupts(self.call(client, [self.RAMBLE])), [])
 
 
+class RespondDontInterviewTests(unittest.TestCase):
+    """From the user's test calls: it asked for the address right away and steered the whole conversation."""
+
+    def test_a_recognized_caller_is_not_asked_to_confirm_their_address_up_front(self):
+        customer = {"name": "Noah", "address": "906 Alder Street", "town": "Sandpoint", "notes": None}
+        for biz in (LAWN, HVAC):
+            state = prompts.call_state(biz, NOW, "+12085550142", customer, [])
+            self.assertIn("You recognize this caller", state, biz["id"])
+            self.assertIn("never open by asking for or confirming their address", state)
+            self.assertNotIn("confirm the address on file is still right", state)
+
+    def test_every_vertical_tells_the_agent_to_respond_first_and_steer_only_at_the_end(self):
+        for biz in (LAWN, HVAC, ACME, load_business(CFG, "glow")):
+            p = prompts.stable_prompt(biz)
+            for needle in ("You respond; you don't run an interview", "Never open by asking for their name, address",
+                           "Only when everything they wanted has been said and dealt with do you steer",
+                           "Be human in the small ways", "Don't steer back to your own agenda",
+                           "This is what a booking needs, not the order of the conversation"):
+                self.assertIn(needle, p, biz["id"])
+            self.assertNotIn("Ask one new question at a time and end your reply with it", p)
+
+    def test_the_stock_intake_order_is_no_longer_commanded(self):
+        playbook = (prompts.PLAYBOOKS / "lawn_care.md").read_text()
+        self.assertNotIn("Collect these one at a time, in a natural order, skipping anything you already know:", playbook)
+
+
 class CacheTests(unittest.TestCase):
     def test_the_stable_prompt_is_cached_for_an_hour_by_default(self):
         self.assertEqual(cache_control(CFG), {"type": "ephemeral", "ttl": "1h"})
@@ -234,6 +262,22 @@ class CacheTests(unittest.TestCase):
         usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 1_000_000}
         self.assertAlmostEqual(usage_cost(CFG, "claude-sonnet-5-5", usage, cache_write_mult(CFG)), 4.0)
         self.assertAlmostEqual(usage_cost(CFG, "claude-sonnet-5-5", usage), 2.5)
+
+
+
+class SlowRamblerTests(CutInHarness, unittest.TestCase):
+    """A long, slow turn (the 28-second, 59-word ramble from a real call) gets cut in on by time, not just word count."""
+
+    def test_a_slow_talker_is_cut_in_on_by_time_even_under_the_word_count(self):
+        slow = {"min_words": 20, "min_seconds": 0.5, "fast_words": 1000}
+        said = " ".join(["so", "the", "lawn", "is", "really", "kind", "of", "patchy"] * 3)      # 24 words
+        seen = self.interrupts(self.call(self.start(slow), [said, said + " and", said + " and also"]))
+        self.assertEqual(len(seen), 1)
+
+    def test_a_fast_short_burst_is_not_cut_in_on(self):
+        slow = {"min_words": 20, "min_seconds": 30, "fast_words": 1000}
+        said = " ".join(["so", "the", "lawn", "is", "really", "kind", "of", "patchy"] * 3)
+        self.assertEqual(self.interrupts(self.call(self.start(slow), [said, said + " and"])), [])
 
 
 if __name__ == "__main__":

@@ -134,7 +134,7 @@ class OverflowTests(unittest.TestCase):
         state = prompts.call_state(HVAC, WINTER_NIGHT, "+12085550177", None, [])
         self.assertIn("Overflow mode", state)
         self.assertNotIn("the office is closed right now", state)
-        self.assertIn("take the caller's message first", state)
+        self.assertIn("save their message quietly with take_message", state)
 
     def test_the_owner_cell_is_a_target_that_is_always_reachable_and_a_placeholder_never_rings(self):
         self.assertEqual(HVAC["transfer_targets"]["owner"]["available"], "always")

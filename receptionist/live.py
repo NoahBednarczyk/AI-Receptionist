@@ -113,7 +113,10 @@ def echo_note(said: str, agent_line: str) -> str | None:
             "question before acting.")
 
 
-INTERJECT_DEFAULTS = {"enabled": True, "min_words": 60, "max_per_call": 2, "min_gap_s": 30}
+# A caller who has talked for `min_seconds` and said `min_words` (or who has said `fast_words` at any speed) without a
+# reply from us gets one polite cut-in. Measured in a real call: a 28-second ramble was only 59 words.
+INTERJECT_DEFAULTS = {"enabled": True, "min_words": 25, "min_seconds": 12, "fast_words": 45, "max_per_call": 2,
+                      "min_gap_s": 30}
 
 
 async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable[[dict], Awaitable[None]],
@@ -133,6 +136,8 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
     interjected_turns: set[int] = set()   # caller turns we already cut in on (by agent lines heard so far)
     interjections = 0
     last_interjection = -1e9
+    turn_started: dict[int, float] = {}   # when we first saw the caller talking in each turn
+    live = {"updates": 0, "longest": 0}   # what Retell's live updates showed, logged when the call ends
 
     async def say(message: dict) -> None:
         async with lock:   # the reader and the worker both send
@@ -171,8 +176,13 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
             return
         text = new_caller_text(transcript)
         turn = sum(1 for e in transcript if e.get("role") == "agent")
-        if (len(text.split()) < cfg["min_words"] or GARBLED.match(text) or turn in interjected_turns
-                or loop.time() - last_interjection < cfg["min_gap_s"]):
+        words, now = len(text.split()), loop.time()
+        started = turn_started.setdefault(turn, now)
+        live["updates"] += 1
+        live["longest"] = max(live["longest"], words)
+        long_enough = words >= cfg["fast_words"] or (words >= cfg["min_words"] and now - started >= cfg["min_seconds"])
+        if (not long_enough or GARBLED.match(text) or turn in interjected_turns
+                or now - last_interjection < cfg["min_gap_s"]):
             return
         if safety.match(session.biz.get("vertical", ""), text, session.ctx.language):
             return   # an emergency gets its safety line from the normal path, never a cut-in
@@ -323,4 +333,6 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
         for t in tasks:
             t.cancel()
         if session is not None:
+            log.info("call %s: Retell sent %d live transcript updates; longest caller turn seen live: %d words",
+                     session.call_id, live["updates"], live["longest"])
             await loop.run_in_executor(None, finish, session)
