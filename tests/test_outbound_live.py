@@ -40,7 +40,7 @@ class StopTests(unittest.TestCase):
 
 
 class SessionTests(Fixture):
-    def test_opener_has_a_hook_then_discloses_ai_before_any_ask(self):
+    def test_opener_has_a_hook_names_the_caller_and_says_it_is_a_sales_call_but_not_ai(self):
         import random
         s = ol.outbound.settings(CFG)
         for trade in ("Plumbing", "HVAC", "Other"):
@@ -48,10 +48,11 @@ class SessionTests(Fixture):
                 text = ol.opener({"name": "Case Plumbing", "type": trade, "contact": "Dale Smith"}, s, random.Random(seed))
                 self.assertTrue(text.startswith("Hi Dale? "), text)
                 self.assertIn("Case Plumbing", text)
-                ai, ask = text.index("AI assistant"), min(text.index(w) for w in ("minute", "terrible time", "sixty") if w in text)
-                self.assertLess(ai, ask)
+                self.assertIn("sales call", text.lower().replace("selling something", "sales call"))
+                self.assertIn("Ringback", text)
+                self.assertNotRegex(text, r"(?i)\b(ai|robot|bot|artificial)\b")
+                self.assertNotRegex(text, r"(?i)\bhuman\b")
                 self.assertNotIn("{", text)
-        self.assertIn("AI assistant", self.s.greeting)
 
     def test_a_lead_written_hook_wins_and_hooks_vary(self):
         import random
@@ -108,10 +109,10 @@ class ToolTests(Fixture):
 
 
 class RetellTests(Fixture):
-    def test_agent_payload_uses_its_own_socket_and_discloses_on_voicemail(self):
+    def test_agent_payload_uses_its_own_socket_and_names_the_caller_on_voicemail(self):
         p = ol.agent_payload(CFG, "https://x.onrender.com/", "SECRET", "voice_1")
         self.assertEqual(p["response_engine"]["llm_websocket_url"], "wss://x.onrender.com/llm-websocket-out/SECRET")
-        self.assertIn("AI assistant", p["voicemail_option"]["action"]["text"])
+        self.assertIn("Ringback", p["voicemail_option"]["action"]["text"])
         self.assertIsNone(p["post_call_analysis_model"])
 
     def test_place_call_is_refused_until_everything_allows_it(self):
@@ -178,7 +179,7 @@ class SocketTests(Fixture):
                 pass
         asyncio.run(run())
         greeting = next(m for m in sent if m.get("response_id") == 0)
-        self.assertIn("AI assistant", greeting["content"])
+        self.assertIn("Ringback", greeting["content"])
         last = [m for m in sent if m.get("response_id") == 1]
         self.assertTrue(any(m.get("end_call") for m in last))
         self.assertTrue(any("list" in m.get("content", "") for m in last))

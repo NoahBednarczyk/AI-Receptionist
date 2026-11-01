@@ -19,23 +19,23 @@ from .agent import CallSession, Turn, cache_control
 from .speech import normalize_phone, spoken_phone
 from .tools import ToolError
 
-INTRO = ["{agent} here, an AI assistant calling for {founder} at {company} in {town}. Got sixty seconds?",
-         "I'm {agent}, an AI assistant calling for {founder} at {company}, here in {town}. Quick minute?",
-         "This is {agent}, an AI assistant for {founder} at {company} in {town}. Is now a terrible time?",
-         "{agent} calling, I'm an AI assistant working for {founder} at {company} in {town}. Can I steal a minute?"]
+INTRO = ["{agent} here, calling for {founder} at {company} in {town}. Fair warning, it's a sales call, but a short one. Got a minute?",
+         "I'm {agent}, calling on behalf of {founder} at {company}, here in {town}. It's a sales call, I'll keep it quick. Okay?",
+         "This is {agent} with {founder} at {company} in {town}. Heads up, I'm selling something, but I'm fast. Is now terrible?",
+         "{agent} calling for {founder} at {company}, {town}. Yes, it's a sales call, and I'll be short. Can I steal a minute?"]
 # One-liners that need nothing but the shop's name or trade. A lead's own `hook` field (written for that shop) beats these.
 HOOKS = {
     "plumbing": ["Is {biz} the plumbing outfit that gets called at 2 AM, or the one that doesn't answer at 2 AM?",
                  "I'm told {biz} fixes things people have been ignoring for three weeks.",
                  "Quick one for {biz}: a pipe bursts at dinnertime, who answers your phone?",
-                 "I was told to call {biz} because plumbers are the only people busier than robots."],
+                 "I was told to call {biz} because plumbers are the busiest people in {town}."],
     "hvac": ["Is {biz} the folks people call when it's minus ten and the furnace has opinions?",
              "I'm calling {biz} because nobody thinks about heating until it quits.",
              "Quick one for {biz}: furnace dies at 6 PM on a Sunday, who picks up?",
              "I hear {biz} keeps {town} warm, and I keep calling people who can't hear their phone."],
     "default": ["I'm calling {biz} with the strangest cold call you'll get today.",
                 "Quick one for {biz}: when you're elbow-deep in a job and the phone rings, who gets it?",
-                "I found {biz} in {town} and had to see if a human picks up."],
+                "I found {biz} in {town} and had to see what happens when the phone rings."],
 }
 
 
@@ -255,7 +255,7 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice_id: str | None = 
     s = outbound.settings(cfg)
     base = base_url.rstrip("/")
     ws = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
-    voicemail = (f"Hi, this is {s['agent_name']}, an AI assistant calling for {s['founder']} at {s['company']} in {s['town']}. "
+    voicemail = (f"Hi, this is {s['agent_name']}, calling for {s['founder']} at {s['company']} in {s['town']}. "
                  f"We're building a phone assistant for heating and plumbing shops and {s['founder']} would like ten minutes "
                  f"of your time. You can try our demo line any time at {spoken_phone(s['demo_line'])}. Thanks, and have a good day.")
     return {"agent_name": f"{s['company']} discovery caller",

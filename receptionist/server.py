@@ -308,8 +308,8 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
 
         def start_session(call: dict):
             lead = (call.get("metadata") or {}).get("lead")
-            if not lead or not (Path(cfg["data_dir"]) / "retell_outbound.json").exists():
-                log.error("outbound socket opened without a lead or without retell_outbound.json; hanging up")
+            if not lead or cfg.get("outbound", {}).get("mode", "dry-run") == "dry-run":
+                log.error("outbound socket opened without a lead or while outbound.mode is dry-run; hanging up")
                 return None
             return outbound_live.OutboundSession(client, cfg, lead, out_state, store, datetime.datetime.now(datetime.timezone.utc),
                                                  call_id=f"retell-{call.get('call_id') or retell_call_id}")
