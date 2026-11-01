@@ -12,7 +12,9 @@
     "caller_sim": "claude-haiku-5-5",
     "caller_sim_effort": "low",
     "grader": "claude-sonnet-5-5",
-    "grader_effort": "low"
+    "grader_effort": "low",
+    "outbound": "claude-sonnet-5-5",
+    "outbound_effort": "high"
   },
   "agent": {
     "max_tokens": 2048,
@@ -93,5 +95,9 @@
     ],
     "project_start": "2026-10-12",
     "fixed_start": "2026-10-26"
+  },
+  "outbound": {
+    "mode": "dry-run",
+    "cold_enabled": false
   }
 }

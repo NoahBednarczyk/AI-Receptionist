@@ -237,6 +237,17 @@ def cmd_finance_sync(cfg, a):
     print(finance.render(snap))
 
 
+def cmd_outbound_plan(cfg, a):
+    from datetime import datetime, timezone
+    from . import outbound
+    leads = json.loads(Path(a.leads).read_text()) if a.leads else []
+    now = datetime.now(timezone.utc)
+    print(outbound.render_queue(outbound.plan_queue(leads, now, cfg), cfg))
+    if a.prompt and leads:
+        print("\n--- system prompt preview (first lead) ---")
+        print("\n\n".join(b["text"] for b in outbound.build_prompt(leads[0], now, cfg)))
+
+
 def cmd_serve(cfg, a):
     import logging
     import uvicorn
@@ -371,6 +382,11 @@ def main():
     sp.add_argument("--out", default="data/reports", help="folder for finance-current.json and finance-daily.json")
     sp.add_argument("--since", metavar="YYYY-MM-DD", help="start of the project (default finance.project_start in config.json)")
     sp.set_defaults(fn=cmd_finance_sync)
+
+    sp = sub.add_parser("outbound-plan", help="dry run of the discovery caller: who would be called and why not (places nothing)")
+    sp.add_argument("--leads", metavar="FILE", help="JSON list of leads exported from the dashboard (name, phone, stage, consent...)")
+    sp.add_argument("--prompt", action="store_true", help="also print the system prompt for the first lead")
+    sp.set_defaults(fn=cmd_outbound_plan)
 
     sp = sub.add_parser("calendar-url", help="print the private calendar feed link (pipe it to pbcopy; don't paste it in chat)")
     sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")
