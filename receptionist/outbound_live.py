@@ -123,6 +123,18 @@ class State:
             self.data["bookings"].append(booking)
             self.save()
 
+    def set_slots(self, slots: list[str], now: datetime) -> None:
+        """Open meeting starts from the manager agent (ISO times). They replace the default windows while fresh."""
+        with self.lock:
+            self.data["slots"] = {"updated": now.isoformat(), "list": sorted(slots)}
+            self.save()
+
+    def manager_slots(self, now: datetime, max_age_h: int = 36) -> list[datetime] | None:
+        got = self.data.get("slots")
+        if not got or now - datetime.fromisoformat(got["updated"]) > timedelta(hours=max_age_h):
+            return None
+        return [datetime.fromisoformat(t) for t in got["list"]]
+
     def next_call_number(self) -> int:
         return len(self.data["calls"]) + 1
 
@@ -141,7 +153,14 @@ def _x(ctx):
 
 
 def check_meeting_slots(ctx, a):
-    slots = outbound.meeting_slots(ctx.now, _x(ctx)["cfg"], _x(ctx)["state"].booked_times())
+    state, cfg = _x(ctx)["state"], _x(ctx)["cfg"]
+    given = state.manager_slots(ctx.now)
+    if given is not None:   # the manager agent's real open times, minus what is booked and anything too soon
+        booked = {b.replace(second=0, microsecond=0) for b in state.booked_times()}
+        soon = ctx.now + timedelta(minutes=outbound.settings(cfg)["slot_lead_min"])
+        slots = [t for t in given if t >= soon and t.replace(second=0, microsecond=0) not in booked][:4]
+    else:
+        slots = outbound.meeting_slots(ctx.now, cfg, state.booked_times())
     _x(ctx)["offered"] = {s.isoformat() for s in slots}
     return {"open": [{"start": s.isoformat(), "say": outbound.spoken_slot(s, ctx.now.astimezone(s.tzinfo).date())} for s in slots]}
 
@@ -195,7 +214,9 @@ class OutboundSession(CallSession):
         self.biz = {"id": "outbound", "vertical": "outbound", "name": s["company"], "spoken_name": s["company"],
                     "agent_name": s["agent_name"], "timezone": s["timezone"]}
         self.lead, self.state, self.started = lead, state, now
-        self.greeting = opener(lead, s, rng)
+        self.greeting = ""   # an empty first message makes Retell wait for the person to say hello
+        self.opener = opener(lead, s, rng)
+        self._opened = False
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
         self.system = [{**blocks[0], "cache_control": cache_control(cfg)}, blocks[1]]
@@ -204,7 +225,7 @@ class OutboundSession(CallSession):
         self.ctx = tools.ToolContext(self.biz, store, now, phone, self.call_id)
         self.ctx.extra.update(cfg=cfg, state=state, lead=lead)
         self.messages: list[dict] = []
-        self.transcript: list[dict] = [{"role": "agent", "text": self.greeting}]
+        self.transcript: list[dict] = []
         self.usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
         self._before = None
         self._said_once, self._recent_acks, self._held_back, self._interjections = set(), [], [], []
@@ -213,6 +234,13 @@ class OutboundSession(CallSession):
     def respond(self, caller_text, on_text=None, control=None, heard_only=None, note=None):
         if not self.ctx.ended and stop_request(caller_text):
             return self._stop(caller_text, on_text)
+        if not self._opened and not self.ctx.ended:   # their first words ("Hello?"): the opener answers, no model call
+            self._opened = True
+            if on_text:
+                on_text(self.opener)
+            messages = [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.opener}]
+            self._save(messages, caller_text, {"role": "agent", "text": self.opener, "tools": [], "steps": [{"say": self.opener}]}, None, final=False)
+            return Turn(self.opener, [], 0.0, 0.0, False)
         if asked_if_ai(caller_text):
             note = f"{note} {AI_NOTE}" if note else AI_NOTE
         return super().respond(caller_text, on_text, control, heard_only, note)
@@ -270,7 +298,6 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = No
             **(voice or {}),
             "boosted_keywords": [s["agent_name"], s["company"], s["founder"], s["town"], "plumbing", "heating", "furnace", "voicemail"],
             "webhook_url": f"{base}/retell/webhook", "language": "en-US",
-            "enable_voicemail_detection": True,
             "voicemail_option": {"action": {"type": "static_text", "text": voicemail}},
             "end_call_after_silence_ms": 15000, "max_call_duration_ms": 600000,
             "post_call_analysis_model": None}
@@ -291,6 +318,8 @@ def place_call(cfg: dict, lead: dict, now: datetime, state: State, call_fn, env=
         raise RuntimeError("No outbound number yet: run `outbound-number --number +1...` once you have one from Retell.")
     return call_fn("POST", "/v2/create-phone-call", {
         "from_number": rec["number"], "to_number": normalize_phone(lead["phone"]), "override_agent_id": rec["agent_id"],
+        "idempotency_key": f"{lead.get('id') or 'lead'}-{int(now.timestamp())}",   # a retry within an hour cannot dial twice
+        "honor_internal_dnc": True,
         "metadata": {"lead": {k: lead.get(k, "") for k in ("id", "name", "phone", "type", "contact", "notes", "consent")}}})
 
 

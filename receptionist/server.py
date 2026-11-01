@@ -214,6 +214,22 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
             raise HTTPException(404)
         return outbound_live.State(Path(cfg["data_dir"]) / "outbound.json").data
 
+    @app.put("/admin/outbound/slots")
+    async def outbound_slots(request: Request):
+        """The manager agent posts the open meeting times: {"slots": ["2026-11-03T16:30:00-08:00", ...]} (admin key).
+        They replace the default windows for 36 hours, so the caller offers only times that are really free."""
+        who = _who(request)
+        sent = request.headers.get("authorization", "").removeprefix("Bearer ")
+        if limiter.blocked(who) or not (dashboard_token and secrets.compare_digest(sent, dashboard_token)):
+            limiter.record(who)
+            raise HTTPException(404)
+        try:
+            slots = [datetime.datetime.fromisoformat(t).isoformat() for t in (await request.json())["slots"]]
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(422, "send {\"slots\": [ISO times with a UTC offset]}")
+        outbound_live.State(Path(cfg["data_dir"]) / "outbound.json").set_slots(slots, datetime.datetime.now(datetime.timezone.utc))
+        return {"ok": True, "slots": len(slots)}
+
     @app.get("/calendar.ics")
     def calendar_feed_route(request: Request, token: str = "", business: str | None = None):
         biz = _checked(request, token, business, "calendar")

@@ -27,7 +27,7 @@ Written 2026-11-01 by the Claude Code session. Repo: `/Users/noahbednarczyk/Docu
 **Persona (Noah's brief).** Cheerfully naive, fast, deadpan; short quips when the owner gives an opening, serious and crisp when they are serious; stubborn about getting answers and the meeting; handles angry or rude owners by agreeing with the fair part, answering honestly, giving a reason to stay 30 seconds, and making one small ask.
 
 **Call structure** (`receptionist/playbooks/sales.md`):
-1. Opener, said by code. A hook about the shop, then who is calling (Riley, for Noah at Ringback), that it is a short sales call, a small ask. A lead's own `hook` field wins; otherwise a plumbing, HVAC or generic hook pool is used.
+1. Opener, said by code the moment the person speaks first (the agent's first message is empty, so Retell waits for "hello", then the opener plays with no model call). A hook about the shop, then who is calling (Riley, for Noah at Ringback), that it is a short sales call, a small ask. A lead's own `hook` field wins; otherwise a plumbing, HVAC or generic hook pool is used.
 2. One-sentence reason for calling.
 3. Discover (core): Noah's ten questions, priority Q1, Q4, Q2, Q6; SPIN questions, mirroring, labeling; get a dollar figure in the owner's words.
 4. Bridge to the meeting with two concrete times (alternative close).
@@ -45,7 +45,7 @@ Written 2026-11-01 by the Claude Code session. Repo: `/Users/noahbednarczyk/Docu
 **Eligibility gate** (`outbound.can_call`): usable phone number; not on the do-not-call list; mode check; weekdays only; shop-local hours 8am-6pm; at most 2 attempts per number per 7 days; respects a `followDate` in the future. Modes (`outbound.mode` in config.json): `dry-run` (default; reports only), `warm-only` (needs `consent: yes` on the lead), `cold` (needs `outbound.cold_enabled` true and, unless consented, a landline flag).
 
 **Files**
-- `receptionist/outbound.py`: settings, gate, queue, meeting slots (Noah's windows are placeholders: weekdays 7:30-8:30 am, plus Tue/Thu 4:30-5:30 pm; confirm), prompt builder, tool schemas, CRM row and lead-update builders.
+- `receptionist/outbound.py`: settings, gate, queue, meeting slots (Noah is free any time: default windows are 8am-8pm every day, offers spread across morning/afternoon/evening, never sooner than 2 hours out), prompt builder, tool schemas, CRM row and lead-update builders.
 - `receptionist/outbound_live.py`: `OutboundSession` (a CallSession subclass), the four outbound tools, `State` (data/outbound.json: do-not-call list, attempts, bookings, results), opener/hook generator, stop and AI-question detection, Retell agent payload, guarded `place_call`, dashboard export.
 - `receptionist/playbooks/sales.md`: the playbook.
 - `receptionist/server.py`: websocket `/llm-websocket-out/<secret>/<call>` (refuses while mode is dry-run) and admin `GET /admin/outbound`.
@@ -68,9 +68,9 @@ Blocked on Noah:
 1. Anthropic credits (nothing can call the model until then).
 2. A Retell outbound number, then `outbound-number`.
 3. A push to GitHub so Render has the new routes (not requested yet).
-4. Confirm Noah's meeting windows.
+4. Manager agent hookup (meeting times): `PUT /admin/outbound/slots` with the admin key and `{"slots": ["2026-11-03T16:30:00-08:00", ...]}` replaces the default windows for 36 hours; the caller then offers only those real open times (minus booked ones and anything under 2 hours away). Results come back through `GET /admin/outbound` and `outbound-sync`.
 5. Legal: research was done (docs/outbound-legal-notes.md: AI voice counts as an artificial voice under the TCPA; FTC rule against misleading statements now covers business-to-business calls; Idaho solicitor registration unverified). Noah says it is inaccurate and to disregard it. It is left in the repo as unverified research and is not acted on beyond honoring stop requests.
-6. Unverified Retell details (from memory): the `/v2/create-phone-call` request and the voicemail setting. Check before the first call.
+6. Retell details checked against Retell's docs (2026-11-01): `POST /v2/create-phone-call` (from_number, to_number required; override_agent_id, metadata, idempotency_key, honor_internal_dnc optional) is correct, and `call_details` includes `metadata`. Voicemail is controlled only by `voicemail_option` (the `enable_voicemail_detection` field I sent does not exist and was ignored; removed from the code). Still unverified until a real call: what Retell does with an empty first message on outbound calls (docs say it waits for the person to speak) and how voicemail detection and our greeting interact.
 
 Other open items from earlier: apply `retell-tune` to switch off Retell's duplicate summary; voice cost options; run `simulate --business lawn_care --quick` after credits return (the human-feel prompt changes have never been simulated); real owner cell numbers for transfers are still placeholders; recording-notice items stay open.
 
@@ -78,6 +78,6 @@ Other open items from earlier: apply `retell-tune` to switch off Retell's duplic
 
 - Which shops go on the first warm list (who has said they want to hear from us)?
 - Is Sonnet 5.5 at medium effort the right brain, or is a stronger model worth the price per call?
-- What are the real meeting windows?
+- Which scheduling signals should the manager agent use to produce open slots, and how often should it refresh them (36 hours is the staleness limit)?
 - Do hooks get written per lead before the first call?
 - Budget for the first live batch (suggest 10 calls, about $5), and for the self-tester.

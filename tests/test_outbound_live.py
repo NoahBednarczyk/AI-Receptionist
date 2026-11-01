@@ -1,7 +1,7 @@
 import json
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -93,7 +93,7 @@ class ToolTests(Fixture):
         self.assertTrue(err)
         res, err = self.run_tool("book_meeting", {"start": start, "owner_name": "Dale", "callback_number": "208-304-3883"})
         self.assertFalse(err)
-        self.assertIn("4:30", res["booked"])
+        self.assertIn(slots["open"][0]["say"].split(" at ")[1], res["booked"])
         again, _ = self.run_tool("check_meeting_slots", {})
         self.assertNotIn(start, [s["start"] for s in again["open"]])   # booked times are gone
 
@@ -143,6 +143,42 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class OpenerAndSlotsTests(Fixture):
+    def test_first_words_get_the_opener_without_a_model_then_the_session_is_opened(self):
+        said = []
+        turn = self.s.respond("Hello?", said.append)
+        self.assertEqual(turn.text, self.s.opener)
+        self.assertEqual(said, [self.s.opener])
+        self.assertIn("Case Plumbing", self.s.opener)
+        self.assertEqual([m["role"] for m in self.s.messages], ["user", "assistant"])   # the model sees a normal history
+        self.assertFalse(self.s.ended)
+
+    def test_manager_slots_replace_the_defaults_until_stale(self):
+        slots = ["2026-11-03T13:15:00-08:00", "2026-11-03T09:00:00-08:00", "2026-11-04T10:00:00-08:00"]
+        self.state.set_slots(slots, NOW)
+        res, err = tools.run_tool(self.s.ctx, "check_meeting_slots", {})
+        starts = [o["start"] for o in res["open"]]
+        self.assertEqual(starts, ["2026-11-03T13:15:00-08:00", "2026-11-04T10:00:00-08:00"])   # 9:00 is under two hours away
+        self.assertEqual(self.state.manager_slots(NOW + timedelta(hours=40)), None)
+
+    def test_booking_removes_a_manager_slot(self):
+        self.state.set_slots(["2026-11-03T13:15:00-08:00", "2026-11-04T10:00:00-08:00"], NOW)
+        tools.run_tool(self.s.ctx, "check_meeting_slots", {})
+        tools.run_tool(self.s.ctx, "book_meeting", {"start": "2026-11-03T13:15:00-08:00", "owner_name": "Dale", "callback_number": "208-304-3883"})
+        res, _ = tools.run_tool(self.s.ctx, "check_meeting_slots", {})
+        self.assertEqual([o["start"] for o in res["open"]], ["2026-11-04T10:00:00-08:00"])
+
+    def test_place_call_sends_an_idempotency_key_and_honors_internal_dnc(self):
+        calls = []
+        cfg = {**CFG, "data_dir": self.dir.name}
+        (Path(self.dir.name) / "retell_outbound.json").write_text(json.dumps({"number": "+12085550100", "agent_id": "ag"}))
+        ol.place_call(cfg, {**LEAD, "consent": "yes"}, NOW, self.state, lambda *a: calls.append(a) or {}, env={"OUTBOUND_LIVE": "1"})
+        body = calls[0][2]
+        self.assertRegex(body["idempotency_key"], r"^[A-Za-z0-9_-]{5,255}$")
+        self.assertTrue(body["honor_internal_dnc"])
+        self.assertNotIn("enable_voicemail_detection", ol.agent_payload(CFG, "https://x.io", "S"))
+
+
 class HandoffTests(unittest.TestCase):
     def test_crm_files_hold_calls_leads_and_meeting_tasks(self):
         data = {"calls": [{"n": 3, "business": "Case Plumbing", "outcome": "Demo booked"}], "lead_updates": {"L01": {"stage": "pain"}},
@@ -183,7 +219,7 @@ class SocketTests(Fixture):
                 pass
         asyncio.run(run())
         greeting = next(m for m in sent if m.get("response_id") == 0)
-        self.assertIn("Ringback", greeting["content"])
+        self.assertEqual(greeting["content"], "")   # Retell waits for the person to say hello
         last = [m for m in sent if m.get("response_id") == 1]
         self.assertTrue(any(m.get("end_call") for m in last))
         self.assertTrue(any("list" in m.get("content", "") for m in last))

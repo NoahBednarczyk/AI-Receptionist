@@ -36,9 +36,11 @@ DEFAULTS = {
     "max_attempts_per_week": 2,
     "cold_enabled": False,                       # stays false until the legal check is done
     "meeting_minutes": 15,
-    # Noah's windows for the meeting (placeholders: confirm them). Local time.
-    "meeting_windows": {"mon": ["07:30", "08:30"], "tue": ["16:30", "17:30"], "wed": ["07:30", "08:30"],
-                        "thu": ["16:30", "17:30"], "fri": ["07:30", "08:30"]},
+    # Noah is free any time. Until the manager agent supplies real open slots (State.set_slots), offers come from these
+    # wide windows, every day, local time.
+    "meeting_windows": {d: ["08:00", "20:00"] for d in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]},
+    "slot_spacing_min": 30,
+    "slot_lead_min": 120,                        # never offer a time sooner than this from now
 }
 
 
@@ -100,14 +102,20 @@ def lead_rank(lead: dict) -> int:
 
 # ---------------------------------------------------------------- meeting slots
 
+def bucket(t: datetime) -> str:
+    return "morning" if t.hour < 12 else "afternoon" if t.hour < 17 else "evening"
+
+
 def meeting_slots(now: datetime, cfg: dict, taken: list[datetime] | None = None, count: int = 4) -> list[datetime]:
-    """The next `count` open meeting starts inside Noah's windows (local time), skipping `taken` and the next 2 hours."""
+    """Open meeting starts to offer, spread out (a morning, an afternoon, an evening, on today and the next days) so the
+    caller can say "Tuesday at 5 or Wednesday morning at 8?" instead of four times in a row."""
     s = settings(cfg)
     tz = ZoneInfo(s["timezone"])
     local = now.astimezone(tz)
-    step = timedelta(minutes=s["meeting_minutes"])
+    step = timedelta(minutes=s["slot_spacing_min"])
+    length = timedelta(minutes=s["meeting_minutes"])
     busy = {t.astimezone(tz).replace(second=0, microsecond=0) for t in (taken or [])}
-    out = []
+    picked = []
     for offset in range(0, 15):
         day = (local + timedelta(days=offset)).date()
         window = s["meeting_windows"].get(DAYS[day.weekday()])
@@ -115,13 +123,15 @@ def meeting_slots(now: datetime, cfg: dict, taken: list[datetime] | None = None,
             continue
         t = datetime.combine(day, datetime.strptime(window[0], "%H:%M").time(), tz)
         end = datetime.combine(day, datetime.strptime(window[1], "%H:%M").time(), tz)
-        while t + step <= end:
-            if t > local + timedelta(hours=2) and t not in busy:
-                out.append(t)
-                if len(out) == count:
-                    return out
+        seen = set()
+        while t + length <= end:
+            if t >= local + timedelta(minutes=s["slot_lead_min"]) and t not in busy and bucket(t) not in seen:
+                seen.add(bucket(t))
+                picked.append(t)
             t += step
-    return out
+        if len(picked) >= count:
+            break
+    return picked[:count]
 
 
 def spoken_slot(t: datetime, today=None) -> str:

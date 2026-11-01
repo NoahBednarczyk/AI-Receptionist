@@ -49,12 +49,20 @@ class GateTests(unittest.TestCase):
 
 
 class SlotTests(unittest.TestCase):
-    def test_slots_stay_in_windows_and_skip_taken(self):
+    def test_slots_are_any_time_spread_out_and_skip_taken(self):
         slots = outbound.meeting_slots(TUE_10AM, cfg())
-        self.assertEqual(slots[0], datetime(2026, 11, 3, 16, 30, tzinfo=TZ))
-        self.assertTrue(all(s.weekday() < 5 for s in slots))
+        self.assertEqual(slots, [datetime(2026, 11, 3, 12, 0, tzinfo=TZ), datetime(2026, 11, 3, 17, 0, tzinfo=TZ),
+                                 datetime(2026, 11, 4, 8, 0, tzinfo=TZ), datetime(2026, 11, 4, 12, 0, tzinfo=TZ)])
+        self.assertTrue(all(slots[0] + timedelta(hours=1) <= s for s in slots[1:]))   # spread, never back to back
         again = outbound.meeting_slots(TUE_10AM, cfg(), taken=[slots[0]])
         self.assertNotIn(slots[0], again)
+        self.assertEqual(len(again), 4)
+
+    def test_weekends_are_open_too_and_windows_can_be_narrowed(self):
+        sat = datetime(2026, 11, 7, 9, 0, tzinfo=TZ)
+        self.assertEqual(outbound.meeting_slots(sat, cfg())[0], datetime(2026, 11, 7, 11, 0, tzinfo=TZ))
+        narrow = cfg(meeting_windows={"sat": None, "sun": None})
+        self.assertTrue(all(t.weekday() < 5 for t in outbound.meeting_slots(sat, narrow)))
 
 
 class PromptTests(unittest.TestCase):
@@ -77,7 +85,7 @@ class PromptTests(unittest.TestCase):
     def test_call_block_names_the_lead_and_offers_times(self):
         self.assertIn("Case Plumbing", self.blocks[1]["text"])
         self.assertIn("Dale", self.blocks[1]["text"])
-        self.assertIn("4:30", self.blocks[1]["text"])
+        self.assertIn("today", self.blocks[1]["text"])
         self.assertNotIn("{", self.text.replace("{owner}", ""))
 
     def test_tools_include_stop_and_booking(self):
