@@ -83,5 +83,15 @@
   },
   "live_businesses": [
     "lawn_care"
-  ]
+  ],
+  "finance": {
+    "live_key_names": [
+      "AI Receptionist"
+    ],
+    "dev_key_names": [
+      "clip farm api"
+    ],
+    "project_start": "2026-10-12",
+    "fixed_start": "2026-10-26"
+  }
 }

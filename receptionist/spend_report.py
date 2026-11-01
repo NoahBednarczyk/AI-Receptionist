@@ -97,6 +97,18 @@ def _pages(path: str, params: dict, key: str) -> list[dict]:
     raise RuntimeError("stopped after too many pages; the total would be incomplete")
 
 
+def row_usd(r: dict, prices: dict) -> float | None:
+    """Dollars for one usage-report row, or None when the model has no price in config.json."""
+    if (r.get("model") or "unknown") not in prices:
+        return None
+    p_in, p_out = prices[r["model"]]
+    write = r.get("cache_creation") or {}
+    return (r.get("uncached_input_tokens", 0) * p_in + r.get("output_tokens", 0) * p_out
+            + r.get("cache_read_input_tokens", 0) * p_in * 0.1
+            + write.get("ephemeral_5m_input_tokens", 0) * p_in * 1.25
+            + write.get("ephemeral_1h_input_tokens", 0) * p_in * 2.0) / 1e6
+
+
 def priced_usage_usd(results: list[dict], prices: dict) -> tuple[dict, list[str]]:
     """Dollars by model for usage-report rows, priced from config.json: cache reads at 0.1x the input rate, five-minute
     cache writes at 1.25x and one-hour writes at 2x. Models with no price in the config are returned in the second list."""

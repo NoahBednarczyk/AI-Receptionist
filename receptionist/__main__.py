@@ -227,6 +227,16 @@ def cmd_new_client(cfg, a):
         raise SystemExit(f"Can't sign this shop up yet: {e}")
 
 
+def cmd_finance_sync(cfg, a):
+    from datetime import datetime, timezone
+    from . import finance
+    since = datetime.strptime(a.since, "%Y-%m-%d").replace(tzinfo=timezone.utc) if a.since else None
+    snap = finance.build(cfg, since=since)
+    for path in finance.write_files(snap, a.out):
+        print(f"Wrote {path}")
+    print(finance.render(snap))
+
+
 def cmd_serve(cfg, a):
     import logging
     import uvicorn
@@ -356,6 +366,11 @@ def main():
     sp.add_argument("--base-url", required=True, help="the server's https address")
     biz_args(sp, at=False)
     sp.set_defaults(fn=cmd_client_upload)
+
+    sp = sub.add_parser("finance-sync", help="build the running-cost documents for the dashboard's Finances page (read-only)")
+    sp.add_argument("--out", default="data/reports", help="folder for finance-current.json and finance-daily.json")
+    sp.add_argument("--since", metavar="YYYY-MM-DD", help="start of the project (default finance.project_start in config.json)")
+    sp.set_defaults(fn=cmd_finance_sync)
 
     sp = sub.add_parser("calendar-url", help="print the private calendar feed link (pipe it to pbcopy; don't paste it in chat)")
     sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")
