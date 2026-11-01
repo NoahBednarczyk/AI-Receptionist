@@ -45,6 +45,14 @@ log = logging.getLogger("receptionist")
 pool = ThreadPoolExecutor(max_workers=4)   # background cache warm-ups
 
 
+def prewarm_targets(cfg: dict) -> list[dict]:
+    """The shops to warm at startup: only those that take real calls (`live_businesses` in config.json, or the default
+    shop). Every prewarm writes the whole 16,000-token prompt (about 6 cents), and a demo shop nobody dials would pay that
+    on every deploy and restart."""
+    live = set(cfg.get("live_businesses") or [cfg["default_business"]])
+    return [b for b in all_businesses(cfg) if b["id"] in live and b.get("phone_numbers")]
+
+
 def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache: bool = True) -> FastAPI:
     app = FastAPI(title="receptionist", docs_url=None, redoc_url=None, openapi_url=None)   # no route map for strangers
     client = client or anthropic.Anthropic()
@@ -76,10 +84,9 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         once = True
         while True:
             try:
-                if once:   # warm the cache at startup too, so the first test call is quick
-                    for biz in all_businesses(cfg):
-                        if biz.get("phone_numbers"):
-                            prewarm(client, cfg, biz)
+                if once:   # warm the cache at startup too, so the first call after a deploy is quick
+                    for biz in prewarm_targets(cfg):
+                        prewarm(client, cfg, biz)
                     once = False
                 client.models.retrieve(cfg["models"]["agent"])
             except anthropic.APIError as e:

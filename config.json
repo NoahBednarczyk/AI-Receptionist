@@ -80,5 +80,8 @@
       "max_per_call": 2,
       "min_gap_s": 30
     }
-  }
+  },
+  "live_businesses": [
+    "lawn_care"
+  ]
 }

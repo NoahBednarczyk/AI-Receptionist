@@ -262,6 +262,9 @@ def _pct(values: list[float], q: float) -> float | None:
 
 def run_all(cfg: dict, biz: dict, client: anthropic.Anthropic, ids: list[str] | None, report: str | None,
             verbose: bool = False, jobs: int = 4) -> list[dict]:
+    # Test runs come in bursts and every prompt edit throws the cache away, so an hour of cache (2x to write) would only
+    # cost more here. The live server keeps the hour.
+    cfg = {**cfg, "agent": {**cfg["agent"], "cache_ttl": "5m"}}
     scenarios = [s for s in list_scenarios(cfg, biz) if not ids or s["id"] in ids]
     if ids and len(scenarios) != len(ids):
         missing = set(ids) - {s["id"] for s in scenarios}

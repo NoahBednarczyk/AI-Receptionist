@@ -25,6 +25,7 @@ def _client():
 def cmd_chat(cfg, a):
     from . import budget, postcall, schedule
     from .agent import CallSession, transcript_text, usage_cost
+    cfg = {**cfg, "agent": {**cfg["agent"], "cache_ttl": "5m"}}   # a chat is short; the hour is for the live server
     if budget.remaining(cfg) <= 0:
         raise SystemExit(f"Today's ${budget.daily_limit(cfg):.2f} testing budget is used up; try again tomorrow.")
     biz = load_business(cfg, a.business)
@@ -252,6 +253,9 @@ def cmd_spend_report(cfg, a):
     if a.out:
         Path(a.out).parent.mkdir(parents=True, exist_ok=True)
         Path(a.out).write_text(json.dumps(rep, indent=1))
+    if a.csv:
+        for written in spend_report.to_csv_files(rep, a.csv):
+            print(f"Wrote {written}")
     print(json.dumps(rep, indent=1) if a.json else spend_report.render(rep))
 
 
@@ -307,6 +311,7 @@ def main():
     sp.add_argument("--since", metavar="YYYY-MM-DD", help="start date, UTC (default: the 1st of this month)")
     sp.add_argument("--json", action="store_true", help="print JSON instead of a table")
     sp.add_argument("--out", metavar="FILE", help="also write the JSON here")
+    sp.add_argument("--csv", metavar="FILE", help="also write two CSV files for reporting (FILE.csv and FILE-anthropic.csv)")
     sp.set_defaults(fn=cmd_spend_report)
 
     sp = sub.add_parser("record", help="turn a simulated call into audio (macOS voices, free)")
