@@ -6,6 +6,7 @@ so a scenario that passes here is testing the production agent's brain.
 from __future__ import annotations
 
 import json
+import random
 import re
 import threading
 import time
@@ -25,6 +26,8 @@ IRREVERSIBLE = {"book_appointment", "reschedule_appointment", "cancel_appointmen
                 "transfer_call", "end_call"}
 REFUSAL_LINE = "I'm sorry, I can't help with that on this line. I can take a message for the office."
 REPEAT_LINE = "Sorry, could you say that again?"
+REPEAT_VARIANTS = [REPEAT_LINE, "Sorry, say that one more time?", "I lost you there, could you repeat that?",
+                   "Come again?", "Sorry, what was that?"]
 # The first short clause of a reply ("Got it,") can go to the voice before the sentence ends, which starts the speech
 # a few hundred milliseconds sooner. Two to eight words up to a comma, with more text already following.
 FIRST_CLAUSE = re.compile(r"^((?:\S+\s+){1,7}\S+,)\s+(?=\S)")
@@ -177,7 +180,7 @@ class CallSession:
         upcoming = store.upcoming_appointments(biz["id"], caller, now) if customer else []
         # Stable layers first with the cache breakpoint; the per-call state comes after it.
         self.system = [
-            {"type": "text", "text": prompts.stable_prompt(biz), "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": prompts.stable_prompt(biz), "cache_control": cache_control(cfg)},
             {"type": "text", "text": prompts.call_state(biz, now, caller, customer, upcoming, dialed,
                                                          self.greeting)},
         ]
@@ -191,6 +194,7 @@ class CallSession:
         self._said_once: set = set()   # once-a-call lines already said (see Sentences)
         self._recent_acks: list = []   # acknowledgements used lately, so a call doesn't keep saying "Perfect."
         self._held_back: list[str] = []   # sentences of the last reply cut for length (see Sentences)
+        self._interjections: list[str] = []   # lines we cut in with while the caller was talking (see interject)
         store.start_call(self.call_id, biz["id"], platform, caller, now)
 
     @property
@@ -202,7 +206,7 @@ class CallSession:
         return next((t["text"] for t in reversed(self.transcript) if t["role"] == "agent"), "")
 
     def respond(self, caller_text: str, on_text: Callable[[str], None] | None = None,
-                control: TurnControl | None = None, heard_only: str | None = None) -> Turn:
+                control: TurnControl | None = None, heard_only: str | None = None, note: str | None = None) -> Turn:
         """One caller turn. `on_text` receives the reply as it's produced (fixed lines and the model's words),
         so a live call can start speaking before the turn is over. The turn works on its own copy of the history
         and saves it at the end, so a live call can drop it (`control`) if the caller talks over it first; a
@@ -238,10 +242,19 @@ class CallSession:
                         f"{short[0]}. Say you missed part of it and ask for the full number.)")
         if heard_only:   # the caller talked over the last reply, so they missed the rest of it
             content += (f"\n\n(System note: the caller cut in while you were talking; they heard only \"{heard_only}\" "
-                        "Anything after that, they didn't hear.)")
+                        "Anything after that, they didn't hear. Like a polite person who was just interrupted, open with "
+                        "a tiny reaction of a few words in your own words, such as a short 'oh' or 'sorry, go ahead' "
+                        "(a different one each time), unless what they said already answers you or it would be awkward; "
+                        "then deal with what they said, and don't repeat what they already heard.)")
         elif self._held_back:   # the end of the last reply was cut for length; the caller never heard it
             content += ("\n\n(System note: your last reply ran long, so the caller didn't hear this part of it: \""
                         + " ".join(self._held_back) + "\" If it's still needed, say it now, briefly.)")
+        if note:   # extra context from the live call, such as the caller echoing a phrase back
+            content += f"\n\n(System note: {note})"
+        if self._interjections:   # we cut in while the caller was still talking; the model should know
+            content += ("\n\n(System note: while the caller was still talking you cut in and said: \""
+                        + " ".join(self._interjections) + "\" Take it into account and don't say it again.)")
+            self._interjections = []
         if emergency:   # said by code, instantly and word for word; the model continues the emergency flow
             content += (f"\n\n(System note: you have already said the {emergency[0].replace('_', ' ')} safety line to "
                         f"the caller: \"{emergency[1]}\" Don't repeat it or describe the emergency; go straight to the "
@@ -312,7 +325,7 @@ class CallSession:
 
             if msg.stop_reason in ("refusal", "max_tokens"):
                 # A refusal has nothing to say, and a cut-off tool call can't be answered: keep only speech.
-                line = REFUSAL_LINE if msg.stop_reason == "refusal" else (text or REPEAT_LINE)
+                line = REFUSAL_LINE if msg.stop_reason == "refusal" else (text or random.choice(REPEAT_VARIANTS))
                 if line != text:
                     emit(line, True)
                 messages.append({"role": "assistant", "content": line})
@@ -334,7 +347,7 @@ class CallSession:
                 elif b.type == "tool_use" and msg.stop_reason == "tool_use":
                     go_on(irreversible=b.name in IRREVERSIBLE)
                     if not spoken and b.name == "end_call":
-                        line = tools.END_LINES[self.ctx.language].get((b.input or {}).get("reason"), tools.END_LINES[self.ctx.language]["completed"])
+                        line = tools.end_line(self.ctx, (b.input or {}).get("reason"))
                         emit(line, True)
                         spoken.append(line)
                         steps.append({"say": line})
@@ -371,7 +384,7 @@ class CallSession:
         reply = " ".join(spoken)
         silent = words.silent and not reply   # the caller wasn't talking to us: say nothing, not even a retry line
         if not reply and not self.ctx.ended and not silent:
-            reply = REPEAT_LINE
+            reply = random.choice(REPEAT_VARIANTS)
             emit(reply, True)
             steps.append({"say": reply})
         if messages[-1]["role"] == "user":   # keep the history alternating, ending on what was said
@@ -394,6 +407,35 @@ class CallSession:
         if emergency:
             self.ctx.safety_given = True
 
+    def interject(self, caller_text: str) -> str | None:
+        """A short line to cut in with while the caller is still going: the gist, then the one thing we need, or a
+        direct answer to what they clearly asked. It never books or changes anything (tools are off) and it isn't saved
+        to the model's history; the next turn is told about it instead (note_interjection)."""
+        if self.ctx.ended:
+            return None
+        m = self.cfg["models"]
+        ask = (f"{caller_text}\n\n(System note: the caller has been talking for a while and is still going. Cut in "
+               "politely with ONE short spoken line of under 20 words, in your own words: show you caught the gist in a "
+               "few words, then either answer what they clearly asked from the business facts or ask the single next "
+               "thing you need. Don't use tools, don't book, don't promise anything, and don't mention this note.)")
+        try:
+            resp = self.client.messages.create(
+                model=m["agent"], max_tokens=120, system=self.system, tools=self.tools,
+                tool_choice={"type": "none"},   # tools stay in the request so the cached prompt is reused
+                messages=[*self.messages, {"role": "user", "content": ask}],
+                output_config={"effort": m["agent_effort"]}, **thinking_param(m))
+        except anthropic.APIError:
+            return None
+        self._count(resp.usage)
+        said = " ".join(b.text for b in resp.content if b.type == "text").strip()
+        if not said or unspeakable(said) or len(said.split()) > 30:
+            return None
+        return said
+
+    def note_interjection(self, said: str) -> None:
+        self._interjections.append(said)
+        self.transcript.append({"role": "agent", "text": said, "interjection": True})
+
     def revert_last(self) -> bool:
         """Takes back the last turn when the caller never heard it (they talked over it before it played).
         Only turns that changed nothing outside the conversation (no booking, message, transfer or hang-up)."""
@@ -411,7 +453,7 @@ class CallSession:
         self.usage["cache_write"] += getattr(usage, "cache_creation_input_tokens", 0) or 0
 
     def cost(self) -> float:
-        return usage_cost(self.cfg, self.cfg["models"]["agent"], self.usage)
+        return usage_cost(self.cfg, self.cfg["models"]["agent"], self.usage, cache_write_mult(self.cfg))
 
 
 def thinking_param(models: dict) -> dict:
@@ -419,6 +461,18 @@ def thinking_param(models: dict) -> dict:
     (Sonnet 5.5, which only writes short notes between tool calls) skip that wait for speed."""
     setting = models.get("agent_thinking", "adaptive")
     return {} if setting == "adaptive" else {"thinking": {"type": setting}}
+
+
+def cache_control(cfg: dict) -> dict:
+    """The breakpoint after the shop's stable prompt. One hour, so a call after a quiet stretch still finds it warm
+    instead of waiting 3 to 4 seconds for the prompt to be read again (the default life is five minutes)."""
+    ttl = cfg.get("agent", {}).get("cache_ttl", "1h")
+    return {"type": "ephemeral"} if ttl == "5m" else {"type": "ephemeral", "ttl": ttl}
+
+
+def cache_write_mult(cfg: dict) -> float:
+    """Cache writes cost 1.25x the input rate for five minutes of life and 2x for an hour."""
+    return 1.25 if cfg.get("agent", {}).get("cache_ttl", "1h") == "5m" else 2.0
 
 
 def prewarm(client: anthropic.Anthropic, cfg: dict, biz: dict) -> dict:
@@ -429,7 +483,7 @@ def prewarm(client: anthropic.Anthropic, cfg: dict, biz: dict) -> dict:
     extra = thinking_param(m)
     resp = client.messages.create(
         model=m["agent"], max_tokens=0, output_config={"effort": m["agent_effort"]},
-        system=[{"type": "text", "text": prompts.stable_prompt(biz), "cache_control": {"type": "ephemeral"}}],
+        system=[{"type": "text", "text": prompts.stable_prompt(biz), "cache_control": cache_control(cfg)}],
         tools=[{**t, "strict": True} for t in tools.schemas(biz)],
         messages=[{"role": "user", "content": "warmup"}], **extra,
     )
@@ -438,10 +492,10 @@ def prewarm(client: anthropic.Anthropic, cfg: dict, biz: dict) -> dict:
             "cache_write": getattr(resp.usage, "cache_creation_input_tokens", 0) or 0}
 
 
-def usage_cost(cfg: dict, model: str, usage: dict) -> float:
-    """Dollars, with cache writes at 1.25x and cache reads at 0.1x the input rate."""
+def usage_cost(cfg: dict, model: str, usage: dict, write_mult: float = 1.25) -> float:
+    """Dollars, with cache writes at `write_mult` (1.25x for five minutes, 2x for an hour) and reads at 0.1x."""
     price_in, price_out = cfg["prices_per_mtok"].get(model, (0.0, 0.0))
-    return (usage["input"] * price_in + usage["cache_write"] * price_in * 1.25
+    return (usage["input"] * price_in + usage["cache_write"] * price_in * write_mult
             + usage["cache_read"] * price_in * 0.1 + usage["output"] * price_out) / 1e6
 
 

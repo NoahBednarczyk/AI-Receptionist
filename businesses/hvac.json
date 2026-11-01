@@ -7,13 +7,16 @@
   "mode": "overflow",
   "timezone": "America/Los_Angeles",
   "phone_numbers": [],
-  "greeting": "Peak Heating and Plumbing, the crew's out on a job right now. This is Sam.",
+  "greeting": "Peak Heating and Plumbing, this is Sam.",
   "greetings": [
-    "Peak Heating and Plumbing, the crew's out on a job right now. This is Sam.",
-    "You've reached Peak Heating and Plumbing. The team's out on a call, so this is Sam.",
-    "Peak Heating and Plumbing, this is Sam. The crew's tied up on a job right now.",
-    "Thanks for calling Peak Heating and Plumbing. Everyone's out on a job, so you've got Sam.",
-    "Peak Heating and Plumbing, Sam here. The team's out on a job at the moment."
+    "Peak Heating and Plumbing, this is Sam.",
+    "Thanks for calling Peak Heating and Plumbing, Sam speaking.",
+    "Peak Heating and Plumbing, Sam here.",
+    "Good {daypart}, Peak Heating and Plumbing. This is Sam.",
+    "You've reached Peak Heating and Plumbing. Sam on the line.",
+    "Hey there, Peak Heating and Plumbing, this is Sam.",
+    "Peak Heating and Plumbing, you've got Sam.",
+    "Hi, Peak Heating and Plumbing, this is Sam."
   ],
   "hours": {
     "mon": [
@@ -340,5 +343,14 @@
     "voice_speed": 1.15
   },
   "recording_notice": "",
-  "ai_disclosure_in_greeting": false
+  "ai_disclosure_in_greeting": false,
+  "about": [
+    "Peak is an owner-operated heating, cooling and plumbing shop. The owner is a licensed technician and still takes calls in the field, and winter is the busy season.",
+    "Most furnace and boiler calls are repairs. Technicians carry the common parts for popular brands, so many repairs are finished on the first visit, though that can't be promised for a specific job.",
+    "Heat pumps and ductless mini-splits are serviced year-round, and a tune-up before winter is the most useful visit a furnace or boiler can get.",
+    "A diagnostic visit finds the problem and gives a firm price on site. The diagnostic fee comes off the bill when the customer approves the repair.",
+    "No heat in freezing weather and burst or frozen pipes get the earliest emergency slot, or the owner's cell if the caller wants a person.",
+    "Technicians call or text about thirty minutes before they arrive, and an adult needs to be home for the whole window to let them in.",
+    "Wood and pellet stoves, fireplaces and chimneys are not something the phone line can advise on; those calls become a message for the technician."
+  ]
 }

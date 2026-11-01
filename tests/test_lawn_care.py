@@ -108,7 +108,7 @@ class Urgent(unittest.TestCase):
 
 class Scenarios(unittest.TestCase):
     def test_between_eight_and_twelve_with_known_services(self):
-        self.assertTrue(8 <= len(SCENARIOS) <= 12)
+        self.assertTrue(8 <= len(SCENARIOS) <= 14)   # 12 from the spec, plus echo_question_lawn (tone) added 2026-11-01
         ids = {s["id"] for s in LAWN["services"]}
         self.assertEqual(len({s["id"] for s in SCENARIOS}), len(SCENARIOS))
         for s in SCENARIOS:

@@ -102,6 +102,26 @@ END_LINES = {
            "spam": "Gracias por llamar. Adiós.",
            "completed": "Gracias por llamar. Adiós."},
 }
+# The goodbye after a finished call, in several wordings. The safety and spam lines above are fixed on purpose.
+COMPLETED_VARIANTS = {
+    "en": ["Thanks for calling, take care. Bye.", "Alright, take care now.", "Thanks for the call, bye now.",
+           "You're all set. Talk soon.", "Take care, and call anytime.", "That's everything. Have a good one."],
+    "es": ["Gracias por llamar. Adiós.", "Que le vaya bien, hasta luego.", "Listo, gracias por llamar. Cuídese.",
+           "Gracias, que tenga buen día."],
+}
+
+
+def end_line(ctx: "ToolContext", reason: str | None, rng=random) -> str:
+    """What to say if the agent hangs up without a word: fixed for safety and spam, varied for a normal goodbye."""
+    lines = END_LINES[ctx.language]
+    if reason in ("safety", "spam"):
+        return lines[reason]
+    options = COMPLETED_VARIANTS[ctx.language]
+    choice = rng.choice([o for o in options if o != ctx.last_filler] or options)
+    ctx.last_filler = choice
+    return choice
+
+
 STOP_EN = " Reply STOP to opt out."
 STOP_ES = " Responda STOP para no recibir más mensajes."
 

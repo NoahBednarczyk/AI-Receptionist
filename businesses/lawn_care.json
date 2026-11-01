@@ -9,22 +9,22 @@
   "phone_numbers": [
     "+12084286760"
   ],
-  "greeting": "Cedar Ridge Lawn and Snow, the crews are out on jobs right now. This is Riley.",
+  "greeting": "Cedar Ridge Lawn and Snow, this is Riley.",
   "greetings": [
-    "Cedar Ridge Lawn and Snow, the crews are out on jobs right now. This is Riley.",
-    "You've reached Cedar Ridge Lawn and Snow. Everyone's out in the field, so this is Riley.",
-    "Cedar Ridge Lawn and Snow, Riley here. The crew's tied up on a job at the moment.",
-    "Thanks for calling Cedar Ridge Lawn and Snow. The team's out working, so you've got Riley.",
-    "Good {daypart}, Cedar Ridge Lawn and Snow. This is Riley, and the crews are out on a job.",
-    "Cedar Ridge Lawn and Snow, this is Riley. Mowers are running somewhere, so it's just me on the phone.",
-    "Hi, you've got Cedar Ridge Lawn and Snow. Riley speaking, the crew's out working.",
-    "Cedar Ridge Lawn and Snow. Riley here, and the whole crew's out on a job right now.",
-    "Good {daypart}, you've reached Cedar Ridge Lawn and Snow. Riley here, crews are out in the yards.",
-    "Cedar Ridge Lawn and Snow, Riley on the line. The team's out on a job.",
-    "Thanks for calling Cedar Ridge Lawn and Snow, this is Riley. The crews are out on a job at the moment.",
-    "Cedar Ridge Lawn and Snow, this is Riley. The crew's out on a job, but I can take care of you.",
-    "Hey there, Cedar Ridge Lawn and Snow. This is Riley, the crews are out working right now.",
-    "You've reached Cedar Ridge Lawn and Snow, Riley here. Everyone's out on jobs this {daypart}."
+    "Cedar Ridge Lawn and Snow, this is Riley.",
+    "Thanks for calling Cedar Ridge Lawn and Snow, Riley speaking.",
+    "Cedar Ridge Lawn and Snow, Riley here.",
+    "Good {daypart}, Cedar Ridge Lawn and Snow. This is Riley.",
+    "You've reached Cedar Ridge Lawn and Snow. Riley on the line.",
+    "Hey there, Cedar Ridge Lawn and Snow, this is Riley.",
+    "Cedar Ridge Lawn and Snow, you've got Riley.",
+    "Thanks for calling Cedar Ridge Lawn and Snow. This is Riley.",
+    "Good {daypart}, this is Riley at Cedar Ridge Lawn and Snow.",
+    "Cedar Ridge Lawn and Snow, Riley speaking.",
+    "Hi, Cedar Ridge Lawn and Snow, this is Riley.",
+    "You've got Riley at Cedar Ridge Lawn and Snow.",
+    "Cedar Ridge Lawn and Snow. Riley here, good {daypart}.",
+    "Cedar Ridge Lawn and Snow, Riley on the phone."
   ],
   "hours": {
     "mon": [
@@ -504,5 +504,17 @@
       ],
       "text": "the turn to winter: the last leaves, the first real snow, trucks getting plow blades."
     }
+  ],
+  "about": [
+    "Cedar Ridge is a family-run outfit that has looked after yards and driveways around Sandpoint for about fifteen years. The owner still works the crews in season and runs a plow in winter.",
+    "Crews work by neighborhood, so a weekly customer gets the same day every week and usually the same crew lead, who is the person to ask about their yard.",
+    "The estimate visit takes about twenty or thirty minutes: the crew lead walks the property, measures the lot, notes gates, dogs, slopes and where the sprinkler controller is, then gives a firm quote, usually the same day.",
+    "Mowing is cut at about three inches unless the customer wants it shorter, with trimming, edging and blowing off the walks included. Clippings are mulched back into the lawn unless the customer asks for them bagged.",
+    "Core aeration pulls small plugs out of the lawn and leaves them on top to break down. It works best in May to June or in September, when the ground is moist but not soggy. Overseeding goes down right after.",
+    "Sprinkler start-up covers turning the system on, running each zone and adjusting heads. Winterization is a compressor blowout of the lines before the ground freezes.",
+    "Snow service runs on seasonal contracts, mostly November to March. The crews plow once snow reaches about two inches, contract customers first, and walkways and steps can be added.",
+    "Fertilizer and weed control is a program of several rounds from spring through fall, applied by the licensed applicator, who can't treat frozen or soaked ground.",
+    "Weather moves jobs. Rain, snow, and wet or frozen ground can push a visit a day or more, and the crew lead calls or texts when that happens.",
+    "Customers are mostly homeowners and small properties around the lake and in town. Large commercial lots go to the owner, who takes a message and calls back."
   ]
 }

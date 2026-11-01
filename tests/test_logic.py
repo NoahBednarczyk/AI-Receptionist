@@ -986,7 +986,8 @@ class LiveCallTests(FillerAssertions, unittest.TestCase):
             ws.send_json({"interaction_type": "response_required", "response_id": 1, "transcript": [
                 {"role": "agent", "content": "Hi"}, {"role": "user", "content": "(unintelligible audio)"}]})
             said, _ = self.until_complete(ws, 1)
-        self.assertEqual(said, "Sorry, I didn't catch that. Could you say that again?")
+        from receptionist import live
+        self.assertIn(said, live.NOT_HEARD["en"])   # one of several wordings
         self.assertEqual(self.fake.requests, [])                       # no model call needed
 
     def test_a_slow_reply_never_leaves_dead_air(self):

@@ -120,13 +120,13 @@ class EmergencySlotTests(unittest.TestCase):
 
 
 class OverflowTests(unittest.TestCase):
-    def test_greetings_say_the_team_is_out_and_never_ask_anything(self):
+    def test_greetings_never_say_the_crew_is_out_and_never_ask_anything(self):
         seen = {prompts.pick_greeting(HVAC, TUE_1015) for _ in range(200)}
-        self.assertGreaterEqual(len(seen), 4)
+        self.assertGreaterEqual(len(seen), 5)
         for g in seen:
             self.assertNotIn("?", g)
             self.assertIn("Peak Heating and Plumbing", g)
-            self.assertRegex(g.lower(), r"out on a (job|call)|tied up on a job|out on a job")
+            self.assertNotRegex(g.lower(), r"\bout on\b|\bout in\b|\bout working\b|tied up|crews?\b|team'?s? out|nobody|no one")
             self.assertNotIn("record", g.lower())
             self.assertNotIn("(demo)", g)
 

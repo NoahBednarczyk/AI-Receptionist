@@ -18,7 +18,8 @@
     "max_tokens": 2048,
     "max_tool_rounds": 6,
     "long_reply_words": 40,
-    "reply_word_budget": 40
+    "reply_word_budget": 40,
+    "cache_ttl": "1h"
   },
   "prices_per_mtok": {
     "claude-haiku-5-5": [
@@ -69,5 +70,13 @@
         "note": "estimate from the README cost table"
       }
     ]
+  },
+  "live": {
+    "interject": {
+      "enabled": true,
+      "min_words": 60,
+      "max_per_call": 2,
+      "min_gap_s": 30
+    }
   }
 }

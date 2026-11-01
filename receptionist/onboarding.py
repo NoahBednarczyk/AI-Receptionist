@@ -35,6 +35,7 @@ QUESTIONS = [
     ("services", "Services you offer, comma separated, or Enter for everything in the demo list", "", None),
     ("prices", "Prices the agent may quote, one per line like 'Service visit: $95' (blank line to finish; none means it quotes nothing)", "", None),
     ("approved_tips", "Tips the agent may give, 'problem: tip' one per line (blank line to finish; none means no tips)", "", None),
+    ("about", "Tell us about the shop, one fact per line: its story, what you're known for, how a job goes (blank line to finish; the more the agent knows, the more natural it sounds)", "", None),
     ("faqs", "Answers it may give, 'question: answer' one per line, like payment or warranty (blank line to finish; none is fine)", "", None),
 ]
 
@@ -156,6 +157,7 @@ def build(intake: dict, template: dict) -> dict:
             raise IntakeError(f"Tip '{line}' should look like 'a furnace that won't start: check the thermostat is set to heat'.")
         tips.append({"when": problem.strip(), "tip": tip.strip()})
     biz["approved_tips"] = tips
+    biz["about"] = _lines(intake.get("about"))   # the demo shop's own story must never reach a real shop
     biz["speech_keywords"] = [w for w in template["speech_keywords"] if "peak" not in w.lower()] + [spoken]
     biz["transfer_targets"]["owner"]["number"] = owner
     biz["greeting"] = biz["greetings"][0].replace("Peak Heating and Plumbing", spoken)
@@ -213,7 +215,7 @@ def ask_interactively(input_fn=input, out=print) -> dict:
     out("A few questions about the shop. Press Enter to accept a [default].\n")
     intake: dict = {}
     for key, question, default, _ in QUESTIONS:
-        if key in ("prices", "approved_tips", "faqs"):
+        if key in ("prices", "approved_tips", "faqs", "about"):
             out(question)
             lines = []
             while True:

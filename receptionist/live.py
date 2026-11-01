@@ -20,20 +20,40 @@ import random
 import re
 from collections.abc import Awaitable, Callable
 
+from . import safety
 from .agent import CallSession, TurnControl, TurnDropped
 
 log = logging.getLogger("receptionist")
 
-REMINDER = {"en": "Are you still there?", "es": "¿Sigue ahí?"}
-NOT_HEARD = {"en": "Sorry, I didn't catch that. Could you say that again?",
-             "es": "Perdón, no le entendí. ¿Me lo puede repetir?"}
+# Lines the code says on its own. Each is a pool, and `line()` never picks the one used last on the call, so these
+# stay as varied as everything the model says.
+REMINDER = {"en": ["Are you still there?", "Still with me?", "Hello? Did I lose you?", "You still there?",
+                   "Take your time, I'm here."],
+            "es": ["¿Sigue ahí?", "¿Me escucha?", "¿Sigue en la línea?", "Aquí sigo, tómese su tiempo."]}
+NOT_HEARD = {"en": ["Sorry, I didn't catch that. Could you say that again?", "I missed that one. Say it again?",
+                    "You cut out on me for a second. One more time?", "Sorry, come again?",
+                    "I didn't quite get that, could you repeat it?"],
+             "es": ["Perdón, no le entendí. ¿Me lo puede repetir?", "Se cortó un momento. ¿Otra vez?",
+                    "No alcancé a oírle, ¿me lo repite?", "Perdone, ¿cómo dijo?"]}
 STILL_WORKING = {"en": ["Hmm.", "Let's see.", "Okay, so.", "Mm, let me think.", "Alright, let's see here.",
                         "Bear with me.", "Okay, looking at that."],
                  "es": ["A ver.", "Mm, déjeme ver.", "Veamos.", "Bueno, a ver."]}
 SLOW_REPLY_S = 3.0   # no words yet after this long: a short thinking sound, never the same one twice running
 GARBLED = re.compile(r"^[\s(\[]*(unintelligible|inaudible|no speech|silence)[^)\]]*[)\]]?[\s.]*$", re.I)
-TROUBLE = {"en": "I'm sorry, we're having a technical problem. Please call back in a few minutes.",
-           "es": "Lo siento, tenemos un problema técnico. Por favor llame de nuevo en unos minutos."}
+TROUBLE = {"en": ["I'm sorry, we're having a technical problem. Please call back in a few minutes.",
+                  "Sorry, something broke on our end. Please try calling back in a few minutes.",
+                  "I'm having a technical problem right now. Could you call back in a few minutes?"],
+           "es": ["Lo siento, tenemos un problema técnico. Por favor llame de nuevo en unos minutos.",
+                  "Perdone, algo falló de nuestro lado. Por favor vuelva a llamar en unos minutos."]}
+_last_line: dict[str, str] = {}
+
+
+def line(pool: dict, lang: str, key: str) -> str:
+    """A line from `pool` in the caller's language, not the one this kind of line used last."""
+    options = pool.get(lang) or pool["en"]
+    choice = random.choice([o for o in options if o != _last_line.get(key)] or options)
+    _last_line[key] = choice
+    return choice
 
 
 def new_caller_text(transcript: list[dict] | None) -> str:
@@ -75,6 +95,27 @@ def cut_short(heard: str, said: str) -> str | None:
     return heard.strip()
 
 
+def echo_note(said: str, agent_line: str) -> str | None:
+    """A hint for the model when the caller says back a few of the words we just said. Speech recognition ends a rising
+    tone with a question mark and a flat one with a period, so "Snow removal?" is a check on what they heard, and
+    "Snow removal." is what they want. (Only the text reaches us, never the pitch of the voice itself.)"""
+    words, spoken = _words(said), _words(agent_line)
+    n = len(words)
+    if not 1 <= n <= 7 or not any(spoken[i:i + n] == words for i in range(len(spoken) - n + 1)):
+        return None
+    quoted = said.strip().rstrip("?.!, ").strip()
+    if said.strip().endswith("?"):
+        return (f"the caller repeated part of what you just said (\"{quoted}\") with a rising, questioning tone. They are "
+                "checking or asking about it, not answering your question: confirm or explain it in a few words, and "
+                "ask your question again in a fresh way if you still need the answer. Don't book or act on it yet.")
+    return (f"the caller said back part of what you just said (\"{quoted}\") in a flat tone, so it is probably their "
+            "answer or what they want. Take it that way, and if it could still be a question, confirm it with a soft "
+            "question before acting.")
+
+
+INTERJECT_DEFAULTS = {"enabled": True, "min_words": 60, "max_per_call": 2, "min_gap_s": 30}
+
+
 async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable[[dict], Awaitable[None]],
                           start_session: Callable[[dict], CallSession | None],
                           finish: Callable[[CallSession], None]) -> None:
@@ -88,6 +129,10 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
     heard_before: int | None = None   # agent lines in Retell's transcript when the last kept turn was asked for
     consumed = 0   # caller lines in Retell's transcript that kept turns have already answered
     consumed_prev = 0   # the same, before the last kept turn (for taking it back)
+    busy = False   # the worker is answering a request, so nobody else may speak
+    interjected_turns: set[int] = set()   # caller turns we already cut in on (by agent lines heard so far)
+    interjections = 0
+    last_interjection = -1e9
 
     async def say(message: dict) -> None:
         async with lock:   # the reader and the worker both send
@@ -112,52 +157,93 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
                 await requests.put(event)
                 if kind == "response_required":
                     newer.set()
+            elif kind == "update_only" and session is not None:
+                maybe_interject(event.get("transcript") or [])
+
+    def maybe_interject(transcript: list[dict]) -> None:
+        """Retell sends the transcript as the caller speaks. A caller who has gone on for a long time without a pause
+        gets a short, polite cut-in (the gist, then the one thing we need), the way a person at a desk would."""
+        nonlocal interjections, last_interjection
+        cfg = {**INTERJECT_DEFAULTS, **session.cfg.get("live", {}).get("interject", {})}
+        if not cfg["enabled"] or busy or session.ended or interjections >= cfg["max_per_call"]:
+            return
+        if not transcript or transcript[-1].get("role") != "user":
+            return
+        text = new_caller_text(transcript)
+        turn = sum(1 for e in transcript if e.get("role") == "agent")
+        if (len(text.split()) < cfg["min_words"] or GARBLED.match(text) or turn in interjected_turns
+                or loop.time() - last_interjection < cfg["min_gap_s"]):
+            return
+        if safety.match(session.biz.get("vertical", ""), text, session.ctx.language):
+            return   # an emergency gets its safety line from the normal path, never a cut-in
+        interjected_turns.add(turn)
+        asyncio.create_task(cut_in(text))
+
+    async def cut_in(text: str) -> None:
+        nonlocal interjections, last_interjection
+        said = await loop.run_in_executor(None, session.interject, text)
+        if not said or busy or not requests.empty() or session.ended:
+            return   # they finished, or a reply is already on its way: say nothing
+        interjections += 1
+        last_interjection = loop.time()
+        log.info("call %s: cut in on a long turn (%d words)", session.call_id, len(text.split()))
+        await say({"response_type": "agent_interrupt", "interrupt_id": interjections, "content": for_voice(said),
+                   "content_complete": True, "no_interruption_allowed": True})
+        session.note_interjection(said)
 
     async def worker() -> None:
-        nonlocal heard_before, consumed, consumed_prev
+        nonlocal busy
         while True:
             event = await requests.get()
             while not requests.empty():   # Retell discards older requests, so answer only the newest
                 event = requests.get_nowait()
             newer.clear()
-            if session is None:
-                continue
-            rid = event.get("response_id", 0)
-            if session.ended:   # already said goodbye: say nothing more, just hang up
-                await say({"response_type": "response", "response_id": rid, "content": "", "content_complete": True,
-                           "end_call": True})
-                continue
-            if event["interaction_type"] == "reminder_required":
-                heard_before = None
-                await say({"response_type": "response", "response_id": rid,
-                           "content": REMINDER[session.ctx.language], "content_complete": True})
-                continue
-            transcript = event.get("transcript") or []
-            heard = sum(1 for e in transcript if e.get("role") == "agent")
-            heard_only = None
-            if heard_before is not None and heard <= heard_before and session.revert_last():
-                # Our last reply never played, so the caller's words since the last line they heard (which
-                # new_caller_text joins) are all still unanswered.
-                log.info("call %s: took back a reply the caller never heard", session.call_id)
-                consumed, heard_before = consumed_prev, None
-            elif heard_before is not None:
-                last_line = next((e.get("content") or "" for e in reversed(transcript) if e.get("role") == "agent"), "")
-                heard_only = cut_short(last_line, session.last_reply())
-            lines = caller_lines(transcript)
-            # Everything the caller said that no kept turn has answered: a dropped turn must not lose their words,
-            # and Retell's transcript puts pieces of interrupted replies between them.
-            said = " ".join(lines[consumed:]) or new_caller_text(transcript)
-            if not said or GARBLED.match(said):   # answer at once instead of waiting on the model
-                heard_before, consumed = None, len(lines)
-                await say({"response_type": "response", "response_id": rid,
-                           "content": NOT_HEARD[session.ctx.language], "content_complete": True})
-                continue
-            before = heard_before, consumed
-            heard_before, consumed = heard, len(lines)
-            if await answer(rid, said, heard_only):
-                consumed_prev = before[1]
-            else:   # dropped: the session is as it was, so are we
-                heard_before, consumed = before
+            busy = True
+            try:
+                await handle(event)
+            finally:
+                busy = False
+
+    async def handle(event: dict) -> None:
+        nonlocal heard_before, consumed, consumed_prev
+        if session is None:
+            return
+        rid = event.get("response_id", 0)
+        if session.ended:   # already said goodbye: say nothing more, just hang up
+            await say({"response_type": "response", "response_id": rid, "content": "", "content_complete": True,
+                       "end_call": True})
+            return
+        if event["interaction_type"] == "reminder_required":
+            heard_before = None
+            await say({"response_type": "response", "response_id": rid,
+                       "content": line(REMINDER, session.ctx.language, "reminder"), "content_complete": True})
+            return
+        transcript = event.get("transcript") or []
+        heard = sum(1 for e in transcript if e.get("role") == "agent")
+        heard_only = None
+        agent_line = next((e.get("content") or "" for e in reversed(transcript) if e.get("role") == "agent"), "")
+        if heard_before is not None and heard <= heard_before and session.revert_last():
+            # Our last reply never played, so the caller's words since the last line they heard (which
+            # new_caller_text joins) are all still unanswered.
+            log.info("call %s: took back a reply the caller never heard", session.call_id)
+            consumed, heard_before = consumed_prev, None
+        elif heard_before is not None:
+            heard_only = cut_short(agent_line, session.last_reply())
+        lines = caller_lines(transcript)
+        # Everything the caller said that no kept turn has answered: a dropped turn must not lose their words,
+        # and Retell's transcript puts pieces of interrupted replies between them.
+        said = " ".join(lines[consumed:]) or new_caller_text(transcript)
+        if not said or GARBLED.match(said):   # answer at once instead of waiting on the model
+            heard_before, consumed = None, len(lines)
+            await say({"response_type": "response", "response_id": rid,
+                       "content": line(NOT_HEARD, session.ctx.language, "not_heard"), "content_complete": True})
+            return
+        before = heard_before, consumed
+        heard_before, consumed = heard, len(lines)
+        if await answer(rid, said, heard_only, echo_note(said, agent_line)):
+            consumed_prev = before[1]
+        else:   # dropped: the session is as it was, so are we
+            heard_before, consumed = before
 
     last_still = []
 
@@ -167,13 +253,13 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
         last_still[:] = [line]
         return line
 
-    async def answer(rid: int, caller_text: str, heard_only: str | None = None) -> bool:
+    async def answer(rid: int, caller_text: str, heard_only: str | None = None, note: str | None = None) -> bool:
         """Plays the reply to the caller's words. False when the turn was dropped because they kept talking."""
         chunks: asyncio.Queue = asyncio.Queue()
         control = TurnControl()
         turn = loop.run_in_executor(None, session.respond, caller_text,
                                     lambda chunk: loop.call_soon_threadsafe(chunks.put_nowait, chunk), control,
-                                    heard_only)
+                                    heard_only, note)
         turn.add_done_callback(lambda f: f.cancelled() or f.exception())   # a dropped turn's error is expected
         started, spoke, first = loop.time(), False, None
         newer_wait = asyncio.ensure_future(newer.wait())
@@ -220,7 +306,7 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
             return False
         except Exception:
             log.exception("turn failed on call %s", session.call_id)
-            final.update(content=TROUBLE[session.ctx.language], end_call=True)
+            final.update(content=line(TROUBLE, session.ctx.language, "trouble"), end_call=True)
         ctx = session.ctx
         if ctx.transferred_to:
             final["transfer_number"] = ctx.biz["transfer_targets"][ctx.transferred_to]["number"]

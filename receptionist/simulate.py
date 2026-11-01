@@ -17,7 +17,7 @@ from pathlib import Path
 import anthropic
 
 from . import budget, prompts, schedule
-from .agent import CallSession, prewarm, transcript_text, usage_cost
+from .agent import CallSession, cache_write_mult, prewarm, transcript_text, usage_cost
 from .speech import SPOKEN_INTERNALS
 from .store import Store
 
@@ -291,7 +291,7 @@ def run_all(cfg: dict, biz: dict, client: anthropic.Anthropic, ids: list[str] | 
         return r
 
     try:   # one cache write up front instead of one cold start per parallel scenario
-        budget.record(cfg, usage_cost(cfg, cfg["models"]["agent"], prewarm(client, cfg, biz)))
+        budget.record(cfg, usage_cost(cfg, cfg["models"]["agent"], prewarm(client, cfg, biz), cache_write_mult(cfg)))
     except anthropic.APIError as e:
         print(f"  (cache pre-warm failed, continuing: {e})")
     results = []
