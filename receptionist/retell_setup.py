@@ -41,6 +41,10 @@ TRADE_WORDS = ["sink", "faucet", "drain", "clog", "toilet", "leak", "drip", "pip
 def agent_settings(biz: dict) -> dict:
     """The business's voice and conversation settings (the "voice" block of its JSON) plus speech-recognition hints."""
     settings = dict(biz.get("voice", {}))
+    # Retell runs its own AI summary of every call after hang-up and bills about 2 cents a call for it. We write our own
+    # owner summary with Claude and the server ignores Retell's analysis event, so it is switched off unless a shop's
+    # `voice` block sets a model.
+    settings.setdefault("post_call_analysis_model", None)
     settings["boosted_keywords"] = [biz["agent_name"], biz["spoken_name"],
                                     *(biz.get("service_area") or {}).get("towns", []),
                                     *biz.get("speech_keywords", TRADE_WORDS)]

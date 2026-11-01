@@ -316,5 +316,13 @@ class ToolDescriptionTests(unittest.TestCase):
         self.assertNotIn("without writing any words first", described["end_call"])
 
 
+class RetellSettingsTests(unittest.TestCase):
+    def test_retells_duplicate_post_call_analysis_is_off_by_default_and_can_be_turned_back_on(self):
+        from receptionist.retell_setup import agent_settings
+        self.assertIsNone(agent_settings(HVAC)["post_call_analysis_model"])
+        on = {**HVAC, "voice": {**HVAC["voice"], "post_call_analysis_model": "gpt-5.6-terra"}}
+        self.assertEqual(agent_settings(on)["post_call_analysis_model"], "gpt-5.6-terra")
+
+
 if __name__ == "__main__":
     unittest.main()
