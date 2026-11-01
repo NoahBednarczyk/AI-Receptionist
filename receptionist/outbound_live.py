@@ -248,7 +248,14 @@ class OutboundSession(CallSession):
 
 # ---------------------------------------------------------------- Retell
 
-def agent_payload(cfg: dict, base_url: str, secret: str, voice_id: str | None = None) -> dict:
+def receptionist_voice(cfg: dict) -> dict:
+    """The live receptionist's voice block (voice id, model, speed, interruption settings), so the caller always sounds
+    like it. Changing the voice in the shop's JSON changes both on the next create/tune."""
+    live = (cfg.get("live_businesses") or [cfg["default_business"]])[0]
+    return json.loads((Path(cfg["businesses_dir"]) / f"{live}.json").read_text())["voice"]
+
+
+def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = None) -> dict:
     """The body for Retell's create-agent call for the outbound agent. It points at a different websocket path than
     the receptionist, so the two never share a session. Field names follow the receptionist's own agent setup; check
     the voicemail fields against Retell's current docs before the first call."""
@@ -260,7 +267,8 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice_id: str | None = 
                  f"of your time. You can try our demo line any time at {spoken_phone(s['demo_line'])}. Thanks, and have a good day.")
     return {"agent_name": f"{s['company']} discovery caller",
             "response_engine": {"type": "custom-llm", "llm_websocket_url": f"{ws}/llm-websocket-out/{secret}"},
-            **({"voice_id": voice_id} if voice_id else {}),
+            **(voice or {}),
+            "boosted_keywords": [s["agent_name"], s["company"], s["founder"], s["town"], "plumbing", "heating", "furnace", "voicemail"],
             "webhook_url": f"{base}/retell/webhook", "language": "en-US",
             "enable_voicemail_detection": True,
             "voicemail_option": {"action": {"type": "static_text", "text": voicemail}},
@@ -279,6 +287,8 @@ def place_call(cfg: dict, lead: dict, now: datetime, state: State, call_fn, env=
     if not ok:
         raise RuntimeError(f"Not calling {lead.get('name')}: {why}")
     rec = json.loads((Path(cfg["data_dir"]) / "retell_outbound.json").read_text())
+    if not rec.get("number"):
+        raise RuntimeError("No outbound number yet: run `outbound-number --number +1...` once you have one from Retell.")
     return call_fn("POST", "/v2/create-phone-call", {
         "from_number": rec["number"], "to_number": normalize_phone(lead["phone"]), "override_agent_id": rec["agent_id"],
         "metadata": {"lead": {k: lead.get(k, "") for k in ("id", "name", "phone", "type", "contact", "notes", "consent")}}})

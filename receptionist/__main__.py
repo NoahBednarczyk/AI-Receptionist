@@ -268,18 +268,35 @@ def cmd_outbound_sync(cfg, a):
 
 def cmd_outbound_agent(cfg, a):
     from . import outbound_live, retell_setup
-    secret = os.environ.get("RETELL_WS_SECRET") or "<RETELL_WS_SECRET>"
-    payload = outbound_live.agent_payload(cfg, a.base_url, secret if a.create else "<RETELL_WS_SECRET>", a.voice)
+    voice = outbound_live.receptionist_voice(cfg)   # always the receptionist's voice
     if not a.create:
-        print(json.dumps(payload, indent=1))
-        print("\nThis only printed the settings. Nothing was created. Add --create (and --number +1...) once you approve the Retell change.")
+        print(json.dumps(outbound_live.agent_payload(cfg, a.base_url, "<RETELL_WS_SECRET>", voice), indent=1))
+        print("\nThis only printed the settings. Nothing was created. Add --create to make the agent in Retell.")
         return
-    if not a.number or not os.environ.get("RETELL_WS_SECRET"):
-        raise SystemExit("--create needs --number (an outbound-capable Retell number you bought) and RETELL_WS_SECRET.")
-    agent = retell_setup._call("POST", "/create-agent", payload)
+    secret = os.environ.get("RETELL_WS_SECRET")
+    if not secret:
+        raise SystemExit("Set RETELL_WS_SECRET first (the same value the server uses).")
+    rec_path = Path(cfg["data_dir"]) / "retell_outbound.json"
+    if rec_path.exists():
+        raise SystemExit(f"{rec_path.name} already exists (an outbound agent was created). Delete it only if you mean to make another.")
+    agent = retell_setup._call("POST", "/create-agent", outbound_live.agent_payload(cfg, a.base_url, secret, voice))
     retell_setup._call("POST", f"/publish-agent-version/{agent['agent_id']}", {"version": agent.get("version", 0), "version_title": "Initial setup"})
-    (Path(cfg["data_dir"]) / "retell_outbound.json").write_text(json.dumps({"agent_id": agent["agent_id"], "number": a.number}, indent=2))
-    print(f"Created outbound agent {agent['agent_id']}. No calls placed. Calls need outbound.mode changed, OUTBOUND_LIVE=1 and a lead that passes the gate.")
+    rec_path.write_text(json.dumps({"agent_id": agent["agent_id"], "number": a.number or None}, indent=2))
+    print(f"Created outbound agent {agent['agent_id']} with the receptionist's voice. Number: {a.number or 'PENDING (run outbound-number later)'}. No calls placed.")
+
+
+def cmd_outbound_number(cfg, a):
+    from .speech import normalize_phone
+    path = Path(cfg["data_dir"]) / "retell_outbound.json"
+    if not path.exists():
+        raise SystemExit("Create the agent first: outbound-agent --create")
+    number = normalize_phone(a.number)
+    if not number:
+        raise SystemExit(f"{a.number} is not a full phone number.")
+    rec = json.loads(path.read_text())
+    rec["number"] = number
+    path.write_text(json.dumps(rec, indent=2))
+    print(f"Outbound number set to {number}.")
 
 
 def cmd_serve(cfg, a):
@@ -429,10 +446,13 @@ def main():
 
     sp = sub.add_parser("outbound-agent", help="print (default) or create the Retell outbound agent; never places a call")
     sp.add_argument("--base-url", default="https://receptionist-575z.onrender.com")
-    sp.add_argument("--voice")
-    sp.add_argument("--number", help="E.164 outbound number for --create")
+    sp.add_argument("--number", help="outbound number, if you already have one (otherwise it stays PENDING)")
     sp.add_argument("--create", action="store_true", help="really create it in Retell (a change to your account)")
     sp.set_defaults(fn=cmd_outbound_agent)
+
+    sp = sub.add_parser("outbound-number", help="record the Retell number the outbound caller dials from")
+    sp.add_argument("--number", required=True)
+    sp.set_defaults(fn=cmd_outbound_number)
 
     sp = sub.add_parser("calendar-url", help="print the private calendar feed link (pipe it to pbcopy; don't paste it in chat)")
     sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")

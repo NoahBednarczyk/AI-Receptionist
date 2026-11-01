@@ -110,7 +110,8 @@ class ToolTests(Fixture):
 
 class RetellTests(Fixture):
     def test_agent_payload_uses_its_own_socket_and_names_the_caller_on_voicemail(self):
-        p = ol.agent_payload(CFG, "https://x.onrender.com/", "SECRET", "voice_1")
+        p = ol.agent_payload(CFG, "https://x.onrender.com/", "SECRET", {"voice_id": "voice_1", "voice_speed": 1.15})
+        self.assertEqual((p["voice_id"], p["voice_speed"]), ("voice_1", 1.15))
         self.assertEqual(p["response_engine"]["llm_websocket_url"], "wss://x.onrender.com/llm-websocket-out/SECRET")
         self.assertIn("Ringback", p["voicemail_option"]["action"]["text"])
         self.assertIsNone(p["post_call_analysis_model"])
@@ -126,6 +127,9 @@ class RetellTests(Fixture):
             ol.place_call({**cfg, "outbound": {"mode": "dry-run"}}, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
         with self.assertRaises(RuntimeError):   # no consent in warm-only
             ol.place_call(cfg, LEAD, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
+        (Path(self.dir.name) / "retell_outbound.json").write_text(json.dumps({"number": None, "agent_id": "ag"}))
+        with self.assertRaises(RuntimeError):   # agent exists but the number is still pending
+            ol.place_call(cfg, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
         (Path(self.dir.name) / "retell_outbound.json").write_text(json.dumps({"number": "+12085550100", "agent_id": "ag"}))
         ol.place_call(cfg, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
         self.assertEqual(calls[0][1], "/v2/create-phone-call")
