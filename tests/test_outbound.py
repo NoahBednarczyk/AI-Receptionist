@@ -63,12 +63,13 @@ class PromptTests(unittest.TestCase):
         self.text = "\n".join(b["text"] for b in self.blocks)
 
     def test_discloses_ai_and_never_pretends(self):
-        self.assertIn("an AI assistant calling for Noah", self.text)
+        self.assertIn("answer yes, plainly", self.text)
         self.assertIn("Never claim to be human", self.text)
         self.assertIn("never say you are researching for a different company", self.text.replace("You never", "never"))
 
     def test_has_structure_pushback_and_hard_stop(self):
-        for needle in ("Call structure", "insistence ladder", "up to **three** asks", "mark_do_not_call", "Hard stops", "208-428-6760"):
+        for needle in ("Call structure", "insistence ladder", "up to **three** asks", "mark_do_not_call", "Hard stops", "208-428-6760",
+                       "cheerfully naive", "say yes in the same breath", "Persuade; never mislead", "Angry, rude or hostile"):
             self.assertIn(needle, self.text)
 
     def test_call_block_names_the_lead_and_offers_times(self):

@@ -19,17 +19,46 @@ from .agent import CallSession, Turn, cache_control
 from .speech import normalize_phone, spoken_phone
 from .tools import ToolError
 
-OPENERS = [
-    "Hi, this is {agent}, an AI assistant calling for {founder} at {company}, here in {town}. Do you have a quick minute?",
-    "Hey, {agent} here. I'm an AI assistant calling for {founder} at {company} in {town}. Did I catch you at an okay time?",
-    "Hi there, this is {agent}. I'm an AI assistant, calling on behalf of {founder} at {company} here in {town}. Got sixty seconds?",
-    "Hello, {agent} calling. I'm an AI assistant for {founder} at {company}, in {town}. Is now a bad time?",
-]
+INTRO = ["{agent} here, an AI assistant calling for {founder} at {company} in {town}. Got sixty seconds?",
+         "I'm {agent}, an AI assistant calling for {founder} at {company}, here in {town}. Quick minute?",
+         "This is {agent}, an AI assistant for {founder} at {company} in {town}. Is now a terrible time?",
+         "{agent} calling, I'm an AI assistant working for {founder} at {company} in {town}. Can I steal a minute?"]
+# One-liners that need nothing but the shop's name or trade. A lead's own `hook` field (written for that shop) beats these.
+HOOKS = {
+    "plumbing": ["Is {biz} the plumbing outfit that gets called at 2 AM, or the one that doesn't answer at 2 AM?",
+                 "I'm told {biz} fixes things people have been ignoring for three weeks.",
+                 "Quick one for {biz}: a pipe bursts at dinnertime, who answers your phone?",
+                 "I was told to call {biz} because plumbers are the only people busier than robots."],
+    "hvac": ["Is {biz} the folks people call when it's minus ten and the furnace has opinions?",
+             "I'm calling {biz} because nobody thinks about heating until it quits.",
+             "Quick one for {biz}: furnace dies at 6 PM on a Sunday, who picks up?",
+             "I hear {biz} keeps {town} warm, and I keep calling people who can't hear their phone."],
+    "default": ["I'm calling {biz} with the strangest cold call you'll get today.",
+                "Quick one for {biz}: when you're elbow-deep in a job and the phone rings, who gets it?",
+                "I found {biz} in {town} and had to see if a human picks up."],
+}
+
+
+def trade_of(lead: dict) -> str:
+    t = (lead.get("type") or "").lower()
+    return "plumbing" if "plumb" in t and "hvac" not in t else "hvac" if "hvac" in t or "heat" in t else "default"
+
+
+def opener(lead: dict, s: dict, rng=random) -> str:
+    """The first words of the call: a hook about this shop, then who is calling (always an AI), then a small ask."""
+    owner = (lead.get("contact") or "").split(" ")[0]
+    hook = lead.get("hook") or rng.choice(HOOKS[trade_of(lead)])
+    fill = dict(biz=lead.get("name") or "your shop", town=s["town"], agent=s["agent_name"], founder=s["founder"], company=s["company"])
+    start = f"Hi {owner}? " if owner else ""
+    return start + hook.format(**fill) + " " + rng.choice(INTRO).format(**fill)
+
+
 STOP_LINES = ["Understood, I'll take you off our list. Sorry for the interruption.",
               "Got it, you're off our list. Sorry to bother you.",
               "No problem at all, I'll take you off the list. Have a good one."]
-AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Say plainly in your first words that you "
-           "are an AI assistant calling for the owner of Ringback, then answer the rest of what they said.")
+AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Answer with one quick, funny line of your own "
+           "that says yes, you are an AI assistant, unmistakably (the joke comes with the yes, never instead of it), then use it "
+           "in the same breath to get back to your goal. Never claim to be human.")
 
 # Words that end the call by themselves; the model is not asked. The softer "don't call again" is skipped when the
 # caller is only picking another time ("don't call me today, try Thursday").
@@ -166,7 +195,7 @@ class OutboundSession(CallSession):
         self.biz = {"id": "outbound", "vertical": "outbound", "name": s["company"], "spoken_name": s["company"],
                     "agent_name": s["agent_name"], "timezone": s["timezone"]}
         self.lead, self.state, self.started = lead, state, now
-        self.greeting = rng.choice(OPENERS).format(agent=s["agent_name"], founder=s["founder"], company=s["company"], town=s["town"])
+        self.greeting = opener(lead, s, rng)
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
         self.system = [{**blocks[0], "cache_control": cache_control(cfg)}, blocks[1]]

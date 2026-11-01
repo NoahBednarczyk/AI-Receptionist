@@ -40,12 +40,25 @@ class StopTests(unittest.TestCase):
 
 
 class SessionTests(Fixture):
-    def test_opener_says_ai_in_first_sentence_every_variant(self):
-        for o in ol.OPENERS:
-            first = o.split(".")[0] + "." if "AI" in o.split(".")[0] else o
-            self.assertIn("AI assistant", o)
-            self.assertIn("AI assistant", " ".join(o.split(",")[:3]) + o[:90])
+    def test_opener_has_a_hook_then_discloses_ai_before_any_ask(self):
+        import random
+        s = ol.outbound.settings(CFG)
+        for trade in ("Plumbing", "HVAC", "Other"):
+            for seed in range(12):
+                text = ol.opener({"name": "Case Plumbing", "type": trade, "contact": "Dale Smith"}, s, random.Random(seed))
+                self.assertTrue(text.startswith("Hi Dale? "), text)
+                self.assertIn("Case Plumbing", text)
+                ai, ask = text.index("AI assistant"), min(text.index(w) for w in ("minute", "terrible time", "sixty") if w in text)
+                self.assertLess(ai, ask)
+                self.assertNotIn("{", text)
         self.assertIn("AI assistant", self.s.greeting)
+
+    def test_a_lead_written_hook_wins_and_hooks_vary(self):
+        import random
+        s = ol.outbound.settings(CFG)
+        self.assertTrue(ol.opener({"name": "X", "hook": "Is {biz} the shop with the talking van?"}, s).startswith("Is X the shop with the talking van?"))
+        many = {ol.opener({"name": "X", "type": "Plumbing"}, s, random.Random(i)) for i in range(40)}
+        self.assertGreater(len(many), 10)
 
     def test_uses_the_outbound_model_and_cached_prompt(self):
         self.assertEqual(self.s.cfg["models"]["agent"], "b")
