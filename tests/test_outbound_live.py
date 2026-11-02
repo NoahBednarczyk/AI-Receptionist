@@ -153,6 +153,16 @@ class OpenerAndSlotsTests(Fixture):
         self.assertEqual([m["role"] for m in self.s.messages], ["user", "assistant"])   # the model sees a normal history
         self.assertFalse(self.s.ended)
 
+    def test_first_model_turn_restates_who_is_calling_in_case_the_opener_was_cut_off(self):
+        notes = []
+        from unittest import mock
+        with mock.patch("receptionist.agent.CallSession.respond", lambda self, text, on_text=None, control=None, heard_only=None, note=None: notes.append(note)):
+            self.s.respond("Hello?")
+            self.s.respond("Why did you call me?")
+            self.s.respond("ok and how much")
+        self.assertIn("who is calling", notes[0])
+        self.assertNotIn("who is calling", notes[1] or "")
+
     def test_manager_slots_replace_the_defaults_until_stale(self):
         slots = ["2026-11-03T13:15:00-08:00", "2026-11-03T09:00:00-08:00", "2026-11-04T10:00:00-08:00"]
         self.state.set_slots(slots, NOW)

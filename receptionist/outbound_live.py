@@ -10,6 +10,7 @@ import os
 import random
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -56,6 +57,9 @@ def opener(lead: dict, s: dict, rng=random) -> str:
 STOP_LINES = ["Understood, I'll take you off our list. Sorry for the interruption.",
               "Got it, you're off our list. Sorry to bother you.",
               "No problem at all, I'll take you off the list. Have a good one."]
+INTRO_NOTE = ("your opening line may have been cut off when the person talked over it, so they may not have heard who is calling or why. "
+              "In your first words, in a few words, say your name, that you are calling for the owner of Ringback in Sandpoint and that it "
+              "is a sales call (skip this only if they have clearly shown they know), then answer what they said.")
 AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Answer with one quick, funny line of your own "
            "that says yes, you are an AI assistant, unmistakably (the joke comes with the yes, never instead of it), then use it "
            "in the same breath to get back to your goal. Never claim to be human.")
@@ -217,6 +221,7 @@ class OutboundSession(CallSession):
         self.greeting = ""   # an empty first message makes Retell wait for the person to say hello
         self.opener = opener(lead, s, rng)
         self._opened = False
+        self._intro_checked = False
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
         self.system = [{**blocks[0], "cache_control": cache_control(cfg)}, blocks[1]]
@@ -241,6 +246,9 @@ class OutboundSession(CallSession):
             messages = [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.opener}]
             self._save(messages, caller_text, {"role": "agent", "text": self.opener, "tools": [], "steps": [{"say": self.opener}]}, None, final=False)
             return Turn(self.opener, [], 0.0, 0.0, False)
+        if not self._intro_checked:   # the first model turn after the opener
+            self._intro_checked = True
+            note = f"{note} {INTRO_NOTE}" if note else INTRO_NOTE
         if asked_if_ai(caller_text):
             note = f"{note} {AI_NOTE}" if note else AI_NOTE
         return super().respond(caller_text, on_text, control, heard_only, note)
@@ -339,7 +347,7 @@ def crm_files(data: dict, out_dir) -> list[Path]:
     out.mkdir(parents=True, exist_ok=True)
     calls = {f"ai{r['n']}": r for r in data.get("calls", [])}
     tasks = {f"ai-meet-{i}": {"title": f"Meeting with {b['owner']} at {b['business']}", "due": b["start"][:10], "stream": "outreach",
-                              "priority": 1, "done": False, "doneAt": None, "createdAt": 0, "notes": f"Call {b['phone']} at {b['start']}"}
+                              "priority": 1, "done": False, "doneAt": None, "createdAt": int(time.time() * 1000), "notes": f"Call {b['phone']} at {b['start']}"}
              for i, b in enumerate(data.get("bookings", []))}
     files = []
     for name, payload in (("outbound-calls.json", calls), ("outbound-leads.json", data.get("lead_updates", {})),
