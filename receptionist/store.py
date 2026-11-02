@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS sms_outbox (
 CREATE TABLE IF NOT EXISTS blocks (
   id INTEGER PRIMARY KEY, business_id TEXT, start_at TEXT, end_at TEXT, note TEXT, created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS calendar_sync (
+  business_id TEXT, confirmation TEXT, status TEXT, error TEXT, updated_at TEXT,
+  PRIMARY KEY (business_id, confirmation)
+);
 CREATE TABLE IF NOT EXISTS tool_events (
   id INTEGER PRIMARY KEY, call_id TEXT, name TEXT, args TEXT, result TEXT, created_at TEXT
 );
@@ -232,6 +236,19 @@ class Store:
         """Blocks that have not ended before `since`, soonest first (ISO strings with offsets sort within one zone)."""
         rows = self._rows("SELECT * FROM blocks WHERE business_id=? ORDER BY start_at", (business_id,))
         return [r for r in rows if datetime.fromisoformat(r["end_at"]) > since]
+
+    # ---- Google Calendar pushes: did each booking reach the shop's calendar? ------------------------------------------
+    def set_sync(self, business_id: str, confirmation: str, status: str, error: str | None) -> None:
+        self._write("INSERT OR REPLACE INTO calendar_sync (business_id, confirmation, status, error, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?)", (business_id, confirmation, status, error, datetime.now().isoformat()))
+
+    def get_sync(self, business_id: str, confirmation: str) -> dict | None:
+        rows = self._rows("SELECT * FROM calendar_sync WHERE business_id=? AND confirmation=?", (business_id, confirmation))
+        return rows[0] if rows else None
+
+    def sync_failures(self, business_id: str) -> list[dict]:
+        return self._rows("SELECT * FROM calendar_sync WHERE business_id=? AND status='failed' ORDER BY updated_at DESC",
+                          (business_id,))
 
     # ---- retention and deletion --------------------------------------------
     def purge_calls_before(self, business_id: str, cutoff: datetime) -> int:

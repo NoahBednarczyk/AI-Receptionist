@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 import icalendar
 import recurring_ical_events
 
-from . import schedule
+from . import gcal, schedule
 
 log = logging.getLogger("receptionist")
 TIMEOUT_S = 5
@@ -87,23 +87,29 @@ def _calendars(biz: dict) -> list[dict]:
     return [c for c in biz.get("calendars", []) if c.get("type", "ical") == "ical" and c.get("url")]
 
 
-def _load(cal: dict, now_mono: float, getter) -> tuple[icalendar.Calendar | None, float | None]:
-    """The parsed calendar (None when unreadable and too old to trust) and when it was last read successfully."""
-    key = hashlib.sha256(cal["url"].encode()).hexdigest()
+def _cached(key: str, label: str, now_mono: float, produce, ttl: float = CACHE_S):
+    """`produce()` read at most once per `ttl` seconds. Returns (value, last read ok); the value is None when the source
+    is unreadable and the last good read is older than STALE_S."""
     with _lock:
         entry = _cache.get(key)
-    if entry and now_mono - entry["tried"] < CACHE_S:
+    if entry and now_mono - entry["tried"] < ttl:
         return entry["cal"], entry["ok"]
     try:
-        parsed = icalendar.Calendar.from_ical(getter(normalize_url(cal["url"])))
-        entry = {"tried": now_mono, "ok": now_mono, "cal": parsed, "error": None}
+        entry = {"tried": now_mono, "ok": now_mono, "cal": produce(), "error": None}
     except Exception as e:   # a bad link, a timeout or a broken file all mean the same: do not trust this calendar now
-        log.warning("calendar %r not read: %s", cal.get("label", "calendar"), type(e).__name__)
+        log.warning("calendar %r not read: %s", label, type(e).__name__)
         entry = {**(entry or {"ok": None, "cal": None}), "tried": now_mono, "error": type(e).__name__}
     with _lock:
         _cache[key] = entry
     fresh = entry["ok"] is not None and now_mono - entry["ok"] < STALE_S
     return (entry["cal"] if fresh else None), entry["ok"]
+
+
+def _load(cal: dict, now_mono: float, getter) -> tuple[icalendar.Calendar | None, float | None]:
+    """The parsed calendar (None when unreadable and too old to trust) and when it was last read successfully."""
+    key = hashlib.sha256(cal["url"].encode()).hexdigest()
+    return _cached(key, cal.get("label", "calendar"), now_mono,
+                   lambda: icalendar.Calendar.from_ical(getter(normalize_url(cal["url"]))))
 
 
 def _as_dt(v, tz) -> datetime | None:
@@ -112,10 +118,27 @@ def _as_dt(v, tz) -> datetime | None:
     return None   # a date means an all-day event
 
 
-def busy_intervals(biz: dict, start: datetime, end: datetime, getter=None, mono=None) -> tuple[list[tuple[datetime, datetime]], list[dict]]:
+def _interval(start, end, summary: str, tz, keywords: list[str]) -> tuple[datetime, datetime] | None:
+    """The span an event blocks, or None. `start`/`end` are datetimes (timed) or dates (all day, end exclusive); an
+    all-day event counts only when its title says the shop is off."""
+    a = _as_dt(start, tz)
+    if a is None:
+        if not any(k in summary.lower() for k in keywords):
+            return None
+        last = end if end is not None else start + timedelta(days=1)
+        return (datetime.combine(start, datetime.min.time(), tzinfo=tz), datetime.combine(last, datetime.min.time(), tzinfo=tz))
+    return (a, _as_dt(end, tz) or a + timedelta(hours=1))
+
+
+GCAL_CACHE_S = 60   # Google reads are cheap and a new meeting should block windows within a minute
+
+
+def busy_intervals(biz: dict, start: datetime, end: datetime, getter=None, mono=None,
+                   events_getter=None) -> tuple[list[tuple[datetime, datetime]], list[dict]]:
     """(busy intervals overlapping start..end, problems). A problem is {'label', 'last_read'} for a calendar that could
     not be read recently; its events are left out, so the shop's windows are offered from our own bookings alone."""
     getter = getter or fetch
+    events_getter = events_getter or gcal.list_events
     now_mono = mono if mono is not None else time.monotonic()
     tz = schedule.tz(biz)
     keywords = [k.lower() for k in biz.get("busy_keywords", ["off", "vacation", "closed"])]
@@ -128,31 +151,40 @@ def busy_intervals(biz: dict, start: datetime, end: datetime, getter=None, mono=
         for ev in recurring_ical_events.of(parsed).between(start, end):
             if str(ev.get("STATUS", "")).upper() == "CANCELLED" or str(ev.get("TRANSP", "")).upper() == "TRANSPARENT":
                 continue
-            a, b = _as_dt(ev.decoded("DTSTART"), tz), None
+            a = ev.decoded("DTSTART")
             if "DTEND" in ev:
-                b = _as_dt(ev.decoded("DTEND"), tz)
-            elif "DURATION" in ev:
-                b = a + ev.decoded("DURATION") if a else None
-            if a is None:   # all day: counts only when the title says the shop is off
-                if any(k in str(ev.get("SUMMARY", "")).lower() for k in keywords):
-                    day = ev.decoded("DTSTART")
-                    last = ev.decoded("DTEND") if "DTEND" in ev else day + timedelta(days=1)
-                    busy.append((datetime.combine(day, datetime.min.time(), tzinfo=tz),
-                                 datetime.combine(last, datetime.min.time(), tzinfo=tz)))
-                continue
-            busy.append((a, b or a + timedelta(hours=1)))
+                b = ev.decoded("DTEND")
+            elif "DURATION" in ev and isinstance(a, datetime):
+                b = a + ev.decoded("DURATION")
+            else:
+                b = None
+            span = _interval(a, b, str(ev.get("SUMMARY", "")), tz, keywords)
+            if span:
+                busy.append(span)
+    for cal in gcal.calendars(biz):
+        key = hashlib.sha256(f"g|{cal['calendar_id']}|{start.date()}|{end.date()}".encode()).hexdigest()
+        events, ok = _cached(key, cal.get("label", "calendar"), now_mono,
+                             lambda: events_getter(cal["calendar_id"], start, end), GCAL_CACHE_S)
+        if events is None:
+            problems.append({"label": cal.get("label", "calendar"), "ago_s": None if ok is None else int(now_mono - ok)})
+            continue
+        for ev in events:
+            span = _interval(ev["start"], ev["end"], ev["summary"], tz, keywords)
+            if span:
+                busy.append(span)
     return busy, problems
 
 
-def booked_counts(biz: dict, store, now: datetime, getter=None, mono=None) -> tuple[dict[str, int], list[dict]]:
+def booked_counts(biz: dict, store, now: datetime, getter=None, mono=None, events_getter=None) -> tuple[dict[str, int], list[dict]]:
     """What `schedule.open_windows` calls `booked`: our own bookings plus calendar events overlapping each window, with
     blocked time counted as the whole shop. Also returns the calendars that could not be read."""
     counts = dict(store.booked_counts(biz["id"]))
     blocks = [(datetime.fromisoformat(b["start_at"]), datetime.fromisoformat(b["end_at"])) for b in store.blocks(biz["id"], now)]
-    if not blocks and not _calendars(biz):
+    has_calendars = bool(_calendars(biz) or gcal.calendars(biz))
+    if not blocks and not has_calendars:
         return counts, []
     horizon = now + timedelta(days=biz["booking"]["days_ahead"] + 1)
-    events, problems = busy_intervals(biz, now - timedelta(days=1), horizon, getter, mono) if _calendars(biz) else ([], [])
+    events, problems = busy_intervals(biz, now - timedelta(days=1), horizon, getter, mono, events_getter) if has_calendars else ([], [])
     tz = schedule.tz(biz)
     for offset in range(biz["booking"]["days_ahead"] + 1):
         d = now.date() + timedelta(days=offset)

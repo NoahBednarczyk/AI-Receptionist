@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from html import escape
 
-from . import calendar_busy, schedule
+from . import calendar_busy, gcal, schedule
 from .speech import spoken_phone
 from .store import Store
 
@@ -155,6 +155,20 @@ def _blocked_time(biz: dict, store: Store, now, problems: list) -> str:
             f'<button>Block it</button></form>')
 
 
+def _calendar_status(biz: dict, store: Store) -> str:
+    """For a shop with a Google calendar: it is connected, or these bookings did not reach it."""
+    cals = gcal.calendars(biz)
+    if not cals:
+        return ""
+    names = ", ".join(escape(c.get("label", "calendar")) for c in cals)
+    failed = store.sync_failures(biz["id"]) if any(c.get("write", True) for c in cals) else []
+    if not failed:
+        return f'<p class="muted"><span class="tag">Google Calendar</span> {names}: bookings appear there and its events block booking times.</p>'
+    refs = ", ".join(escape(f["confirmation"]) for f in failed[:8])
+    return (f'<p><span class="tag urgent">Google Calendar</span> {len(failed)} booking(s) did not reach {names} ({refs}). '
+            f'Check that the calendar is still shared with our account; we retry them with the next sync.</p>')
+
+
 def render(biz: dict, store: Store, limit: int = 25, problems: list | None = None) -> str:
     now = schedule.local_now(biz)
     bid = biz["id"]
@@ -176,6 +190,7 @@ def render(biz: dict, store: Store, limit: int = 25, problems: list | None = Non
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(biz['name'])} calls</title><style>{STYLE}</style></head><body><main>
 <h1>{escape(biz['name'])}</h1><p class="muted">Updated {escape(now.strftime('%a %b %d, %I:%M %p'))}. Refreshes every 30 seconds.</p>
+{_calendar_status(biz, store)}
 <h2>Calls</h2>{calls_html}
 <h2>Bookings</h2>{_table(["Confirmation", "Window", "Service", "Name", "Phone", "Address", "Notes", "Status"], bookings)}
 <h2>Messages</h2>{_table(["When", "", "Name", "Phone", "Message"], messages)}

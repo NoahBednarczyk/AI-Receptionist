@@ -24,6 +24,8 @@ services:
         sync: false
       - key: TOKEN_SECRET
         sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
     disk:
       name: receptionist-data
       mountPath: /var/data

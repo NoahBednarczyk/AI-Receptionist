@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
-from . import calendar_busy, schedule
+from . import calendar_busy, gcal, schedule
 from .speech import fictional_phone, normalize_phone, spoken_date, spoken_phone, spoken_time
 from .store import Store
 
@@ -297,6 +297,12 @@ def _booked(ctx: "ToolContext") -> dict[str, int]:
     return counts
 
 
+def _push(ctx: ToolContext, confirmation: str) -> None:
+    """Show the booking's current state on the shop's Google Calendar, in the background. Never raises."""
+    if gcal.calendars(ctx.biz, writable=True):
+        gcal.push_async(ctx.biz, ctx.store, ctx.store.get_appointment(ctx.biz["id"], confirmation))
+
+
 def check_availability(ctx: ToolContext, a: dict) -> dict:
     service = _service(ctx.biz, a["service_id"])
     earliest = None
@@ -358,6 +364,7 @@ def book_appointment(ctx: ToolContext, a: dict) -> dict:
                                      a["problem_summary"], a.get("access_notes"))
         spoken = schedule.spoken_window(biz, wid, ctx.now, ctx.language)
         moved = wid != earlier["window_id"]
+        _push(ctx, earlier["confirmation"])
         if moved:
             _text(ctx, phone, _moved_text(ctx, earlier["confirmation"], spoken))
         return {"status": "moved" if moved else "updated", "confirmation": earlier["confirmation"], "window": spoken,
@@ -366,6 +373,7 @@ def book_appointment(ctx: ToolContext, a: dict) -> dict:
     confirmation = ctx.store.add_appointment(bid, ctx.call_id, wid, service["id"], name, phone, street,
                                              town, a["problem_summary"], a.get("access_notes"), ctx.now)
     ctx.store.upsert_customer(bid, phone, name, street, town)
+    _push(ctx, confirmation)
     spoken = schedule.spoken_window(biz, wid, ctx.now, ctx.language)
     if ctx.language == "es":
         body = (f"{biz['name']}: su cita está reservada para {spoken}. Confirmación {confirmation}. "
@@ -435,6 +443,7 @@ def reschedule_appointment(ctx: ToolContext, a: dict) -> dict:
     if wid not in open_ids:
         raise ToolError("That window isn't available. Call check_availability again and offer a current window.")
     ctx.store.set_appointment(appt["id"], window_id=wid)
+    _push(ctx, appt["confirmation"])
     spoken = schedule.spoken_window(ctx.biz, wid, ctx.now, ctx.language)
     _text(ctx, appt["phone"], _moved_text(ctx, appt["confirmation"], spoken))
     _text(ctx, ctx.biz["owner_sms"],
@@ -445,6 +454,7 @@ def reschedule_appointment(ctx: ToolContext, a: dict) -> dict:
 def cancel_appointment(ctx: ToolContext, a: dict) -> dict:
     appt = _callers_appointment(ctx, a)
     ctx.store.set_appointment(appt["id"], status="cancelled")
+    _push(ctx, appt["confirmation"])
     body = (f"{ctx.biz['name']}: su cita {appt['confirmation']} fue cancelada." + STOP_ES if ctx.language == "es"
             else f"{ctx.biz['name']}: your visit {appt['confirmation']} is cancelled." + STOP_EN)
     _text(ctx, appt["phone"], body)

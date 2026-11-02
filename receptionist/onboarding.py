@@ -173,6 +173,12 @@ def build(intake: dict, template: dict) -> dict:
         if not re.match(r"^(https|webcal)://[^\s]+$", url, re.I):
             raise IntakeError("The calendar link must start with https:// (or webcal://).")
         biz["calendars"] = [{"type": "ical", "url": url, "label": intake.get("calendar_label") or "shop calendar"}]
+    if intake.get("google_calendar_id"):   # the shop shares this calendar with our service account
+        gid = str(intake["google_calendar_id"]).strip()
+        if not re.match(r"^[^\s@]+@[^\s@]+$", gid):
+            raise IntakeError("The Google calendar id looks like an email address (or xyz@group.calendar.google.com).")
+        biz["calendars"].append({"type": "google", "calendar_id": gid,
+                                 "label": intake.get("calendar_label") or "shop calendar", "write": True})
     biz.pop("notice_waived", None)
     # Keep only the answers that describe how the agent itself works; everything else comes from the shop.
     keep = ("stove", "no heat")

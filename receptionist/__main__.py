@@ -187,6 +187,20 @@ def cmd_calendar_url(cfg, a):
     print(_links(cfg, a)["calendar"])
 
 
+def cmd_calendar_sync(cfg, a):
+    from . import gcal, schedule
+    biz = load_business(cfg, a.business)
+    if not gcal.calendars(biz):
+        raise SystemExit(f"{biz['id']} has no Google calendar: add {{\"type\": \"google\", \"calendar_id\": ...}} to its calendars")
+    try:
+        for line in gcal.check(biz):
+            print(line)
+        if a.push:
+            print("pushed:", gcal.resync(biz, _store(cfg), schedule.local_now(biz)))
+    except gcal.GcalError as e:
+        raise SystemExit(f"Google Calendar: {e}")
+
+
 def cmd_client_upload(cfg, a):
     import urllib.error
     import urllib.request
@@ -458,6 +472,11 @@ def main():
     sp.add_argument("--base-url", required=True, help="the server's https address, e.g. https://name.onrender.com")
     biz_args(sp, at=False)
     sp.set_defaults(fn=cmd_calendar_url)
+
+    sp = sub.add_parser("calendar-sync", help="check a shop's Google Calendar access; --push (re)sends its bookings")
+    biz_args(sp, at=False)
+    sp.add_argument("--push", action="store_true", help="send every booking from yesterday on, and recent cancellations")
+    sp.set_defaults(fn=cmd_calendar_sync)
 
     sp = sub.add_parser("serve", help="webhook server for Vapi and Retell")
     sp.add_argument("--host", default="127.0.0.1")
