@@ -69,6 +69,8 @@ def can_call(lead: dict, now: datetime, cfg: dict, attempts: list[datetime] | No
         return False, "cold calling is switched off (legal check not done)"
     elif s["mode"] == "cold" and lead.get("line") not in ("landline", "voip") and lead.get("consent") != "yes":
         return False, "number is not confirmed a landline (cell numbers need consent)"
+    if lead.get("test"):   # a test call to Noah's own phone: his number, his timing
+        return True, "ok (test call to the owner's own phone)"
     local = now.astimezone(ZoneInfo(lead.get("timezone") or s["timezone"]))
     if local.weekday() > 4:
         return False, "weekend"

@@ -97,7 +97,7 @@
     "fixed_start": "2026-10-26"
   },
   "outbound": {
-    "mode": "dry-run",
-    "cold_enabled": false
+    "mode": "cold",
+    "cold_enabled": true
   }
 }

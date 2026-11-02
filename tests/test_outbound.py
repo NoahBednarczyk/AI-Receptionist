@@ -42,6 +42,13 @@ class GateTests(unittest.TestCase):
         self.assertIn("follow-up", outbound.can_call({**LEAD, "followDate": "2026-11-10"}, TUE_10AM, c)[1])
         self.assertIn("phone", outbound.can_call({**LEAD, "phone": ""}, TUE_10AM, c)[1])
 
+    def test_test_flag_skips_hours_but_not_the_do_not_call_list(self):
+        c = cfg()
+        night = datetime(2026, 11, 2, 5, 10, tzinfo=TZ)
+        self.assertFalse(outbound.can_call(LEAD, night, c)[0])
+        self.assertTrue(outbound.can_call({**LEAD, "test": True}, night, c)[0])
+        self.assertFalse(outbound.can_call({**LEAD, "test": True}, night, c, dnc={"+12083043883"})[0])
+
     def test_only_list_stage_is_queued_and_consented_first(self):
         leads = [LEAD, {**LEAD, "name": "Warm", "phone": "208-555-0111", "consent": "yes"}, {**LEAD, "name": "Done", "stage": "client"}]
         rows = outbound.plan_queue(leads, TUE_10AM, cfg())
