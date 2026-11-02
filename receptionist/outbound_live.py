@@ -45,13 +45,18 @@ def trade_of(lead: dict) -> str:
     return "plumbing" if "plumb" in t and "hvac" not in t else "hvac" if "hvac" in t or "heat" in t else "default"
 
 
-def opener(lead: dict, s: dict, rng=random) -> str:
-    """The first words of the call: a hook about this shop, then who is calling (always an AI), then a small ask."""
+def opener_parts(lead: dict, s: dict, rng=random) -> tuple[str, str]:
+    """(hook, intro): the hook about this shop, then who is calling (a person, the company, that it is a sales call) and
+    a small ask. They are spoken as two pieces so the intro can be protected from being talked over."""
     owner = (lead.get("contact") or "").split(" ")[0]
     hook = lead.get("hook") or rng.choice(HOOKS[trade_of(lead)])
     fill = dict(biz=lead.get("name") or "your shop", town=s["town"], agent=s["agent_name"], founder=s["founder"], company=s["company"])
-    start = f"Hi {owner}? " if owner else ""
-    return start + hook.format(**fill) + " " + rng.choice(INTRO).format(**fill)
+    return (f"Hi {owner}? " if owner else "") + hook.format(**fill), rng.choice(INTRO).format(**fill)
+
+
+def opener(lead: dict, s: dict, rng=random) -> str:
+    hook, intro = opener_parts(lead, s, rng)
+    return f"{hook} {intro}"
 
 
 STOP_LINES = ["Understood, I'll take you off our list. Sorry for the interruption.",
@@ -218,8 +223,11 @@ class OutboundSession(CallSession):
         self.biz = {"id": "outbound", "vertical": "outbound", "name": s["company"], "spoken_name": s["company"],
                     "agent_name": s["agent_name"], "timezone": s["timezone"]}
         self.lead, self.state, self.started = lead, state, now
+        self.company_name = s["company"]
         self.greeting = ""   # an empty first message makes Retell wait for the person to say hello
-        self.opener = opener(lead, s, rng)
+        self.hook_text, self.intro_text = opener_parts(lead, s, rng)
+        self.opener = f"{self.hook_text} {self.intro_text}"
+        self._resumed = False
         self._opened = False
         self._intro_checked = False
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
@@ -242,7 +250,8 @@ class OutboundSession(CallSession):
         if not self._opened and not self.ctx.ended:   # their first words ("Hello?"): the opener answers, no model call
             self._opened = True
             if on_text:
-                on_text(self.opener)
+                on_text(self.hook_text)
+                on_text(" " + self.intro_text)
             messages = [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.opener}]
             self._save(messages, caller_text, {"role": "agent", "text": self.opener, "tools": [], "steps": [{"say": self.opener}]}, None, final=False)
             return Turn(self.opener, [], 0.0, 0.0, False)
@@ -252,6 +261,19 @@ class OutboundSession(CallSession):
         if asked_if_ai(caller_text):
             note = f"{note} {AI_NOTE}" if note else AI_NOTE
         return super().respond(caller_text, on_text, control, heard_only, note)
+
+    def protected(self, chunk: str) -> bool:
+        """The intro (who is calling, that it is a sales call) cannot be talked over; the hook can."""
+        return self.intro_text in chunk
+
+    def resume_line(self, heard: str) -> str | None:
+        """Noise right after "hello" can cut the opener before the intro was heard. If so, say the intro (once) instead
+        of "I didn't catch that"."""
+        if self._resumed or self.company_name in (heard or ""):
+            return None
+        self._resumed = True
+        self.transcript.append({"role": "agent", "text": self.intro_text, "resumed": True})
+        return self.intro_text
 
     def _stop(self, caller_text: str, on_text) -> Turn:
         """A clear request to stop: said and done by code, no model call. Marks the number and hangs up."""

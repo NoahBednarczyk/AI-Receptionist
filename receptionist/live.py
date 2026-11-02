@@ -245,6 +245,12 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
         said = " ".join(lines[consumed:]) or new_caller_text(transcript)
         if not said or GARBLED.match(said):   # answer at once instead of waiting on the model
             heard_before, consumed = None, len(lines)
+            resume = getattr(session, "resume_line", None)   # a session may finish a line the noise cut off
+            finishing = resume(agent_line) if resume else None
+            if finishing:
+                await say({"response_type": "response", "response_id": rid, "content": finishing, "content_complete": True,
+                           "no_interruption_allowed": True})
+                return
             await say({"response_type": "response", "response_id": rid,
                        "content": line(NOT_HEARD, session.ctx.language, "not_heard"), "content_complete": True})
             return
@@ -267,6 +273,13 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
         """Plays the reply to the caller's words. False when the turn was dropped because they kept talking."""
         chunks: asyncio.Queue = asyncio.Queue()
         control = TurnControl()
+
+        def part(chunk: str) -> dict:
+            message = {"response_type": "response", "response_id": rid, "content": for_voice(chunk), "content_complete": False}
+            if getattr(session, "protected", None) and session.protected(chunk):
+                message["no_interruption_allowed"] = True   # a line that must be heard whole (who is calling)
+            return message
+
         turn = loop.run_in_executor(None, session.respond, caller_text,
                                     lambda chunk: loop.call_soon_threadsafe(chunks.put_nowait, chunk), control,
                                     heard_only, note)
@@ -296,8 +309,7 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
                     if first is None:
                         first = loop.time() - started
                     spoke = True
-                    await say({"response_type": "response", "response_id": rid, "content": for_voice(getter.result()),
-                               "content_complete": False})
+                    await say(part(getter.result()))
                     continue
                 getter.cancel()
                 if turn in done:
@@ -307,8 +319,7 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
         log.info("call %s: reply %s, first words %s, done %.2fs", session.call_id, rid,
                  f"{first:.2f}s" if first is not None else "none", loop.time() - started)
         while not chunks.empty():
-            await say({"response_type": "response", "response_id": rid, "content": for_voice(chunks.get_nowait()),
-                       "content_complete": False})
+            await say(part(chunks.get_nowait()))
         final = {"response_type": "response", "response_id": rid, "content": "", "content_complete": True}
         try:
             turn.result()

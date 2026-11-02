@@ -148,7 +148,9 @@ class OpenerAndSlotsTests(Fixture):
         said = []
         turn = self.s.respond("Hello?", said.append)
         self.assertEqual(turn.text, self.s.opener)
-        self.assertEqual(said, [self.s.opener])
+        self.assertEqual("".join(said), self.s.opener)
+        self.assertEqual(said, [self.s.hook_text, " " + self.s.intro_text])
+        self.assertTrue(self.s.protected(said[1]) and not self.s.protected(said[0]))
         self.assertIn("Case Plumbing", self.s.opener)
         self.assertEqual([m["role"] for m in self.s.messages], ["user", "assistant"])   # the model sees a normal history
         self.assertFalse(self.s.ended)
@@ -187,6 +189,72 @@ class OpenerAndSlotsTests(Fixture):
         self.assertRegex(body["idempotency_key"], r"^[A-Za-z0-9_-]{5,255}$")
         self.assertTrue(body["honor_internal_dnc"])
         self.assertNotIn("enable_voicemail_detection", ol.agent_payload(CFG, "https://x.io", "S"))
+
+
+class OpenerCutOffTests(Fixture):
+    """The real call: 'Hello?' then line noise '(unintelligible audio)' cut the opener after the hook, and the agent
+    answered 'I didn't quite get that' without ever saying who was calling."""
+
+    def run_socket(self, events):
+        import asyncio
+        from receptionist import live
+        sent = []
+
+        async def run():
+            queue = asyncio.Queue()
+            for e in events:
+                queue.put_nowait(e)
+
+            async def receive():
+                if queue.empty():
+                    await asyncio.sleep(0.4)
+                    raise ConnectionError("hung up")
+                if len(sent) > 1:
+                    await asyncio.sleep(0.2)   # Retell's requests arrive some time apart
+                else:
+                    await asyncio.sleep(0.05)
+                return await queue.get()
+
+            async def send(m):
+                sent.append(m)
+            try:
+                await live.run_retell_call(receive, send, lambda call: self.s, lambda s: None)
+            except ConnectionError:
+                pass
+        asyncio.run(run())
+        return sent
+
+    def test_noise_after_hello_finishes_the_intro_instead_of_asking_to_repeat(self):
+        heard = "Hi Noah? " + self.s.hook_text.split("? ", 1)[-1]   # the hook played, the intro did not
+        sent = self.run_socket([
+            {"interaction_type": "call_details", "call": {"call_id": "c1", "metadata": {"lead": LEAD}}},
+            {"interaction_type": "response_required", "response_id": 1, "transcript": [{"role": "user", "content": "Hello?"}]},
+            {"interaction_type": "response_required", "response_id": 2,
+             "transcript": [{"role": "user", "content": "Hello?"}, {"role": "agent", "content": heard},
+                            {"role": "user", "content": "(unintelligible audio)"}]}])
+        first = [m for m in sent if m.get("response_id") == 1]
+        self.assertTrue(any(m.get("no_interruption_allowed") and "Ringback" in m["content"] for m in first))
+        self.assertFalse(any(m.get("no_interruption_allowed") and "Ringback" not in m["content"] for m in first))   # the hook stays interruptible
+        second = [m for m in sent if m.get("response_id") == 2]
+        self.assertEqual(len(second), 1)
+        self.assertEqual(second[0]["content"], self.s.intro_text)
+        self.assertTrue(second[0]["no_interruption_allowed"])
+
+    def test_noise_after_the_whole_opener_was_heard_gets_the_normal_ask_to_repeat(self):
+        sent = self.run_socket([
+            {"interaction_type": "call_details", "call": {"call_id": "c1", "metadata": {"lead": LEAD}}},
+            {"interaction_type": "response_required", "response_id": 1, "transcript": [{"role": "user", "content": "Hello?"}]},
+            {"interaction_type": "response_required", "response_id": 2,
+             "transcript": [{"role": "user", "content": "Hello?"}, {"role": "agent", "content": self.s.opener},
+                            {"role": "user", "content": "(unintelligible audio)"}]}])
+        second = [m for m in sent if m.get("response_id") == 2]
+        self.assertNotEqual(second[0]["content"], self.s.intro_text)
+        self.assertIn(second[0]["content"], sum(live_pools(), []))
+
+
+def live_pools():
+    from receptionist import live
+    return [live.NOT_HEARD["en"]]
 
 
 class HandoffTests(unittest.TestCase):
