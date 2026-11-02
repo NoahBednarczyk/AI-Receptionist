@@ -225,3 +225,15 @@ class SocketTests(Fixture):
         self.assertTrue(any("list" in m.get("content", "") for m in last))
         self.assertEqual(finished, [self.s])
         self.assertIn("+12083043883", self.state.dnc())
+
+
+class VoiceTests(unittest.TestCase):
+    def test_caller_takes_the_receptionists_voice_but_keeps_its_own_behaviour(self):
+        import receptionist.config as c
+        cfg = c.load_config()
+        voice = ol.receptionist_voice(cfg)
+        shop = json.loads((Path(cfg["businesses_dir"]) / f"{cfg['live_businesses'][0]}.json").read_text())["voice"]
+        for k in ("voice_id", "voice_model", "voice_speed", "voice_temperature"):
+            self.assertEqual(voice[k], shop[k])
+        self.assertEqual(voice["interruption_sensitivity"], 0.9)
+        self.assertNotIn("post_call_analysis_model", voice)

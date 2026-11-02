@@ -276,11 +276,18 @@ class OutboundSession(CallSession):
 
 # ---------------------------------------------------------------- Retell
 
+VOICE_IDENTITY = ("voice_id", "voice_model", "fallback_voice_ids", "voice_speed", "voice_temperature", "denoising_mode")
+
+
 def receptionist_voice(cfg: dict) -> dict:
-    """The live receptionist's voice block (voice id, model, speed, interruption settings), so the caller always sounds
-    like it. Changing the voice in the shop's JSON changes both on the next create/tune."""
+    """What makes the caller sound like the receptionist: the live shop's voice id, model, speed, temperature and
+    noise setting, read from its JSON. How the caller behaves on the line (how easily it can be interrupted, how fast it
+    reacts) is its own: it is the one who has to keep talking through a cold pick-up."""
     live = (cfg.get("live_businesses") or [cfg["default_business"]])[0]
-    return json.loads((Path(cfg["businesses_dir"]) / f"{live}.json").read_text())["voice"]
+    block = json.loads((Path(cfg["businesses_dir"]) / f"{live}.json").read_text())["voice"]
+    return {**{k: block[k] for k in VOICE_IDENTITY if k in block},
+            "enable_backchannel": False, "ambient_sound": None, "responsiveness": 1.0, "interruption_sensitivity": 0.9,
+            "enable_dynamic_voice_speed": False, "enable_dynamic_responsiveness": False}
 
 
 def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = None) -> dict:
