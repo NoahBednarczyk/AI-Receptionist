@@ -30,3 +30,22 @@ services:
       name: receptionist-data
       mountPath: /var/data
       sizeGB: 1
+
+  # Fires the discovery caller once each weekday morning. Cron services have no disk of their own, so this just
+  # calls the web service's admin endpoint, which does the real work (picks the next eligible lead from the file on
+  # /var/data and dials it). 16:00 UTC is 8:00 AM Pacific in winter and 9:00 AM in summer (cron schedules are always
+  # UTC, so this drifts an hour across the DST change) -- both are inside outbound.call_hours (08:00-18:00 local), so
+  # a lead never gets called before the shop's own opening-hours gate would allow it anyway.
+  - type: cron
+    name: outbound-caller-trigger
+    runtime: python
+    region: oregon
+    plan: starter
+    schedule: "0 16 * * 1-5"   # Mon-Fri, UTC
+    buildCommand: "true"
+    startCommand: 'curl -sS -f -X POST "$TARGET_URL/admin/outbound/call-next" -H "Authorization: Bearer $DASHBOARD_TOKEN"'
+    envVars:
+      - key: TARGET_URL
+        value: https://receptionist-575z.onrender.com
+      - key: DASHBOARD_TOKEN
+        sync: false   # set this to the SAME value as the web service's DASHBOARD_TOKEN

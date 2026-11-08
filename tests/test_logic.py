@@ -822,6 +822,59 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(r, {"call_inbound": {"reject": True}})
 
 
+class OutboundAdminTests(unittest.TestCase):
+    """The discovery caller's admin endpoints: the lead list and the scheduled-trigger call-next route."""
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+        from receptionist.server import create_app
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["DASHBOARD_TOKEN"] = "dash-admin-key-" + "x" * 16
+        os.environ.pop("RETELL_API_KEY", None)
+        self.cfg = {**CFG, "data_dir": self.tmp.name, "outbound": {"mode": "warm-only"}}
+        self.create_app, self.TestClient = create_app, TestClient
+        self.client = TestClient(create_app(self.cfg, warm_cache=False))   # no RETELL_API_KEY in this one
+        self.auth = {"Authorization": "Bearer dash-admin-key-" + "x" * 16}
+
+    def tearDown(self):
+        os.environ.pop("DASHBOARD_TOKEN", None)
+        os.environ.pop("RETELL_API_KEY", None)
+        self.tmp.cleanup()
+
+    def with_retell_key(self):
+        """create_app reads RETELL_API_KEY once, at app-creation time, so a test needing it set must build its own
+        app after setting the env var rather than reuse self.client."""
+        os.environ["RETELL_API_KEY"] = "fake-key"
+        return self.TestClient(self.create_app(self.cfg, warm_cache=False))
+
+    def test_leads_endpoints_need_the_admin_key(self):
+        self.assertEqual(self.client.put("/admin/outbound/leads", json={"leads": []}).status_code, 404)
+        self.assertEqual(self.client.get("/admin/outbound/leads").status_code, 404)
+        self.assertEqual(self.client.post("/admin/outbound/call-next").status_code, 404)
+
+    def test_leads_round_trip_through_the_endpoint(self):
+        lead = {"id": "L01", "name": "Case Plumbing", "phone": "208-304-3883", "stage": "leads", "consent": "yes"}
+        put = self.client.put("/admin/outbound/leads", json={"leads": [lead]}, headers=self.auth)
+        self.assertEqual(put.json(), {"ok": True, "leads": 1})
+        self.assertEqual(self.client.get("/admin/outbound/leads", headers=self.auth).json(), {"leads": [lead]})
+
+    def test_call_next_refuses_without_a_retell_key(self):
+        r = self.client.post("/admin/outbound/call-next", headers=self.auth)
+        self.assertEqual(r.status_code, 503)
+
+    def test_call_next_with_no_leads_dials_nothing(self):
+        r = self.with_retell_key().post("/admin/outbound/call-next", headers=self.auth)
+        self.assertEqual(r.json(), {"called": None, "reason": "no leads on the list"})
+
+    def test_call_next_with_an_eligible_lead_but_no_outbound_number_yet(self):
+        # No retell_outbound.json on disk: place_call refuses every candidate, so call-next reports why instead of
+        # dialing (and never reaches the network, since OUTBOUND_LIVE isn't set either in this test process).
+        lead = {"id": "L01", "name": "Case Plumbing", "phone": "208-304-3883", "stage": "leads", "consent": "yes"}
+        self.client.put("/admin/outbound/leads", json={"leads": [lead]}, headers=self.auth)
+        r = self.with_retell_key().post("/admin/outbound/call-next", headers=self.auth)
+        self.assertIsNone(r.json()["called"])
+
+
 class LiveCallTests(FillerAssertions, unittest.TestCase):
     """A simulated Retell on the other end of the custom-LLM websocket, with a scripted fake Claude."""
 

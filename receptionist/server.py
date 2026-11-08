@@ -230,6 +230,44 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         outbound_live.State(Path(cfg["data_dir"]) / "outbound.json").set_slots(slots, datetime.datetime.now(datetime.timezone.utc))
         return {"ok": True, "slots": len(slots)}
 
+    def _admin_only(request: Request) -> None:
+        who = _who(request)
+        sent = request.headers.get("authorization", "").removeprefix("Bearer ")
+        if limiter.blocked(who) or not (dashboard_token and secrets.compare_digest(sent, dashboard_token)):
+            limiter.record(who)
+            raise HTTPException(404)
+
+    @app.put("/admin/outbound/leads")
+    async def outbound_leads_put(request: Request):
+        """Replace the discovery caller's whole lead list (admin key). Lives on the server's disk, never in git;
+        written by hand for now, and later by the lead-building skill."""
+        _admin_only(request)
+        try:
+            leads = (await request.json())["leads"]
+            assert isinstance(leads, list)
+        except (KeyError, TypeError, AssertionError):
+            raise HTTPException(422, "send {\"leads\": [...]}")
+        outbound_live.save_leads(cfg, leads)
+        return {"ok": True, "leads": len(leads)}
+
+    @app.get("/admin/outbound/leads")
+    async def outbound_leads_get(request: Request):
+        """The current lead list (admin key), so Noah can check what's loaded without shell access to the disk."""
+        _admin_only(request)
+        return {"leads": outbound_live.load_leads(cfg)}
+
+    @app.post("/admin/outbound/call-next")
+    async def outbound_call_next(request: Request):
+        """Places one real call to the next eligible lead, or dials nothing and says why. Fired by the scheduled
+        cron trigger each weekday morning, or by hand (admin key) to test it."""
+        _admin_only(request)
+        if not retell_key:
+            raise HTTPException(503, "RETELL_API_KEY is not set on this server; no outbound call can be placed.")
+        leads = outbound_live.load_leads(cfg)
+        state = outbound_live.State(Path(cfg["data_dir"]) / "outbound.json")
+        now = datetime.datetime.now(datetime.timezone.utc)
+        return outbound_live.call_next(cfg, leads, state, outbound_live.live_call_fn(retell_key), now)
+
     @app.get("/calendar.ics")
     def calendar_feed_route(request: Request, token: str = "", business: str | None = None):
         biz = _checked(request, token, business, "calendar")

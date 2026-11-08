@@ -90,6 +90,25 @@ def asked_if_ai(text: str) -> bool:
     return bool(AI_QUESTION.search(text))
 
 
+# ---------------------------------------------------------------- the lead list
+
+def leads_path(cfg: dict) -> Path:
+    return Path(cfg["data_dir"]) / "outbound_leads.json"
+
+
+def load_leads(cfg: dict) -> list[dict]:
+    """The discovery caller's lead list, kept on the server's disk (never in git). Empty until something writes it:
+    a manual PUT to /admin/outbound/leads, or the lead-building skill once it exists."""
+    p = leads_path(cfg)
+    return json.loads(p.read_text()) if p.exists() else []
+
+
+def save_leads(cfg: dict, leads: list[dict]) -> None:
+    tmp = leads_path(cfg).with_suffix(".tmp")
+    tmp.write_text(json.dumps(leads, indent=1))
+    tmp.replace(leads_path(cfg))
+
+
 # ---------------------------------------------------------------- state file
 
 class State:
@@ -338,6 +357,51 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = No
             "voicemail_option": {"action": {"type": "static_text", "text": voicemail}},
             "end_call_after_silence_ms": 15000, "max_call_duration_ms": 600000,
             "post_call_analysis_model": None}
+
+
+def live_call_fn(api_key: str):
+    """A real call_fn for place_call(): Retell's REST API over plain urllib, the same request `retell_setup._call`
+    makes. Unlike that helper (a CLI tool, fine to SystemExit), this raises RuntimeError so a server request can turn
+    a failure into a clean error response instead of killing the process."""
+    import urllib.error
+    import urllib.request
+
+    def call(method: str, path: str, body: dict | None = None) -> dict:
+        req = urllib.request.Request(f"https://api.retellai.com{path}", method=method,
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Retell {method} {path} failed: {e.code} {e.read().decode(errors='replace')[:300]}")
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"Retell {method} {path} failed to connect: {e}")
+    return call
+
+
+def call_next(cfg: dict, leads: list[dict], state: State, call_fn, now: datetime) -> dict:
+    """Finds the first callable lead in `outbound.plan_queue`'s own order (consent-yes first, then a due follow-up,
+    then the rest) and places one call to it. Dials nothing and says why if no lead is eligible right now (outside
+    call hours, the week's attempt limit, on the do-not-call list, cold calling still switched off...). A lead that
+    turns out ineligible at the moment of dialing (place_call's own re-check; a second request landed first, or the
+    outbound number/agent isn't set up yet) is skipped in favor of the next one rather than failing the whole run."""
+    history = {phone: state.attempts(phone) for phone in
+               {normalize_phone(l.get("phone") or "") or "" for l in leads} if phone}
+    rows = outbound.plan_queue(leads, now, cfg, history, state.dnc())
+    candidates = [r for r in rows if r["would_call"]]
+    if not candidates:
+        return {"called": None, "reason": rows[0]["why"] if rows else "no leads on the list"}
+    last_reason = None
+    for r in candidates:
+        lead = r["lead"]
+        try:
+            result = place_call(cfg, lead, now, state, call_fn)
+        except RuntimeError as e:
+            last_reason = str(e)
+            continue
+        return {"called": lead.get("name"), "phone": lead.get("phone"), "retell": result}
+    return {"called": None, "reason": last_reason or "every eligible lead was refused when dialing"}
 
 
 def place_call(cfg: dict, lead: dict, now: datetime, state: State, call_fn, env=os.environ) -> dict:

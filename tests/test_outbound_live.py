@@ -139,6 +139,60 @@ class RetellTests(Fixture):
             ol.place_call(cfg, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
 
 
+class LeadsFileTests(unittest.TestCase):
+    def test_round_trips_and_is_empty_until_written(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = {"data_dir": d}
+            self.assertEqual(ol.load_leads(cfg), [])
+            ol.save_leads(cfg, [LEAD])
+            self.assertEqual(ol.load_leads(cfg), [LEAD])
+
+
+class CallNextTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        import os
+        self.cfg = {**CFG, "data_dir": self.dir.name, "outbound": {"mode": "warm-only"}}
+        (Path(self.dir.name) / "retell_outbound.json").write_text(json.dumps({"number": "+12085550100", "agent_id": "ag"}))
+        self._env = dict(os.environ)
+        os.environ["OUTBOUND_LIVE"] = "1"
+        self.addCleanup(lambda: os.environ.clear() or os.environ.update(self._env))
+
+    def test_calls_the_first_eligible_lead_and_reports_it(self):
+        calls = []
+        fn = lambda *a: calls.append(a) or {"call_id": "c1"}
+        leads = [{**LEAD, "id": "L02", "consent": "no"}, {**LEAD, "id": "L01", "consent": "yes"}]
+        result = ol.call_next(self.cfg, leads, self.state, fn, NOW)
+        self.assertEqual(result["called"], "Case Plumbing")
+        self.assertEqual(len(calls), 1)   # only the eligible lead was dialed, not both
+
+    def test_skips_a_lead_whose_call_attempt_fails_and_tries_the_next(self):
+        # Both leads are equally eligible by plan_queue's own gate (consent=yes); the first one's dial attempt fails
+        # (a Retell API error, say), and call_next should move on to the next candidate instead of giving up.
+        calls = []
+
+        def fn(method, path, body):
+            if body["to_number"] == "+12084440000":
+                raise RuntimeError("Retell POST /v2/create-phone-call failed: 500 boom")
+            calls.append(body)
+            return {"call_id": "c1"}
+
+        bad = {**LEAD, "id": "L03", "consent": "yes", "phone": "208-444-0000"}
+        good = {**LEAD, "id": "L01", "consent": "yes"}
+        result = ol.call_next(self.cfg, [bad, good], self.state, fn, NOW)
+        self.assertEqual(result["called"], "Case Plumbing")
+        self.assertEqual(len(calls), 1)
+
+    def test_reports_why_when_nothing_is_eligible(self):
+        result = ol.call_next(self.cfg, [{**LEAD, "consent": "no"}], self.state, lambda *a: {}, NOW)
+        self.assertIsNone(result["called"])
+        self.assertIn("consent", result["reason"])
+
+    def test_empty_list_has_its_own_reason(self):
+        result = ol.call_next(self.cfg, [], self.state, lambda *a: {}, NOW)
+        self.assertEqual(result, {"called": None, "reason": "no leads on the list"})
+
+
 if __name__ == "__main__":
     unittest.main()
 
