@@ -19,10 +19,12 @@ from datetime import date
 
 from .speech import fictional_phone, normalize_phone
 
+# Words that start a word in the business's name or category ("Yardworks" counts, "Junkyard" does not). Tree-only
+# services are out of niche on purpose, so "tree" is not here. Order is priority: a shop that does lawns is lawn care.
 TRADES = {
-    "Snow removal": ("snow", "plow", "plowing"),
-    "Landscaping": ("landscap", "hardscape", "grounds", "garden", "nursery", "tree", "irrigation", "sprinkler"),
     "Lawn care": ("lawn", "mow", "turf", "yard", "weed", "fertiliz", "aerat"),
+    "Landscaping": ("landscap", "hardscape", "grounds", "garden", "irrigation"),
+    "Snow removal": ("snow", "plow"),
 }
 LINES = {"landline", "voip", "mobile"}
 # Fields a candidate may carry through to the lead; anything else is dropped.
@@ -39,15 +41,14 @@ def service_towns(cfg: dict) -> list[str]:
 
 
 def trade_of(text: str) -> str | None:
-    """Which of our three trades a business is, from its category and name. Snow wins over lawn only when lawn is absent,
-    so "Lawn & Snow" counts as lawn care. None means it is not in our niche (a plumber, a lawyer, a tree-only service...)."""
+    """Which of our three trades a business is, from its category and name; the first match in TRADES order wins, so
+    "Lawn & Snow" is lawn care and "Landscaping & Snow Removal" is landscaping. None means not in our niche (a plumber,
+    a tree-only service...)."""
     t = (text or "").lower()
-    found = [name for name, words in TRADES.items() if any(w in t for w in words)]
-    if not found:
-        return None
-    if "Lawn care" in found:
-        return "Lawn care"
-    return "Snow removal" if found == ["Snow removal"] else found[0]
+    for name, words in TRADES.items():
+        if any(re.search(r"\b" + w, t) for w in words):
+            return name
+    return None
 
 
 def slug(name: str, phone: str) -> str:
@@ -61,8 +62,8 @@ def normalize(candidate: dict, towns: list[str], today: date | None = None) -> t
     if not name:
         return None, "no business name"
     phone = normalize_phone(str(candidate.get("phone") or ""))
-    if not phone or len(phone.lstrip("+")) < 10:
-        return None, "no usable 10-digit phone number"
+    if not phone or not re.fullmatch(r"\+1[2-9]\d{9}", phone):
+        return None, "no usable 10-digit US phone number"
     if fictional_phone(phone):
         return None, "555-01xx is a placeholder number"
     town = (candidate.get("town") or "").strip()
