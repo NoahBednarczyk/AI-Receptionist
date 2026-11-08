@@ -129,3 +129,25 @@ class PromptLintTests(unittest.TestCase):
             self.assertIn(o.lower(), text.lower())
         for ask in ("Ask 1", "Ask 2", "Ask 3"):
             self.assertIn(ask, text)
+
+
+class DetailedNotesTests(unittest.TestCase):
+    LOG = {"outcome": "Callback requested", "summary": "Wants a call Friday.", "details": "Owner Dan runs 3 mowers; wife answers phones.",
+           "business_info": "3 trucks, snow plowing in winter", "objection": "Too busy", "next_step": "Call Friday"}
+
+    def test_the_call_row_carries_details_and_the_transcript(self):
+        row = outbound.call_row({"name": "A", "phone": "+12085550100"}, self.LOG, datetime(2026, 11, 9, 9, tzinfo=TZ), 2.5, 1,
+                                cfg(), "Agent: Hi\nCaller: hello")
+        self.assertEqual((row["details"], row["businessInfo"], row["transcript"]),
+                         ("Owner Dan runs 3 mowers; wife answers phones.", "3 trucks, snow plowing in winter", "Agent: Hi\nCaller: hello"))
+
+    def test_lead_notes_are_appended_and_dated(self):
+        up = outbound.lead_update({"notes": "found 2026-11-08"}, self.LOG, "2026-11-09 09:00")
+        self.assertTrue(up["notes"].startswith("found 2026-11-08\n\n[2026-11-09 09:00] Callback requested: Wants a call Friday."))
+        for part in ("Details: Owner Dan", "Business: 3 trucks", "Objection: Too busy", "Next step: Call Friday"):
+            self.assertIn(part, up["notes"])
+
+    def test_the_log_tool_asks_for_details(self):
+        props = next(t for t in outbound.schemas() if t["name"] == "log_call")["input_schema"]["properties"]
+        self.assertIn("details", props)
+        self.assertIn("business_info", props)

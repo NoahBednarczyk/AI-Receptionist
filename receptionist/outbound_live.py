@@ -16,7 +16,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import outbound, tools
-from .agent import CallSession, Turn, cache_control
+from .agent import CallSession, Turn, cache_control, transcript_text
 from .speech import normalize_phone, spoken_phone
 from .tools import ToolError
 
@@ -338,8 +338,9 @@ class OutboundSession(CallSession):
         self.state.add_attempt(phone, self.started)
         log = self.ctx.extra.get("log") or {"outcome": "No answer" if len(self.transcript) < 3 else "Gatekeeper",
                                             "summary": f"Call ended without a log ({reason or 'hung up'})."}
-        row = outbound.call_row(self.lead, log, self.started, minutes, self.state.next_call_number(), self.cfg)
-        self.state.add_result(row, self.lead.get("id"), outbound.lead_update(self.lead, log))
+        row = outbound.call_row(self.lead, log, self.started, minutes, self.state.next_call_number(), self.cfg,
+                                transcript_text(self.transcript, with_tools=False))
+        self.state.add_result(row, self.lead.get("id"), outbound.lead_update(self.lead, log, f"{row['date']} {row['time']}"))
         self.store.end_call(self.call_id, self.transcript, log["outcome"], now)
         return row
 

@@ -201,10 +201,11 @@ def schemas() -> list[dict]:
          "input_schema": obj({}, [])},
         {"name": "book_meeting", "description": "Book the meeting once the owner picked a time from the open list. start is the exact ISO time from the list.",
          "input_schema": obj({"start": text, "owner_name": text, "callback_number": text}, ["start", "owner_name", "callback_number"])},
-        {"name": "log_call", "description": "Record how the call went. Call once, right before end_call.",
+        {"name": "log_call", "description": "Record how the call went, in detail. Call once, right before end_call. details = a full account in plain sentences of what was said: who you reached, what they do, how they handle calls and jobs now, what they cared about, every objection and your answer, anything promised, and the tone. business_info = facts they gave about the business (crew size, services, season, how calls get answered, software, who decides). Use only what the owner actually said; write nothing you did not hear.",
          "input_schema": obj({"outcome": {"type": "string", "enum": OUTCOMES}, "contact": text, "objection": text, "next_step": text,
                               "follow_up_date": {"type": "string", "description": "YYYY-MM-DD or empty"}, "summary": text,
                               "quotes": {"type": "string", "description": "the owner's own words on missed calls and job value"},
+                              "details": text, "business_info": text,
                               "lessons": {"type": "string", "description": "what to change next call"}},
                              ["outcome", "summary"])},
         {"name": "mark_do_not_call", "description": "The owner asked not to be called again. Use on any clear stop request.",
@@ -215,7 +216,7 @@ def schemas() -> list[dict]:
 
 # ---------------------------------------------------------------- results into the CRM
 
-def call_row(lead: dict, log: dict, started: datetime, minutes: float, n: int, cfg: dict) -> dict:
+def call_row(lead: dict, log: dict, started: datetime, minutes: float, n: int, cfg: dict, transcript: str = "") -> dict:
     """A finished call as a Cold Call Desk row (the fields the dashboard's call log uses)."""
     local = started.astimezone(ZoneInfo(settings(cfg)["timezone"]))
     return {"n": n, "date": local.strftime("%Y-%m-%d"), "time": local.strftime("%H:%M"), "business": lead.get("name", ""),
@@ -223,17 +224,24 @@ def call_row(lead: dict, log: dict, started: datetime, minutes: float, n: int, c
             "script": "AI caller v1", "outcome": log["outcome"], "duration": round(minutes, 1),
             "objection": log.get("objection") or "None", "nextStep": log.get("next_step", ""),
             "followDate": log.get("follow_up_date", ""), "notes": "", "summary": log.get("summary", ""),
-            "quotes": log.get("quotes", ""), "lessons": log.get("lessons", ""), "source": "ai-caller"}
+            "quotes": log.get("quotes", ""), "lessons": log.get("lessons", ""), "details": log.get("details", ""),
+            "businessInfo": log.get("business_info", ""), "transcript": transcript, "source": "ai-caller"}
 
 
 STAGE_FOR = {"Demo booked": "pain", "Pilot signed": "pilot", "Callback requested": "replied", "Not interested": "contacted",
              "Gatekeeper": "contacted", "Voicemail": "contacted", "No answer": "contacted"}
 
 
-def lead_update(lead: dict, log: dict) -> dict:
-    """The change to make to the lead document after a call."""
+def lead_update(lead: dict, log: dict, when: str = "") -> dict:
+    """The change to make to the lead document after a call: the old notes, then this call's notes (dated)."""
+    parts = [f"{log['outcome']}: {log.get('summary', '')}".strip()]
+    for label, key in (("Details", "details"), ("Business", "business_info"), ("Objection", "objection"),
+                       ("Next step", "next_step"), ("Their words", "quotes"), ("Lesson", "lessons")):
+        if log.get(key):
+            parts.append(f"{label}: {log[key]}")
+    note = ((f"[{when}] " if when else "") + "\n".join(parts))
     return {"stage": STAGE_FOR.get(log["outcome"], lead.get("stage", "leads")), "followDate": log.get("follow_up_date", ""),
-            "notes": (lead.get("notes", "") + "\n" if lead.get("notes") else "") + log.get("summary", "")}
+            "notes": (lead.get("notes", "") + "\n\n" if lead.get("notes") else "") + note}
 
 
 def render_queue(rows: list[dict], cfg: dict) -> str:
