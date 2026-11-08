@@ -35,8 +35,8 @@ NOT_HEARD = {"en": ["Sorry, I didn't catch that. Could you say that again?", "I 
                     "I didn't quite get that, could you repeat it?"],
              "es": ["Perdón, no le entendí. ¿Me lo puede repetir?", "Se cortó un momento. ¿Otra vez?",
                     "No alcancé a oírle, ¿me lo repite?", "Perdone, ¿cómo dijo?"]}
-STILL_WORKING = {"en": ["Hmm.", "Let's see.", "Okay, so.", "Mm, let me think.", "Alright, let's see here.",
-                        "Bear with me.", "Okay, looking at that."],
+STILL_WORKING = {"en": ["Hmm.", "Mm, let's see.", "Uh...", "Okay, so.", "Mm, let me think.", "Hm, okay.",
+                        "Bear with me."],
                  "es": ["A ver.", "Mm, déjeme ver.", "Veamos.", "Bueno, a ver."]}
 SLOW_REPLY_S = 3.0   # no words yet after this long: a short thinking sound, never the same one twice running
 GARBLED = re.compile(r"^[\s(\[]*(unintelligible|inaudible|no speech|silence)[^)\]]*[)\]]?[\s.]*$", re.I)

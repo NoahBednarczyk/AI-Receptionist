@@ -741,7 +741,7 @@ class PlatformTests(unittest.TestCase):
         self.assertTrue(a["model"]["messages"][0]["content"].endswith("now"))
         self.assertEqual(a["server"]["headers"]["Authorization"], "Bearer tok")
         book = next(t for t in a["model"]["tools"] if t.get("function", {}).get("name") == "check_availability")
-        self.assertEqual(book["messages"][0]["content"], "Let me take a look at the schedule.")
+        self.assertEqual(book["messages"][0]["content"], "Mm, let's see.")
 
     def test_retell_llm(self):
         llm = platforms.retell_llm(CFG, BIZ, "https://x.test")
@@ -751,7 +751,7 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(names["book_appointment"], "custom")
         lookup = next(t for t in llm["general_tools"] if t["name"] == "lookup_customer")
         self.assertEqual((lookup["execution_message_type"], lookup["execution_message_description"]),
-                         ("static_text", "Let me pull that up."))
+                         ("static_text", "Mm, let me pull that up."))
         self.assertIn("{{call_state}}", llm["general_prompt"])
         self.assertEqual(llm["model_config"]["primary"]["model"], "claude-5.5-haiku")
 

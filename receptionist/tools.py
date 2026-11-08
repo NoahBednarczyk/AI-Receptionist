@@ -39,12 +39,12 @@ class ToolContext:
 # only when the agent hasn't spoken yet that turn. create_lead (an internal note) and end_call have none.
 FILLERS = {
     "en": {
-        "check_availability": "Let me take a look at the schedule.",
-        "book_appointment": "Okay, let me get that booked.",
-        "lookup_customer": "Let me pull that up.",
-        "take_message": "Let me write that down.",
-        "reschedule_appointment": "Okay, let me move that for you.",
-        "cancel_appointment": "Okay, let me cancel that for you.",
+        "check_availability": "Mm, let's see.",
+        "book_appointment": "Mm, okay, booking it.",
+        "lookup_customer": "Mm, let me pull that up.",
+        "take_message": "Mm, writing that down.",
+        "reschedule_appointment": "Mm, moving that over.",
+        "cancel_appointment": "Mm, canceling that now.",
         "transfer_call": "Let me connect you now.",
     },
     "es": {
@@ -61,15 +61,14 @@ FILLERS = {
 # (the phone platforms play those); pick_filler chooses among these and never repeats the last one in a call.
 FILLER_VARIANTS = {
     "en": {
-        "check_availability": ["Let me take a look at the schedule.", "Let me see what's open.", "Checking the schedule.",
-                               "Let's see what we've got.", "Pulling up the schedule."],
-        "book_appointment": ["Okay, let me get that booked.", "Locking that in.", "Alright, booking it now.",
-                             "Putting that on the books."],
-        "lookup_customer": ["Let me pull that up.", "Let me find your record.", "Looking you up.", "Let me see what I've got."],
-        "take_message": ["Let me write that down.", "Alright, getting that down.", "Noting that now.", "Let me get that on paper."],
-        "reschedule_appointment": ["Okay, let me move that for you.", "Moving that over.", "Alright, shifting it."],
-        "cancel_appointment": ["Okay, let me cancel that for you.", "Canceling that now.", "Alright, taking that off."],
-        "transfer_call": ["Let me connect you now.", "Connecting you now.", "Let me try them for you."],
+        "check_availability": ["Mm, let's see.", "Uh, let's see what's open.", "Hmm, okay, checking.", "Checking the schedule.",
+                               "Okay, let's see."],
+        "book_appointment": ["Mm, okay, booking it.", "Locking that in.", "Alright, booking it now.", "Uh, putting that on the books."],
+        "lookup_customer": ["Mm, let me pull that up.", "Uh, looking you up.", "Hmm, let's see.", "Let me find your record."],
+        "take_message": ["Mm, writing that down.", "Uh, getting that down.", "Noting that now.", "Okay, writing that."],
+        "reschedule_appointment": ["Mm, moving that over.", "Okay, shifting it.", "Uh, moving that now."],
+        "cancel_appointment": ["Mm, canceling that now.", "Okay, taking that off.", "Uh, canceling that."],
+        "transfer_call": ["Let me connect you now.", "Connecting you now.", "Okay, connecting you."],
     },
     "es": {
         "check_availability": ["Un momento, reviso la agenda.", "Déjeme ver qué hay.", "Reviso la agenda."],
