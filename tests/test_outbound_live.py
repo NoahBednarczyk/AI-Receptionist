@@ -139,6 +139,21 @@ class RetellTests(Fixture):
             ol.place_call(cfg, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
 
 
+class AgentRecordFileTests(unittest.TestCase):
+    def test_none_until_written_then_round_trips(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = {"data_dir": d}
+            self.assertIsNone(ol.load_agent_record(cfg))
+            ol.save_agent_record(cfg, "agent_123", "208-215-2934")
+            self.assertEqual(ol.load_agent_record(cfg), {"agent_id": "agent_123", "number": "+12082152934"})
+
+    def test_number_can_be_left_unset(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = {"data_dir": d}
+            ol.save_agent_record(cfg, "agent_123", None)
+            self.assertEqual(ol.load_agent_record(cfg), {"agent_id": "agent_123", "number": None})
+
+
 class LeadsFileTests(unittest.TestCase):
     def test_round_trips_and_is_empty_until_written(self):
         with tempfile.TemporaryDirectory() as d:

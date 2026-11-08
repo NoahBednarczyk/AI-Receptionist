@@ -237,6 +237,29 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
             limiter.record(who)
             raise HTTPException(404)
 
+    @app.put("/admin/outbound/agent")
+    async def outbound_agent_put(request: Request):
+        """Record which Retell agent and from-number place_call() dials with (admin key). The CLI's outbound-agent
+        --create writes this file on whatever machine runs it; this lets that same record reach the server's own
+        disk without shell access to it, for a Retell agent/number that already exists."""
+        _admin_only(request)
+        try:
+            body = await request.json()
+            agent_id = body["agent_id"]
+            assert isinstance(agent_id, str) and agent_id
+        except (KeyError, TypeError, AssertionError):
+            raise HTTPException(422, "send {\"agent_id\": \"...\", \"number\": \"+1...\" (number optional)}")
+        if body.get("number") and not outbound_live.normalize_phone(body["number"]):
+            raise HTTPException(422, f"{body['number']!r} is not a full phone number.")
+        rec = outbound_live.save_agent_record(cfg, agent_id, body.get("number"))
+        return {"ok": True, **rec}
+
+    @app.get("/admin/outbound/agent")
+    async def outbound_agent_get(request: Request):
+        """What place_call() currently has on file (admin key); null if nothing has been registered yet."""
+        _admin_only(request)
+        return {"agent": outbound_live.load_agent_record(cfg)}
+
     @app.put("/admin/outbound/leads")
     async def outbound_leads_put(request: Request):
         """Replace the discovery caller's whole lead list (admin key). Lives on the server's disk, never in git;

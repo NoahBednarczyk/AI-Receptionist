@@ -852,6 +852,26 @@ class OutboundAdminTests(unittest.TestCase):
         self.assertEqual(self.client.get("/admin/outbound/leads").status_code, 404)
         self.assertEqual(self.client.post("/admin/outbound/call-next").status_code, 404)
 
+    def test_agent_record_endpoints_need_the_admin_key(self):
+        self.assertEqual(self.client.put("/admin/outbound/agent", json={"agent_id": "a"}).status_code, 404)
+        self.assertEqual(self.client.get("/admin/outbound/agent").status_code, 404)
+
+    def test_agent_record_round_trips_and_normalizes_the_number(self):
+        self.assertEqual(self.client.get("/admin/outbound/agent", headers=self.auth).json(), {"agent": None})
+        put = self.client.put("/admin/outbound/agent", json={"agent_id": "agent_14910efc", "number": "208-215-2934"},
+                              headers=self.auth)
+        self.assertEqual(put.json(), {"ok": True, "agent_id": "agent_14910efc", "number": "+12082152934"})
+        self.assertEqual(self.client.get("/admin/outbound/agent", headers=self.auth).json(),
+                         {"agent": {"agent_id": "agent_14910efc", "number": "+12082152934"}})
+
+    def test_agent_record_needs_a_real_number_if_one_is_given(self):
+        r = self.client.put("/admin/outbound/agent", json={"agent_id": "a", "number": "555"}, headers=self.auth)
+        self.assertEqual(r.status_code, 422)
+
+    def test_agent_record_number_is_optional(self):
+        put = self.client.put("/admin/outbound/agent", json={"agent_id": "agent_14910efc"}, headers=self.auth)
+        self.assertEqual(put.json(), {"ok": True, "agent_id": "agent_14910efc", "number": None})
+
     def test_leads_round_trip_through_the_endpoint(self):
         lead = {"id": "L01", "name": "Case Plumbing", "phone": "208-304-3883", "stage": "leads", "consent": "yes"}
         put = self.client.put("/admin/outbound/leads", json={"leads": [lead]}, headers=self.auth)

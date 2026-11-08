@@ -90,6 +90,26 @@ def asked_if_ai(text: str) -> bool:
     return bool(AI_QUESTION.search(text))
 
 
+# ---------------------------------------------------------------- the agent record
+
+def agent_record_path(cfg: dict) -> Path:
+    return Path(cfg["data_dir"]) / "retell_outbound.json"
+
+
+def load_agent_record(cfg: dict) -> dict | None:
+    """{"agent_id": ..., "number": ...}: which Retell agent and from-number place_call() dials with. None until the
+    CLI's outbound-agent --create writes it (normally on whatever machine ran that), or a PUT to
+    /admin/outbound/agent writes it straight onto the server's own disk instead."""
+    p = agent_record_path(cfg)
+    return json.loads(p.read_text()) if p.exists() else None
+
+
+def save_agent_record(cfg: dict, agent_id: str, number: str | None) -> dict:
+    rec = {"agent_id": agent_id, "number": normalize_phone(number) if number else None}
+    agent_record_path(cfg).write_text(json.dumps(rec, indent=2))
+    return rec
+
+
 # ---------------------------------------------------------------- the lead list
 
 def leads_path(cfg: dict) -> Path:
