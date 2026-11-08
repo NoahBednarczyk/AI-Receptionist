@@ -3,7 +3,7 @@
     python -m receptionist new-client                 # asks the questions, with defaults in [brackets]
     python -m receptionist new-client --from intake.yaml
 
-The shop starts from the Peak Heating & Plumbing demo (businesses/hvac.json): same agent, playbook, safety lines and
+The shop starts from the Cedar Ridge Lawn & Snow demo (businesses/lawn_care.json): same agent, playbook, safety lines and
 overflow mode; only the shop's own facts change. Nothing here calls the API, so it costs nothing and a new client's
 file can be written, checked and corrected in a few minutes.
 
@@ -19,7 +19,7 @@ from pathlib import Path
 from . import prompts, safety, schedule, tools
 from .speech import fictional_phone, normalize_phone
 
-TEMPLATE_ID = "hvac"
+TEMPLATE_ID = "lawn_care"
 DAYS = schedule.DAYS
 DAY_NAMES = dict(zip(DAYS, ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]))
 DEFAULT_HOURS = {"mon": "07:00-17:00", "tue": "07:00-17:00", "wed": "07:00-17:00", "thu": "07:00-17:00",
@@ -144,24 +144,25 @@ def build(intake: dict, template: dict) -> dict:
         if unknown:
             raise IntakeError(f"Unknown service(s) {', '.join(unknown)}. Choose from: {', '.join(known)}.")
         biz["services"] = [known[w] for w in wanted]
-        if not any(s.get("emergency") for s in biz["services"]):   # winter emergencies always need an emergency visit
-            biz["services"].append(known["emergency_visit"])
+        if not any(s.get("emergency") for s in biz["services"]):   # storm and urgent calls always need an urgent visit
+            biz["services"].append(next(s for s in template["services"] if s.get("emergency")))
     # Only the shop's own facts: the demo shop's prices, warranty and so on must never reach a real shop's callers.
     biz["pricing"] = _lines(intake.get("prices")) + [
-        "We don't quote repair or replacement prices over the phone. The technician gives a firm price on site "
+        "We don't quote a price over the phone for a specific property. The crew lead gives a firm price on site "
         "before any work starts."]
     tips = []
     for line in _lines(intake.get("approved_tips")):
         problem, sep, tip = line.partition(":")
         if not sep or not tip.strip():
-            raise IntakeError(f"Tip '{line}' should look like 'a furnace that won't start: check the thermostat is set to heat'.")
+            raise IntakeError(f"Tip '{line}' should look like 'a sprinkler system that won't shut off: turn off the water at the main shutoff valve'.")
         tips.append({"when": problem.strip(), "tip": tip.strip()})
     biz["approved_tips"] = tips
     biz["about"] = _lines(intake.get("about"))   # the demo shop's own story must never reach a real shop
-    biz["speech_keywords"] = [w for w in template["speech_keywords"] if "peak" not in w.lower()] + [spoken]
+    brand = " ".join(template["spoken_name"].split()[:2]).lower()   # the demo shop's own name never reaches a real shop
+    biz["speech_keywords"] = [w for w in template["speech_keywords"] if w.lower() != brand] + [spoken]
     biz["transfer_targets"]["owner"]["number"] = owner
-    biz["greeting"] = biz["greetings"][0].replace("Peak Heating and Plumbing", spoken)
-    biz["greetings"] = [g.replace("Peak Heating and Plumbing", spoken) for g in biz["greetings"]]
+    biz["greetings"] = [g.replace(template["spoken_name"], spoken) for g in biz["greetings"]]
+    biz["greeting"] = biz["greetings"][0]
     # The recording notice and AI disclosure are on for every new shop (the demo shops' own switches are not inherited).
     biz["recording_notice"] = intake.get("recording_notice", prompts.DEFAULT_NOTICE)
     biz["ai_disclosure_in_greeting"] = bool(intake.get("ai_disclosure_in_greeting", True))
@@ -179,9 +180,10 @@ def build(intake: dict, template: dict) -> dict:
             raise IntakeError("The Google calendar id looks like an email address (or xyz@group.calendar.google.com).")
         biz["calendars"].append({"type": "google", "calendar_id": gid,
                                  "label": intake.get("calendar_label") or "shop calendar", "write": True})
-    biz.pop("notice_waived", None)
+    for k in ("notice_waived", "demo"):   # a real shop is never a demo and never inherits the demo's waived notice
+        biz.pop(k, None)
     # Keep only the answers that describe how the agent itself works; everything else comes from the shop.
-    keep = ("stove", "no heat")
+    keep = ("text confirmation", "is this call recorded")
     biz["faqs"] = [f for f in template["faqs"] if any(k in f["q"].lower() for k in keep)]
     for line in _lines(intake.get("faqs")):
         q, sep, a = line.partition(":")
@@ -199,7 +201,7 @@ def check(biz: dict) -> None:
                           "if the shop's lawyer has cleared a greeting without them.")
     prompts.stable_prompt(biz)
     tools.schemas(biz)
-    safety.match(biz["vertical"], "my furnace is out and it is freezing")
+    safety.match(biz["vertical"], "a tree fell on the power line")
     schedule.spoken_hours(biz)
     assert schedule.open_windows(biz, schedule.local_now(biz), {}), "no booking windows fit inside the shop's hours"
 
@@ -265,8 +267,8 @@ TURN IT ON (5 minutes). Do this from the shop phone that customers call.
 
 TEST IT (5 minutes)
   [ ] From a different phone, call the shop. Don't answer. After about 20 seconds you should hear Sam.
-  [ ] Ask Sam for a furnace repair; give any name. Then open your dashboard and find the call.
-  [ ] Call again, and this time say "my furnace is out and it's 5 degrees". Sam should treat it as urgent.
+  [ ] Ask Sam to book a lawn estimate; give any name. Then open your dashboard and find the call.
+  [ ] Call again, and this time say "a tree just fell across my driveway". Sam should treat it as urgent.
 
 WHAT TO TELL US (3 minutes)
   [ ] Your cell number on file for emergencies: {biz['transfer_targets']['owner']['number'][2:]}  (correct?)
@@ -280,7 +282,7 @@ TURN IT OFF (10 seconds), any time
 
 THE RULES OF THE PILOT
   - Sam tells callers it is the shop's virtual assistant whenever they ask. It never pretends to be a person.
-  - Sam never gives advice about gas, electrical work, stoves or fireplaces, and never quotes a repair price.
+  - Sam never gives advice about chemicals, electrical work or equipment, and never quotes a price for a specific property.
   - You can stop at any time by turning forwarding off with the code above.
 """
 

@@ -1,4 +1,4 @@
-"""The fictional lawn care and snow demo shop: it loads, its urgent lines and seasons work, and the live HVAC line is untouched."""
+"""The fictional lawn care and snow demo shop: it loads, its urgent lines and seasons work."""
 import datetime
 import json
 import unittest
@@ -8,6 +8,7 @@ from receptionist import onboarding, prompts, safety, schedule
 from receptionist.config import all_businesses, load_business, load_config
 
 CFG = load_config()
+ACME = load_business(CFG, "acme")
 LAWN = load_business(CFG, "lawn_care")
 SCENARIOS = json.loads((Path(CFG["scenarios_dir"]) / "lawn_care.json").read_text())
 
@@ -20,12 +21,6 @@ class Shop(unittest.TestCase):
         self.assertEqual(LAWN["mode"], "overflow")
         self.assertEqual(LAWN["phone_numbers"], ["+12084286760"])     # the live number runs this demo for now
         self.assertNotEqual(LAWN["agent_name"], "Sam")
-
-    def test_the_number_moved_from_hvac_without_clashing(self):
-        hvac = load_business(CFG, "hvac")
-        self.assertEqual(hvac["phone_numbers"], [])          # swap back: move the number here and retell-tune
-        self.assertEqual(hvac["agent_name"], "Sam")
-        all_businesses(CFG)                                  # no duplicate id or number across shops
 
     def test_services_cover_the_seasonal_calendar(self):
         ids = {s["id"] for s in LAWN["services"]}
@@ -143,7 +138,7 @@ class Character(unittest.TestCase):
     def test_other_shops_get_no_character_kit(self):
         import random
         now = schedule.local_now(LAWN, "2026-10-20T10:15")
-        self.assertNotIn("Your character", prompts.call_state(load_business(CFG, "hvac"), now, None, None, [], rng=random.Random(1)))
+        self.assertNotIn("Your character", prompts.call_state(ACME, now, None, None, [], rng=random.Random(1)))
 
     def test_the_prompt_keeps_the_character_inside_the_rules(self):
         p = prompts.stable_prompt(LAWN).lower()

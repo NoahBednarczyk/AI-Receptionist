@@ -29,7 +29,7 @@ class Env:
         self.tmp = tempfile.TemporaryDirectory()
         clients = Path(self.tmp.name) / "clients"
         clients.mkdir()
-        template = json.loads((Path(CFG["businesses_dir"]) / "hvac.json").read_text())
+        template = json.loads((Path(CFG["businesses_dir"]) / "lawn_care.json").read_text())
         for i, name in enumerate(("north", "south")):
             biz = {**template, "id": name, "name": name.title(), "phone_numbers": [f"+1208555010{i}"],
                    "recording_notice": "This call is recorded.", "ai_disclosure_in_greeting": True}
@@ -161,7 +161,7 @@ class ClientFiles(Env, unittest.TestCase):
 
     def test_both_folders_load_and_a_duplicate_id_or_number_is_refused(self):
         ids = {b["id"] for b in config.all_businesses(self.cfg)}
-        self.assertTrue({"north", "south", "hvac"} <= ids)
+        self.assertTrue({"north", "south", "lawn_care"} <= ids)
         clients = Path(self.cfg["clients_dir"])
         dup = json.loads((clients / "north.json").read_text())
         (clients / "again.json").write_text(json.dumps({**dup, "phone_numbers": []}))
@@ -198,7 +198,7 @@ class ClientFiles(Env, unittest.TestCase):
         self.assertEqual(self.http.put("/admin/clients", json=new, headers=auth).status_code, 200)
         self.assertEqual(config.load_business(self.cfg, "west")["id"], "west")
         self.assertEqual(self.http.put("/admin/clients", json={**new, "name": "West 2"}, headers=auth).status_code, 200)   # re-upload replaces
-        self.assertEqual(self.http.put("/admin/clients", json={**new, "id": "hvac"}, headers=auth).status_code, 422)       # never a demo shop
+        self.assertEqual(self.http.put("/admin/clients", json={**new, "id": "lawn_care"}, headers=auth).status_code, 422)       # never a demo shop
 
 
 class AdminKeyStaysOutOfFeeds(Env, unittest.TestCase):

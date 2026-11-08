@@ -18,7 +18,7 @@ from receptionist.store import Store
 from tests.test_access import ADMIN, SECRET, Env
 
 CFG = load_config()
-HVAC = load_business(CFG, "hvac")
+SHOP = load_business(CFG, "lawn_care")
 
 
 def tz_now(biz, at="2026-11-03T05:00"):      # a Tuesday morning
@@ -38,31 +38,31 @@ URL = "https://calendar.example.test/private/abc123secret/basic.ics"
 
 
 def shop(**over):
-    return {**HVAC, "calendars": [{"type": "ical", "url": URL, "label": "Shop calendar"}], **over}
+    return {**SHOP, "calendars": [{"type": "ical", "url": URL, "label": "Shop calendar"}], **over}
 
 
 class Greeting(unittest.TestCase):
     def test_every_variant_carries_the_notice_and_the_disclosure(self):
-        biz = {**HVAC, "recording_notice": "This call is recorded.", "ai_disclosure_in_greeting": True}
+        biz = {**SHOP, "recording_notice": "This call is recorded.", "ai_disclosure_in_greeting": True}
         for g in biz["greetings"]:
             said = prompts.announce(biz, g.format(daypart="morning"))
             self.assertIn("This call is recorded.", said)
             self.assertIn("virtual assistant", said)
 
     def test_it_is_not_added_twice_and_the_demo_greeting_is_unchanged(self):
-        said = prompts.announce({"vertical": "hvac"}, "Hi, this is Sam, the shop's virtual assistant. This call is recorded.")
+        said = prompts.announce({"vertical": "lawn_care"}, "Hi, this is Sam, the shop's virtual assistant. This call is recorded.")
         self.assertEqual(said.count("virtual assistant"), 1)
         self.assertEqual(said.count("recorded"), 1)
         import random
-        self.assertNotIn("recorded", prompts.pick_greeting(HVAC, tz_now(HVAC), random.Random(1)))     # the live demo line keeps its choice
+        self.assertNotIn("recorded", prompts.pick_greeting(SHOP, tz_now(SHOP), random.Random(1)))     # the live demo line keeps its choice
 
     def test_new_clients_start_with_both_on_and_cannot_turn_both_off_silently(self):
         intake = __import__("yaml").safe_load((Path(CFG["businesses_dir"]).parent / ".internal" / "intake.example.yaml").read_text())
-        biz = onboarding.build(intake, HVAC)
+        biz = onboarding.build(intake, SHOP)
         self.assertTrue(biz["recording_notice"] and biz["ai_disclosure_in_greeting"])
         self.assertEqual(biz["retention_days"], 90)
         onboarding.check(biz)
-        off = onboarding.build({**intake, "recording_notice": "", "ai_disclosure_in_greeting": False}, HVAC)
+        off = onboarding.build({**intake, "recording_notice": "", "ai_disclosure_in_greeting": False}, SHOP)
         with self.assertRaises(onboarding.IntakeError):
             onboarding.check(off)
         onboarding.check({**off, "notice_waived": True})
@@ -70,51 +70,51 @@ class Greeting(unittest.TestCase):
     def test_a_bad_calendar_link_is_refused_at_intake(self):
         intake = __import__("yaml").safe_load((Path(CFG["businesses_dir"]).parent / ".internal" / "intake.example.yaml").read_text())
         with self.assertRaises(onboarding.IntakeError):
-            onboarding.build({**intake, "calendar_url": "http://insecure.example/x.ics"}, HVAC)
-        ok = onboarding.build({**intake, "calendar_url": "webcal://cal.example/x.ics"}, HVAC)
+            onboarding.build({**intake, "calendar_url": "http://insecure.example/x.ics"}, SHOP)
+        ok = onboarding.build({**intake, "calendar_url": "webcal://cal.example/x.ics"}, SHOP)
         self.assertEqual(len(ok["calendars"]), 1)
 
 
 class Retention(unittest.TestCase):
     def setUp(self):
         self.store = Store(":memory:")
-        self.now = tz_now(HVAC)
+        self.now = tz_now(SHOP)
         for cid, age in (("old", 100), ("new", 5)):
-            self.store.start_call(cid, "hvac", "retell", "+12085550111", self.now - timedelta(days=age))
+            self.store.start_call(cid, "lawn_care", "retell", "+12085550111", self.now - timedelta(days=age))
             self.store.end_call(cid, [{"role": "caller", "text": "hi"}], "booked", self.now)
             self.store.log_tool(cid, "x", {}, {}, self.now)
 
     def test_only_calls_past_the_retention_period_go(self):
-        self.assertEqual(self.store.purge_calls_before("hvac", self.now - timedelta(days=90)), 1)
+        self.assertEqual(self.store.purge_calls_before("lawn_care", self.now - timedelta(days=90)), 1)
         self.assertIsNone(self.store.get_call("old"))
         self.assertEqual(self.store.tool_events("old"), [])
         self.assertIsNotNone(self.store.get_call("new"))
 
     def test_purge_a_shop_leaves_nothing_and_dry_run_deletes_nothing(self):
-        self.store.add_message("hvac", "new", "Ann", "+12085550111", "call me", "owner", False, self.now)
+        self.store.add_message("lawn_care", "new", "Ann", "+12085550111", "call me", "owner", False, self.now)
         self.store.add_message("acme", "x", "Bob", "+12085550999", "other shop", "owner", False, self.now)
-        self.store.add_block("hvac", self.now, self.now + timedelta(hours=1), "x", self.now)
-        self.assertEqual(self.store.purge("hvac", dry_run=True)["calls"], 2)
+        self.store.add_block("lawn_care", self.now, self.now + timedelta(hours=1), "x", self.now)
+        self.assertEqual(self.store.purge("lawn_care", dry_run=True)["calls"], 2)
         self.assertIsNotNone(self.store.get_call("old"))
-        counts = self.store.purge("hvac")
+        counts = self.store.purge("lawn_care")
         self.assertEqual((counts["calls"], counts["messages"], counts["blocks"]), (2, 1, 1))
-        self.assertEqual(self.store.recent("calls", "hvac"), [])
-        self.assertEqual(self.store.recent("messages", "hvac"), [])
+        self.assertEqual(self.store.recent("calls", "lawn_care"), [])
+        self.assertEqual(self.store.recent("messages", "lawn_care"), [])
         self.assertEqual(len(self.store.recent("messages", "acme")), 1)      # another shop is untouched
 
     def test_purge_one_caller_only(self):
-        self.store.start_call("other", "hvac", "retell", "+12085550222", self.now)
-        counts = self.store.purge("hvac", "208-555-0222")
+        self.store.start_call("other", "lawn_care", "retell", "+12085550222", self.now)
+        counts = self.store.purge("lawn_care", "208-555-0222")
         self.assertEqual(counts["calls"], 1)
         self.assertIsNotNone(self.store.get_call("old"))
         with self.assertRaises(ValueError):
-            self.store.purge("hvac", "12")
+            self.store.purge("lawn_care", "12")
 
 
 class Calendars(unittest.TestCase):
     def setUp(self):
         calendar_busy._cache.clear()
-        self.now = tz_now(HVAC)
+        self.now = tz_now(SHOP)
         self.store = Store(":memory:")
 
     def counts(self, biz, getter, mono=0.0):
@@ -179,12 +179,12 @@ class Calendars(unittest.TestCase):
         self.assertEqual(len(problems), 1)
 
     def test_blocked_time_takes_the_whole_shop(self):
-        self.store.add_block("hvac", datetime(2026, 11, 3, 9, 30, tzinfo=self.now.tzinfo),
+        self.store.add_block("lawn_care", datetime(2026, 11, 3, 9, 30, tzinfo=self.now.tzinfo),
                              datetime(2026, 11, 3, 10, 30, tzinfo=self.now.tzinfo), "dentist", self.now)
-        counts, _ = self.counts(HVAC, None)
+        counts, _ = self.counts(SHOP, None)
         wid = schedule.window_id(self.now.date(), "09:00")
         self.assertEqual(counts[wid], 2)
-        self.assertNotIn(wid, {w["window_id"] for w in schedule.open_windows(HVAC, self.now, counts, limit=100)})
+        self.assertNotIn(wid, {w["window_id"] for w in schedule.open_windows(SHOP, self.now, counts, limit=100)})
 
     def test_the_agent_is_told_when_the_calendar_could_not_be_read(self):
         from receptionist.tools import ToolContext, run_tool
@@ -229,9 +229,9 @@ class Dashboard(Env, unittest.TestCase):
         block = self.http.app  # noqa: F841
         from receptionist.store import Store
         store = Store(str(Path(self.cfg["data_dir"]) / "receptionist.sqlite"))
-        (b,) = store.blocks("north", datetime(2026, 1, 1, tzinfo=schedule.tz(HVAC)))
+        (b,) = store.blocks("north", datetime(2026, 1, 1, tzinfo=schedule.tz(SHOP)))
         self.assertEqual(self.post("/dashboard/block/delete", {"business": "north", "id": b["id"]}).status_code, 303)
-        self.assertEqual(store.blocks("north", datetime(2026, 1, 1, tzinfo=schedule.tz(HVAC))), [])
+        self.assertEqual(store.blocks("north", datetime(2026, 1, 1, tzinfo=schedule.tz(SHOP))), [])
 
     def test_the_form_needs_the_shops_own_cookie_and_our_own_page(self):
         good = {"business": "north", "date": "2026-11-05", "start": "13:00", "end": "15:00"}

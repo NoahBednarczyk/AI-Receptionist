@@ -2,7 +2,7 @@
   "data_dir": "data",
   "businesses_dir": "businesses",
   "scenarios_dir": "scenarios",
-  "default_business": "hvac",
+  "default_business": "lawn_care",
   "models": {
     "agent": "claude-sonnet-5-5",
     "agent_effort": "low",

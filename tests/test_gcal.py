@@ -12,16 +12,16 @@ from receptionist import calendar_busy, dashboard, gcal, onboarding, schedule, t
 from receptionist.config import load_business, load_config
 from receptionist.store import Store
 
-HVAC = load_business(load_config(), "hvac")
+SHOP = load_business(load_config(), "lawn_care")
 CAL = "owner@example.test"
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 PEM = KEY.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
 CREDS = {"client_email": "bot@proj.iam.gserviceaccount.test", "private_key": PEM}
-NOW = schedule.local_now(HVAC, "2026-11-03T05:00")   # a Tuesday morning
+NOW = schedule.local_now(SHOP, "2026-11-03T05:00")   # a Tuesday morning
 
 
 def shop(**cal):
-    return {**HVAC, "calendars": [{"type": "google", "calendar_id": CAL, "label": "Shop", **cal}]}
+    return {**SHOP, "calendars": [{"type": "google", "calendar_id": CAL, "label": "Shop", **cal}]}
 
 
 class FakeGoogle:
@@ -150,7 +150,7 @@ class Reading(unittest.TestCase):
 
 class Writing(unittest.TestCase):
     def appt(self, **over):
-        return {"confirmation": "A1002", "window_id": "2026-11-04T09:00", "service_id": "furnace_repair", "name": "Dana Whitfield",
+        return {"confirmation": "A1002", "window_id": "2026-11-04T09:00", "service_id": "lawn_mowing", "name": "Dana Whitfield",
                 "phone": "+12085550142", "address": "412 Larch Ave", "town": "Sandpoint", "problem": "No heat",
                 "access_notes": "Gate 4471", "status": "booked", **over}
 
@@ -212,7 +212,7 @@ class InTheCall(unittest.TestCase):
 
     def book(self, ctx):
         wid = schedule.open_windows(ctx.biz, NOW, calendar_busy.booked_counts(ctx.biz, self.store, NOW, events_getter=lambda *a: [])[0])[0]["window_id"]
-        return tools.book_appointment(ctx, {"window_id": wid, "service_id": "furnace_repair", "customer_name": "Dana Whitfield",
+        return tools.book_appointment(ctx, {"window_id": wid, "service_id": "lawn_mowing", "customer_name": "Dana Whitfield",
                                             "callback_number": "2085550142", "street_address": "412 Larch Ave", "town": "Sandpoint",
                                             "problem_summary": "No heat"})
 
@@ -223,9 +223,9 @@ class InTheCall(unittest.TestCase):
             made = self.book(ctx)
             eid = gcal.event_id(made["confirmation"])
             self.assertIn(eid, self.fake.stored)
-            self.assertEqual(self.store.get_sync("hvac", made["confirmation"])["status"], "ok")
+            self.assertEqual(self.store.get_sync("lawn_care", made["confirmation"])["status"], "ok")
             new = [w for w in schedule.open_windows(biz, NOW, calendar_busy.booked_counts(biz, self.store, NOW)[0], limit=20)
-                   if w["window_id"] != self.store.get_appointment("hvac", made["confirmation"])["window_id"]][0]["window_id"]
+                   if w["window_id"] != self.store.get_appointment("lawn_care", made["confirmation"])["window_id"]][0]["window_id"]
             tools.reschedule_appointment(ctx, {"confirmation": made["confirmation"], "new_window_id": new})
             self.assertEqual(self.fake.stored[eid]["start"]["dateTime"][:13], new[:13])
             tools.cancel_appointment(ctx, {"confirmation": made["confirmation"], "reason": "changed mind"})
@@ -237,15 +237,15 @@ class InTheCall(unittest.TestCase):
         with mock.patch.object(gcal, "list_events", lambda *a, **k: []):
             made = self.book(self.ctx(biz))
         self.assertEqual(made["status"], "booked")
-        self.assertEqual(self.store.get_appointment("hvac", made["confirmation"])["status"], "booked")
-        self.assertEqual(self.store.get_sync("hvac", made["confirmation"])["status"], "failed")
+        self.assertEqual(self.store.get_appointment("lawn_care", made["confirmation"])["status"], "booked")
+        self.assertEqual(self.store.get_sync("lawn_care", made["confirmation"])["status"], "failed")
         html = dashboard.render(biz, self.store)
         self.assertIn("did not reach", html)
         self.assertIn(made["confirmation"], html)
 
     def test_shops_without_google_never_touch_it(self):
         with mock.patch.object(gcal, "default_client", side_effect=AssertionError("must not be called")):
-            made = self.book(self.ctx(HVAC))
+            made = self.book(self.ctx(SHOP))
         self.assertEqual(made["status"], "booked")
         self.assertEqual(self.fake.sent, [])
 
@@ -264,10 +264,10 @@ class Intake(unittest.TestCase):
         import yaml
         from pathlib import Path
         intake = yaml.safe_load((Path(load_config()["businesses_dir"]).parent / ".internal" / "intake.example.yaml").read_text())
-        ok = onboarding.build({**intake, "google_calendar_id": "owner@gmail.com"}, HVAC)
+        ok = onboarding.build({**intake, "google_calendar_id": "owner@gmail.com"}, SHOP)
         self.assertEqual(ok["calendars"][-1]["type"], "google")
         with self.assertRaises(onboarding.IntakeError):
-            onboarding.build({**intake, "google_calendar_id": "not an id"}, HVAC)
+            onboarding.build({**intake, "google_calendar_id": "not an id"}, SHOP)
 
     def test_check_names_the_account_to_share_with(self):
         fake = FakeGoogle(fail={"GET": 404})

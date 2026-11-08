@@ -15,7 +15,6 @@ from tests.test_logic import FakeClient, reply, text
 
 CFG = load_config()
 LAWN = load_business(CFG, "lawn_care")
-HVAC = load_business(CFG, "hvac")
 ACME = load_business(CFG, "acme")
 NOW = schedule.local_now(LAWN, "2026-11-10T10:15")
 
@@ -39,7 +38,7 @@ class PromptFeelTests(unittest.TestCase):
         self.assertNotIn("the team is out on a", state)
 
     def test_the_new_speaking_rules_are_in_every_prompt(self):
-        for biz in (LAWN, HVAC, ACME):
+        for biz in (LAWN, ACME):
             p = prompts.stable_prompt(biz)
             for needle in ("There is no script.", "Know the business like a long-time employee", "Sound inviting.",
                            "Read the caller's punctuation as their tone of voice", "answer in your first few words, plainly"):
@@ -224,14 +223,14 @@ class RespondDontInterviewTests(unittest.TestCase):
 
     def test_a_recognized_caller_is_not_asked_to_confirm_their_address_up_front(self):
         customer = {"name": "Noah", "address": "906 Alder Street", "town": "Sandpoint", "notes": None}
-        for biz in (LAWN, HVAC):
+        for biz in (LAWN,):
             state = prompts.call_state(biz, NOW, "+12085550142", customer, [])
             self.assertIn("You recognize this caller", state, biz["id"])
             self.assertIn("never open by asking for or confirming their address", state)
             self.assertNotIn("confirm the address on file is still right", state)
 
     def test_every_vertical_tells_the_agent_to_respond_first_and_steer_only_at_the_end(self):
-        for biz in (LAWN, HVAC, ACME, load_business(CFG, "glow")):
+        for biz in (LAWN, ACME, load_business(CFG, "glow")):
             p = prompts.stable_prompt(biz)
             for needle in ("You respond; you don't run an interview", "Never open by asking for their name, address",
                            "Only when everything they wanted has been said and dealt with do you steer",

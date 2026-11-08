@@ -1,5 +1,5 @@
 # Example intake for `python -m receptionist new-client --from intake.yaml`
-shop_name: Example Heating & Plumbing
+shop_name: Example Lawn & Snow
 owner_cell: "208-555-0100"          # the shop owner's cell; the agent can try it for emergencies
 our_number: ""                       # the number the shop forwards to; fill in once assigned
 towns: [Sandpoint, Ponderay, Sagle, Dover, Kootenai]
@@ -11,10 +11,10 @@ hours:                               # 24-hour times, or null for closed (or use
   fri: "07:00-17:00"
   sat: "08:00-12:00"
   sun: null
-services: [furnace_repair, boiler_repair, heat_pump, ac_repair, hvac_tune_up, water_heater, leak_repair, drain_cleaning, estimate]
+services: [lawn_mowing, spring_cleanup, aeration_overseeding, irrigation_startup, irrigation_winterization, fall_leaf_cleanup, snow_removal_seasonal, estimate_visit]
 prices:
-  - "Service visits have a $95 diagnostic fee, waived if the customer approves the repair."
+  - "Estimates are free; the crew confirms the price on site before any work starts."
 approved_tips:
-  - "a furnace that won't come on: You can check that the thermostat is set to heat and its batteries aren't dead."
+  - "a sprinkler system that won't shut off: You can turn off the water to the sprinkler system at its main shutoff valve."
 faqs:
-  - "What payment methods do you take: Cards, checks and cash, paid to the technician at the end of the job."
+  - "What payment methods do you take: Cards, checks and cash, paid to the crew lead at the end of the job."

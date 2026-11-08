@@ -127,17 +127,6 @@ TERMS = {
                         "theirs until it's booked"),
 }
 
-# HVAC and plumbing: the home-services wording, plus one rule for wood and pellet stoves, which are a message with no advice.
-HVAC_ADVICE_EXTRA = (
-    "- Wood stoves, pellet stoves, fireplaces and chimneys: give no advice of any kind, not even a simple step. "
-    "Say that's one for the technician and take a message.\n")
-HVAC_TIP_RULE = (
-    "- When you share an approved tip, say it as written (you may shorten it) and add nothing to it: no \"that's safe\", "
-    "no \"it's easy\", no \"the visit works either way\". A tip is its own reply, never in the same reply as a "
-    "confirmation or a goodbye; if the caller has nothing else, skip the tip and say goodbye.\n")
-TERMS["hvac"] = {**TERMS["home_services"], "advice": TERMS["home_services"]["advice"] + HVAC_ADVICE_EXTRA + HVAC_TIP_RULE}
-
-
 # Lawn care, landscaping and snow removal: estimate-first booking, and no chemical advice beyond the approved tips.
 LAWN_ADVICE = (
     "- You can share a matching approved tip from the business facts when the caller describes the problem or asks what "
@@ -272,7 +261,7 @@ def announce(biz: dict, greeting: str) -> str:
     Both are configured per shop: `recording_notice` (text; empty turns it off) and `ai_disclosure_in_greeting`."""
     text = greeting.strip()
     if biz.get("ai_disclosure_in_greeting", True) and "virtual assistant" not in text.lower():
-        place = "shop" if biz.get("vertical") in ("hvac", "home_services", "lawn_care") else "business"
+        place = "shop" if biz.get("vertical") in ("home_services", "lawn_care") else "business"
         text += f" I'm the {place}'s virtual assistant."
     notice = biz.get("recording_notice", DEFAULT_NOTICE)
     if notice and notice.lower() not in text.lower():
