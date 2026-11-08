@@ -34,7 +34,7 @@ import anthropic
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import access, calendar_busy, calendar_feed, dashboard, leads as leads_mod, live, outbound_live, platforms, postcall, prompts, schedule
+from . import access, calendar_busy, calendar_feed, dashboard, live, outbound_live, platforms, postcall, prompts, schedule
 from .agent import CallSession, prewarm, transcript_text
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
@@ -278,23 +278,6 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         """The current lead list (admin key), so Noah can check what's loaded without shell access to the disk."""
         _admin_only(request)
         return {"leads": outbound_live.load_leads(cfg)}
-
-    @app.post("/admin/outbound/leads/merge")
-    async def outbound_leads_merge(request: Request):
-        """Add found businesses to the lead list (admin key). Candidates are checked by leads.merge(): a name, a real
-        10-digit phone, a service-area town, a source page and a lawn/landscaping/snow trade; known numbers and the
-        do-not-call list are skipped; existing leads are never changed. Saved only if something was added."""
-        _admin_only(request)
-        try:
-            candidates = (await request.json())["candidates"]
-            assert isinstance(candidates, list) and all(isinstance(c, dict) for c in candidates)
-        except (KeyError, TypeError, AssertionError, ValueError):
-            raise HTTPException(422, "send {\"candidates\": [{name, phone, town, type, source, ...}]}")
-        state = outbound_live.State(Path(cfg["data_dir"]) / "outbound.json")
-        merged, report = leads_mod.merge(outbound_live.load_leads(cfg), candidates, leads_mod.service_towns(cfg), state.dnc())
-        if report["added"]:
-            outbound_live.save_leads(cfg, merged)
-        return report
 
     @app.post("/admin/outbound/call-next")
     async def outbound_call_next(request: Request):

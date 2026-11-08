@@ -852,34 +852,6 @@ class OutboundAdminTests(unittest.TestCase):
         self.assertEqual(self.client.get("/admin/outbound/leads").status_code, 404)
         self.assertEqual(self.client.post("/admin/outbound/call-next").status_code, 404)
 
-    def test_merge_endpoint_needs_the_admin_key(self):
-        self.assertEqual(self.client.post("/admin/outbound/leads/merge", json={"candidates": []}).status_code, 404)
-
-    def test_merge_endpoint_adds_good_candidates_and_skips_bad_ones(self):
-        good = {"name": "Pine Street Lawn Care", "phone": "208-555-7731", "town": "Sandpoint", "type": "Lawn care",
-                "source": "https://example.com/pine"}
-        bad = {**good, "name": "Far Away Mowing", "phone": "208-555-7732", "town": "Boise"}
-        self.client.put("/admin/outbound/leads", json={"leads": [{"id": "me", "phone": "+12086105821", "test": True}]},
-                        headers=self.auth)
-        rep = self.client.post("/admin/outbound/leads/merge", json={"candidates": [good, bad]}, headers=self.auth).json()
-        self.assertEqual((rep["added"], rep["total"], len(rep["skipped"])), (1, 2, 1))
-        stored = self.client.get("/admin/outbound/leads", headers=self.auth).json()["leads"]
-        self.assertEqual([l["id"] for l in stored], ["me", "pine-street-lawn-care-7731"])
-        again = self.client.post("/admin/outbound/leads/merge", json={"candidates": [good]}, headers=self.auth).json()
-        self.assertEqual((again["added"], again["total"]), (0, 2))
-
-    def test_merge_endpoint_skips_do_not_call_numbers_and_rejects_bad_bodies(self):
-        from receptionist import outbound_live
-        from pathlib import Path
-        outbound_live.State(Path(self.tmp.name) / "outbound.json").add_dnc("+12085557731")
-        c = {"name": "Pine Street Lawn Care", "phone": "208-555-7731", "town": "Sandpoint", "type": "Lawn care",
-             "source": "https://example.com/pine"}
-        rep = self.client.post("/admin/outbound/leads/merge", json={"candidates": [c]}, headers=self.auth).json()
-        self.assertEqual(rep["added"], 0)
-        self.assertEqual(self.client.get("/admin/outbound/leads", headers=self.auth).json()["leads"], [])
-        for body in ({}, {"candidates": "x"}, {"candidates": ["x"]}):
-            self.assertEqual(self.client.post("/admin/outbound/leads/merge", json=body, headers=self.auth).status_code, 422)
-
     def test_agent_record_endpoints_need_the_admin_key(self):
         self.assertEqual(self.client.put("/admin/outbound/agent", json={"agent_id": "a"}).status_code, 404)
         self.assertEqual(self.client.get("/admin/outbound/agent").status_code, 404)
