@@ -35,3 +35,9 @@ Goal: real lawn care, landscaping and snow removal businesses in our service are
 6. On yes, with his admin key (ask via `request_credential` for `receptionist-575z.onrender.com`; never put keys in the
    repo or chat): `POST https://receptionist-575z.onrender.com/admin/outbound/leads/merge` with
    `{"candidates": [...]}` and `Authorization: Bearer <DASHBOARD_TOKEN>`. Report the server's counts back.
+
+## Refill mode (scheduled run, no one in the chat)
+Used by the scheduled refill task. Do it in this order:
+1. `GET /admin/outbound/leads`. Count leads with `stage == "leads"` (not yet called). If 5 or more are left, stop and say so.
+2. Otherwise run the Steps above, skipping the "wait for Noah's yes" step: post the batch to `/leads/merge`. Rules above still apply (nothing guessed, a source URL on every lead, merge endpoint only).
+3. Report to Noah: how many were uncalled before, found, added, skipped and why, and the names added. If fewer than 5 new leads were added, say the sources are running dry and ask for a new source.
