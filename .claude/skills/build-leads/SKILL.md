@@ -16,10 +16,9 @@ Goal: real lawn care, landscaping and snow removal businesses in our service are
   never edits existing leads). Do not use `PUT /admin/outbound/leads` (it replaces the whole list).
 - **Show Noah a sample first** and post to the live server only after he says yes. Build and check candidates in a local
   file in the scratchpad until then.
-- Do not set `line` (landline/voip/mobile) unless a carrier lookup or Noah checked it. Cold mode will not dial a lead
-  without a confirmed landline/voip line (or `consent: "yes"`); that gate is Noah's decision, so do not change it.
-- The cron calls the next eligible lead every weekday morning. New leads become callable only once their line type is
-  confirmed, but tell Noah that before posting.
+- `line` (landline/voip/mobile) is optional: set it only if the page or a lookup shows it, never guess. It does not gate
+  calling (Noah handles the legal side).
+- The cron calls the next eligible lead every weekday morning, so tell Noah how many new leads are queued before posting.
 
 ## Steps
 1. Towns: `service_area.towns` in `businesses/lawn_care.json` (24 towns: Sandpoint, Ponderay, Kootenai, Dover, Sagle,

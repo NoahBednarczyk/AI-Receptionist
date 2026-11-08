@@ -1,7 +1,7 @@
 """The discovery caller: a sales call over the receptionist's engine (offline pieces only).
 
 What is here (none of it places a call or spends anything):
-  can_call()      the eligibility gate: consent, do-not-call, hours, attempt limits, landline check
+  can_call()      the eligibility gate: consent, do-not-call, hours, attempt limits
   plan_queue()    who would be called, in what order, and why not (dry-run output)
   build_prompt()  the sales system prompt: speaking rules + the sales playbook + this lead
   schemas()       the tools the caller may use (book_meeting, log_call, mark_do_not_call, end_call...)
@@ -67,8 +67,6 @@ def can_call(lead: dict, now: datetime, cfg: dict, attempts: list[datetime] | No
         return False, "no consent on record (warm-only mode)"
     elif s["mode"] == "cold" and not s["cold_enabled"]:
         return False, "cold calling is switched off (legal check not done)"
-    elif s["mode"] == "cold" and lead.get("line") not in ("landline", "voip") and lead.get("consent") != "yes":
-        return False, "number is not confirmed a landline (cell numbers need consent)"
     if lead.get("test"):   # a test call to Noah's own phone: his number, his timing
         return True, "ok (test call to the owner's own phone)"
     local = now.astimezone(ZoneInfo(lead.get("timezone") or s["timezone"]))

@@ -24,11 +24,11 @@ class GateTests(unittest.TestCase):
         self.assertFalse(outbound.can_call(LEAD, TUE_10AM, c)[0])
         self.assertTrue(outbound.can_call({**LEAD, "consent": "yes"}, TUE_10AM, c)[0])
 
-    def test_cold_is_off_until_enabled_and_needs_a_landline(self):
+    def test_cold_is_off_until_enabled_and_needs_no_line_type(self):
         self.assertIn("switched off", outbound.can_call(LEAD, TUE_10AM, cfg(mode="cold"))[1])
         c = cfg(mode="cold", cold_enabled=True)
-        self.assertIn("landline", outbound.can_call(LEAD, TUE_10AM, c)[1])
-        self.assertTrue(outbound.can_call({**LEAD, "line": "landline"}, TUE_10AM, c)[0])
+        self.assertTrue(outbound.can_call(LEAD, TUE_10AM, c)[0])   # no line type or consent needed (Noah handles the legal side)
+        self.assertTrue(outbound.can_call({**LEAD, "line": "mobile"}, TUE_10AM, c)[0])
 
     def test_hours_weekend_dnc_attempts_followup(self):
         c = cfg()

@@ -7,8 +7,7 @@ server, so a careless search can never put a bad row in the list:
   - a lead needs a business name, a real 10-digit phone number, a town in our service area and the page it came from;
   - only lawn care, landscaping and snow removal businesses are kept (anything else is skipped with a reason);
   - a number already on the list, or on the do-not-call list, is never added twice or re-added;
-  - `line` (landline / voip / mobile) is only set when someone checked it. A candidate with no line type is kept, but
-    outbound.can_call() will not dial it in cold mode until the type is confirmed, which is the intended behavior.
+  - `line` (landline / voip / mobile) is optional and only set when someone checked it. It does not gate calling.
 
 Nothing here calls the network or places a call.
 """
