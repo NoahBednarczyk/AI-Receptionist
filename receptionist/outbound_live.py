@@ -26,23 +26,24 @@ INTRO = ["{agent} here, calling for {founder} at {company} in {town}. Fair warni
          "{agent} calling for {founder} at {company}, {town}. Yes, it's a sales call, and I'll be short. Can I steal a minute?"]
 # One-liners that need nothing but the shop's name or trade. A lead's own `hook` field (written for that shop) beats these.
 HOOKS = {
-    "plumbing": ["Is {biz} the plumbing outfit that gets called at 2 AM, or the one that doesn't answer at 2 AM?",
-                 "I'm told {biz} fixes things people have been ignoring for three weeks.",
-                 "Quick one for {biz}: a pipe bursts at dinnertime, who answers your phone?",
-                 "I was told to call {biz} because plumbers are the busiest people in {town}."],
-    "hvac": ["Is {biz} the folks people call when it's minus ten and the furnace has opinions?",
-             "I'm calling {biz} because nobody thinks about heating until it quits.",
-             "Quick one for {biz}: furnace dies at 6 PM on a Sunday, who picks up?",
-             "I hear {biz} keeps {town} warm, and I keep calling people who can't hear their phone."],
+    "lawn": ["Quick one for {biz}: you're mid-mow, the phone rings, who gets it?",
+             "Is {biz} the crew people call when the grass is up to their knees?",
+             "I'm calling {biz} because nobody thinks about their lawn until the neighbor's looks better.",
+             "Is {biz} booked solid by May, or are you still answering the phone in May?"],
+    "snow": ["Is {biz} the plow crew people call at 5 AM when the driveway has vanished?",
+             "Quick one for {biz}: six inches overnight, phones going crazy at 5 AM, who answers?",
+             "I'm calling {biz} because nobody thinks about plowing until the driveway disappears."],
     "default": ["I'm calling {biz} with the strangest cold call you'll get today.",
-                "Quick one for {biz}: when you're elbow-deep in a job and the phone rings, who gets it?",
+                "Quick one for {biz}: when you're out on a job and the phone rings, who gets it?",
                 "I found {biz} in {town} and had to see what happens when the phone rings."],
 }
 
 
 def trade_of(lead: dict) -> str:
     t = (lead.get("type") or "").lower()
-    return "plumbing" if "plumb" in t and "hvac" not in t else "hvac" if "hvac" in t or "heat" in t else "default"
+    if any(w in t for w in ("snow", "plow")) and not any(w in t for w in ("lawn", "landscap", "mow")):
+        return "snow"
+    return "lawn" if any(w in t for w in ("lawn", "landscap", "mow", "yard", "grounds", "snow", "plow")) else "default"
 
 
 def opener_parts(lead: dict, s: dict, rng=random) -> tuple[str, str]:
@@ -367,12 +368,12 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = No
     base = base_url.rstrip("/")
     ws = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
     voicemail = (f"Hi, this is {s['agent_name']}, calling for {s['founder']} at {s['company']} in {s['town']}. "
-                 f"We're building a phone assistant for heating and plumbing shops and {s['founder']} would like ten minutes "
+                 f"We're building a phone assistant for lawn care and snow removal businesses and {s['founder']} would like ten minutes "
                  f"of your time. You can try our demo line any time at {spoken_phone(s['demo_line'])}. Thanks, and have a good day.")
     return {"agent_name": f"{s['company']} discovery caller",
             "response_engine": {"type": "custom-llm", "llm_websocket_url": f"{ws}/llm-websocket-out/{secret}"},
             **(voice or {}),
-            "boosted_keywords": [s["agent_name"], s["company"], s["founder"], s["town"], "plumbing", "heating", "furnace", "voicemail"],
+            "boosted_keywords": [s["agent_name"], s["company"], s["founder"], s["town"], "lawn care", "landscaping", "snow removal", "plowing", "voicemail"],
             "webhook_url": f"{base}/retell/webhook", "language": "en-US",
             "voicemail_option": {"action": {"type": "static_text", "text": voicemail}},
             "end_call_after_silence_ms": 15000, "max_call_duration_ms": 600000,

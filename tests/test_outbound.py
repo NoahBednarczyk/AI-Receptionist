@@ -6,7 +6,7 @@ from receptionist import outbound
 
 TZ = ZoneInfo("America/Los_Angeles")
 TUE_10AM = datetime(2026, 11, 3, 10, 0, tzinfo=TZ)
-LEAD = {"name": "Case Plumbing", "phone": "208-304-3883", "stage": "leads", "type": "Plumbing"}
+LEAD = {"name": "Case Lawn Care", "phone": "208-304-3883", "stage": "leads", "type": "Lawn care"}
 
 
 def cfg(**kw):
@@ -52,7 +52,7 @@ class GateTests(unittest.TestCase):
     def test_only_list_stage_is_queued_and_consented_first(self):
         leads = [LEAD, {**LEAD, "name": "Warm", "phone": "208-555-0111", "consent": "yes"}, {**LEAD, "name": "Done", "stage": "client"}]
         rows = outbound.plan_queue(leads, TUE_10AM, cfg())
-        self.assertEqual([r["lead"]["name"] for r in rows], ["Warm", "Case Plumbing"])
+        self.assertEqual([r["lead"]["name"] for r in rows], ["Warm", "Case Lawn Care"])
 
 
 class SlotTests(unittest.TestCase):
@@ -90,7 +90,7 @@ class PromptTests(unittest.TestCase):
             self.assertIn(needle, self.text)
 
     def test_call_block_names_the_lead_and_offers_times(self):
-        self.assertIn("Case Plumbing", self.blocks[1]["text"])
+        self.assertIn("Case Lawn Care", self.blocks[1]["text"])
         self.assertIn("Dale", self.blocks[1]["text"])
         self.assertIn("today", self.blocks[1]["text"])
         self.assertNotIn("{", self.text.replace("{owner}", ""))

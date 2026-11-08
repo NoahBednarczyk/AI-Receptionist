@@ -873,7 +873,7 @@ class OutboundAdminTests(unittest.TestCase):
         self.assertEqual(put.json(), {"ok": True, "agent_id": "agent_14910efc", "number": None})
 
     def test_leads_round_trip_through_the_endpoint(self):
-        lead = {"id": "L01", "name": "Case Plumbing", "phone": "208-304-3883", "stage": "leads", "consent": "yes"}
+        lead = {"id": "L01", "name": "Case Lawn Care", "phone": "208-304-3883", "stage": "leads", "consent": "yes"}
         put = self.client.put("/admin/outbound/leads", json={"leads": [lead]}, headers=self.auth)
         self.assertEqual(put.json(), {"ok": True, "leads": 1})
         self.assertEqual(self.client.get("/admin/outbound/leads", headers=self.auth).json(), {"leads": [lead]})
@@ -889,7 +889,7 @@ class OutboundAdminTests(unittest.TestCase):
     def test_call_next_with_an_eligible_lead_but_no_outbound_number_yet(self):
         # No retell_outbound.json on disk: place_call refuses every candidate, so call-next reports why instead of
         # dialing (and never reaches the network, since OUTBOUND_LIVE isn't set either in this test process).
-        lead = {"id": "L01", "name": "Case Plumbing", "phone": "208-304-3883", "stage": "leads", "consent": "yes"}
+        lead = {"id": "L01", "name": "Case Lawn Care", "phone": "208-304-3883", "stage": "leads", "consent": "yes"}
         self.client.put("/admin/outbound/leads", json={"leads": [lead]}, headers=self.auth)
         r = self.with_retell_key().post("/admin/outbound/call-next", headers=self.auth)
         self.assertIsNone(r.json()["called"])

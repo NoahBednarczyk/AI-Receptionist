@@ -164,10 +164,10 @@ You are {agent_name}, an AI assistant calling on behalf of {founder}, who runs {
 
 
 def facts(s: dict) -> str:
-    return (f"# Facts you may use\n- {s['founder']} is building {s['company']}: an AI phone receptionist for owner-run heating and plumbing shops "
-            f"around {s['town']}, Idaho. It answers when the shop can't, books the job, takes messages, and texts or calls the owner.\n"
+    return (f"# Facts you may use\n- {s['founder']} is building {s['company']}: an AI phone receptionist for owner-run lawn care and snow removal businesses "
+            f"around {s['town']} and North Idaho. It answers when the shop can't, books the job, takes messages, and texts or calls the owner.\n"
             f"- It is free for a 14-day pilot on the calls a shop misses; if it doesn't catch calls they'd have lost, they owe nothing.\n"
-            f"- The demo line anyone can call right now is {spoken_phone(s['demo_line'])} (a lawn-care shop, same engine).\n"
+            f"- The demo line anyone can call right now is {spoken_phone(s['demo_line'])} (a demo lawn care and snow shop, built the same way).\n"
             f"- The meeting is a {s['meeting_minutes']}-minute phone call with {s['founder']}. No visit unless the owner asks.")
 
 

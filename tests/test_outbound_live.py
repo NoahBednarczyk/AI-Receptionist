@@ -10,7 +10,7 @@ from receptionist.store import Store
 
 TZ = ZoneInfo("America/Los_Angeles")
 NOW = datetime(2026, 11, 3, 10, 0, tzinfo=TZ)
-LEAD = {"id": "L01", "name": "Case Plumbing", "phone": "208-304-3883", "stage": "leads", "type": "Plumbing"}
+LEAD = {"id": "L01", "name": "Case Lawn Care", "phone": "208-304-3883", "stage": "leads", "type": "Lawn care"}
 CFG = {"data_dir": "", "models": {"agent": "a", "agent_effort": "low", "outbound": "b", "outbound_effort": "high"},
        "agent": {"cache_ttl": "1h"}, "outbound": {"mode": "warm-only"}}
 
@@ -43,11 +43,11 @@ class SessionTests(Fixture):
     def test_opener_has_a_hook_names_the_caller_and_says_it_is_a_sales_call_but_not_ai(self):
         import random
         s = ol.outbound.settings(CFG)
-        for trade in ("Plumbing", "HVAC", "Other"):
+        for trade in ("Lawn care", "Snow removal", "Other"):
             for seed in range(12):
-                text = ol.opener({"name": "Case Plumbing", "type": trade, "contact": "Dale Smith"}, s, random.Random(seed))
+                text = ol.opener({"name": "Case Lawn Care", "type": trade, "contact": "Dale Smith"}, s, random.Random(seed))
                 self.assertTrue(text.startswith("Hi Dale? "), text)
-                self.assertIn("Case Plumbing", text)
+                self.assertIn("Case Lawn Care", text)
                 self.assertIn("sales call", text.lower().replace("selling something", "sales call"))
                 self.assertIn("Ringback", text)
                 self.assertNotRegex(text, r"(?i)\b(ai|robot|bot|artificial)\b")
@@ -58,7 +58,7 @@ class SessionTests(Fixture):
         import random
         s = ol.outbound.settings(CFG)
         self.assertTrue(ol.opener({"name": "X", "hook": "Is {biz} the shop with the talking van?"}, s).startswith("Is X the shop with the talking van?"))
-        many = {ol.opener({"name": "X", "type": "Plumbing"}, s, random.Random(i)) for i in range(40)}
+        many = {ol.opener({"name": "X", "type": "Lawn care"}, s, random.Random(i)) for i in range(40)}
         self.assertGreater(len(many), 10)
 
     def test_uses_the_outbound_model_and_cached_prompt(self):
@@ -139,6 +139,29 @@ class RetellTests(Fixture):
             ol.place_call(cfg, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
 
 
+class LawnCareOnlyTests(unittest.TestCase):
+    """The pitch is for lawn care and snow removal businesses. Nothing the caller says, or leaves on a voicemail, may
+    mention the old heating and plumbing niche."""
+    BAD = r"(?i)plumb|heating|furnace|hvac|water heater"
+
+    def test_pitch_hooks_voicemail_and_keywords_are_lawn_care_only(self):
+        import re
+        s = outbound.settings(CFG)
+        texts = [outbound.facts(s), outbound.PLAYBOOK.read_text(), json.dumps(ol.HOOKS)]
+        payload = ol.agent_payload(CFG, "https://x.io", "S")
+        texts += [payload["voicemail_option"]["action"]["text"], " ".join(payload["boosted_keywords"])]
+        for text in texts:
+            self.assertIsNone(re.search(self.BAD, text), text[:80])
+
+    def test_trades_pick_the_right_hooks(self):
+        self.assertEqual(ol.trade_of({"type": "Lawn care"}), "lawn")
+        self.assertEqual(ol.trade_of({"type": "Landscaping"}), "lawn")
+        self.assertEqual(ol.trade_of({"type": "Lawn & Snow"}), "lawn")
+        self.assertEqual(ol.trade_of({"type": "Snow removal"}), "snow")
+        self.assertEqual(ol.trade_of({"type": "Other"}), "default")
+        self.assertEqual(ol.trade_of({}), "default")
+
+
 class AgentRecordFileTests(unittest.TestCase):
     def test_none_until_written_then_round_trips(self):
         with tempfile.TemporaryDirectory() as d:
@@ -178,7 +201,7 @@ class CallNextTests(Fixture):
         fn = lambda *a: calls.append(a) or {"call_id": "c1"}
         leads = [{**LEAD, "id": "L02", "consent": "no"}, {**LEAD, "id": "L01", "consent": "yes"}]
         result = ol.call_next(self.cfg, leads, self.state, fn, NOW)
-        self.assertEqual(result["called"], "Case Plumbing")
+        self.assertEqual(result["called"], "Case Lawn Care")
         self.assertEqual(len(calls), 1)   # only the eligible lead was dialed, not both
 
     def test_skips_a_lead_whose_call_attempt_fails_and_tries_the_next(self):
@@ -195,7 +218,7 @@ class CallNextTests(Fixture):
         bad = {**LEAD, "id": "L03", "consent": "yes", "phone": "208-444-0000"}
         good = {**LEAD, "id": "L01", "consent": "yes"}
         result = ol.call_next(self.cfg, [bad, good], self.state, fn, NOW)
-        self.assertEqual(result["called"], "Case Plumbing")
+        self.assertEqual(result["called"], "Case Lawn Care")
         self.assertEqual(len(calls), 1)
 
     def test_reports_why_when_nothing_is_eligible(self):
@@ -220,7 +243,7 @@ class OpenerAndSlotsTests(Fixture):
         self.assertEqual("".join(said), self.s.opener)
         self.assertEqual(said, [self.s.hook_text, " " + self.s.intro_text])
         self.assertTrue(self.s.protected(said[1]) and not self.s.protected(said[0]))
-        self.assertIn("Case Plumbing", self.s.opener)
+        self.assertIn("Case Lawn Care", self.s.opener)
         self.assertEqual([m["role"] for m in self.s.messages], ["user", "assistant"])   # the model sees a normal history
         self.assertFalse(self.s.ended)
 
@@ -328,8 +351,8 @@ def live_pools():
 
 class HandoffTests(unittest.TestCase):
     def test_crm_files_hold_calls_leads_and_meeting_tasks(self):
-        data = {"calls": [{"n": 3, "business": "Case Plumbing", "outcome": "Demo booked"}], "lead_updates": {"L01": {"stage": "pain"}},
-                "bookings": [{"start": "2026-11-03T16:30:00-08:00", "owner": "Dale", "phone": "+12083043883", "business": "Case Plumbing"}]}
+        data = {"calls": [{"n": 3, "business": "Case Lawn Care", "outcome": "Demo booked"}], "lead_updates": {"L01": {"stage": "pain"}},
+                "bookings": [{"start": "2026-11-03T16:30:00-08:00", "owner": "Dale", "phone": "+12083043883", "business": "Case Lawn Care"}]}
         with tempfile.TemporaryDirectory() as d:
             files = ol.crm_files(data, d)
             by = {f.name: json.loads(f.read_text()) for f in files}
