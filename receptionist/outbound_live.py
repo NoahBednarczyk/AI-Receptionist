@@ -80,7 +80,8 @@ AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person
 HARD_STOP = re.compile(r"\b(stop calling|quit calling|never call|do not call|take (me|us|this number|my number) off|"
                        r"remove (me|us|my number|this number)|(put|add) (me|us|this number) on (the |your )?(do[- ]not[- ]call|dnc)|"
                        r"leave (me|us) alone|(lose|delete|forget) (my|this|our) (number|info)|stop (bothering|harassing|texting)( me| us)?|"
-                       r"(quit|stop) (it|that)|get off my phone|(i|we)'?m on the (do[- ]not[- ]call|dnc))\b", re.I)
+                       r"(quit|stop) (it|that)|get off my phone|quit (bugging|pestering)( me| us)?|piss off|screw you|go to hell|f+u+c+k( you| off)|"
+                       r"i said no\b.{0,20}\b(stop|leave|don'?t call)|(i|we)'?m on the (do[- ]not[- ]call|dnc))\b", re.I)
 SOFT_STOP = re.compile(r"\b(don'?t|do not) call( me| us)?( here)?( again| back| anymore| any more)\b", re.I)
 PICKING_A_TIME = re.compile(r"\b(until|after|tomorrow|next week|later|this (morning|afternoon|evening)|mon|tues|wednes|thurs|fri)(day)?\b|"
                             r"\b(at|around) \d", re.I)
@@ -96,15 +97,17 @@ AI_REFUSAL = re.compile(r"\b(not interested in|don'?t want to|won'?t|not gonna|i
 # counts and hands the model the next move as a note, so the model has no state to reason about out loud.
 NO_SIGNAL = re.compile(r"\b(not interested|no thanks|no thank you|not right now|we'?re (good|fine|all set)|i'?m (good|fine|all set)|"
                        r"don'?t need (it|that|this)|pass(?! (it|that|this|me|you|along|the)\b))\b|^\W*no\W*$", re.I)
+IRRITATED = re.compile(r"\b(i (already )?(said|told you)|again|seriously|for the last time|quit|enough|waste of)\b|!", re.I)
 MEETING_ASK = re.compile(r"\b(fifteen|15|ten|10)[- ]minutes?\b|\bwhich (is|works) (easier|better)\b", re.I)
-PLAYFUL = ("Reply with one quick, friendly, playful quip in fresh words (never one you have already used on this call) that turns their "
-           "no around by pointing at what it costs them, such as jobs or money lost to calls nobody picks up, then one short question. "
-           "Tease the objection, never the person or their business. Light and warm, never pushy or sarcastic at them. "
-           "Do not mention counting or the no itself.")
-NOTE_NO_ONCE = "they said no. Do not fold. " + PLAYFUL
-NOTE_NO_TWICE = ("they said no again. One more try from a different angle (a much smaller ask, or what would have to be true for it to be "
-                 "worth ten minutes), still playful and short, and not the line you just used.")
-NOTE_NO_AGAIN = "they said no a third time. Thank them warmly with a light parting quip, call log_call, then end_call. No further ask."
+PLAYFUL_RULES = ("Keep it light and warm, tease the objection never the person or their business, use fresh words (never a line already used on this call) "
+                 "and one short question. Do not mention counting or the no itself.")
+NOTE_NO_ONCE = ("they said no. Do not fold, and get curious about it: ask what is behind it, lightly and warmly (why is that? what's the "
+                "catch? what have they tried?), with a quick playful touch if it fits. " + PLAYFUL_RULES)
+NOTE_NO_AGAIN_CALM = ("they said no again, but they sound calm. Do not repeat yourself: ask what is really behind the no, or come at it from "
+                      "a different angle (money, missed jobs, a much smaller ask), playful and short. " + PLAYFUL_RULES)
+NOTE_LAST_TRY = ("their no sounds flat or irritated. Give exactly one last light try: one short, warm, playful line, with no pressure and "
+                 "no new pitch (an easy out they can say yes to, or a one-sentence reason it costs them nothing). If they refuse after this, you will be told to leave.")
+NOTE_NO_AGAIN = "they said no and it is time to leave. Thank them warmly with a light parting quip, call log_call, then end_call. No further ask."
 NOTE_NO_MORE_ASKS = "No more meeting asks on this call."
 NOTE_AI_REFUSAL = ("they don't want to talk to an AI. Say yes, you are an AI, in a few playful words (honest, once, never claim to be human), then "
                    "push back with a quip about what an AI that always picks up is worth to someone who can't answer on the mower, and one short question. "
@@ -121,6 +124,7 @@ PHONE_MENU = re.compile(r"\b(press (zero|one|two|three|four|five|six|seven|eight
                         r"main menu|menu options|office hours are|(we are|we're|office is|office is currently) (currently )?closed)\b", re.I)
 ON_HOLD = re.compile(r"\b(stay on the line|please hold|hold (on )?while|(while|as) (i|we) (try to )?(connect|transfer)|"
                      r"your call is (important|being (transferred|connected|recorded))|transferring your call|connecting you)\b", re.I)
+MAX_NOS = 4          # the backstop: after this many refusals of any kind the call ends
 MAX_MENU_TURNS = 3   # a menu that keeps repeating with no person behind it: log it and hang up
 
 
@@ -395,6 +399,7 @@ class OutboundSession(CallSession):
         self._nos = 0             # refusals the caller has given
         self._person = False      # a person has talked with us (not a recording)
         self._menu_turns = 0
+        self._last_try = False    # the one extra try after a flat or irritated no has been used
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
         self.system = [*_stable_system(cfg, now), blocks[1]]
@@ -439,7 +444,7 @@ class OutboundSession(CallSession):
         directive = None
         if NO_SIGNAL.search(caller_text) or refusal:
             self._nos += 1
-            directive = (NOTE_AI_REFUSAL if refusal else NOTE_NO_ONCE) if self._nos == 1 else NOTE_NO_TWICE if self._nos == 2 else NOTE_NO_AGAIN
+            directive = self._no_directive(caller_text, bool(refusal))
         elif self._asks >= 3:
             directive = NOTE_NO_MORE_ASKS
         if directive:
@@ -464,6 +469,19 @@ class OutboundSession(CallSession):
         self._resumed = True
         self.transcript.append({"role": "agent", "text": self.intro_text, "resumed": True})
         return self.intro_text
+
+    def _no_directive(self, caller_text: str, ai_refusal: bool) -> str:
+        """Curious and playful on a calm no. A flat, irritated or repeated no gets exactly one last light try; after that, or
+        after the fourth no of any kind, the call ends warmly."""
+        irritated = bool(IRRITATED.search(caller_text))
+        if self._nos >= MAX_NOS or ((irritated or self._nos >= 3) and self._last_try):
+            return NOTE_NO_AGAIN
+        if irritated or self._nos >= 3:
+            self._last_try = True
+            return NOTE_LAST_TRY
+        if self._nos == 1:
+            return NOTE_AI_REFUSAL if ai_refusal else NOTE_NO_ONCE
+        return NOTE_NO_AGAIN_CALM
 
     def _machine(self, kind: str, caller_text: str, on_text) -> Turn:
         """A recording, not a person. Handled by code, so the model never has to work out (out loud) what it is hearing.

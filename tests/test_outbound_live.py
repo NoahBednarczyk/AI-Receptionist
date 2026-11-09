@@ -593,21 +593,40 @@ class CallStateTests(ScriptedFixture):
         for t in ("what can I do for you?", "I need to pass it to my wife", "we get ten calls a week", "I don't know"):
             self.assertFalse(ol.NO_SIGNAL.search(t), t)
 
-    def test_a_no_gets_a_playful_pushback_twice_then_a_goodbye(self):
+    def test_a_calm_no_gets_curiosity_then_a_new_angle(self):
         from tests.test_logic import reply, text
-        s = self.make(reply("end_turn", text("Hi, Riley.")), reply("end_turn", text("Bold.")), reply("end_turn", text("Okay, smaller.")),
-                      reply("end_turn", text("Thanks for your time.")))
+        s = self.make(*[reply("end_turn", text("Hm."))] * 4)
         s.respond("What can I do for you?")
         s.respond("Not interested.")
         once = json.dumps(self.client.requests[-1]["messages"][-1])
-        self.assertIn("they said no. Do not fold", once)
-        self.assertIn("playful", once)
-        s.respond("No thanks, I'm good.")
-        self.assertIn("they said no again", json.dumps(self.client.requests[-1]["messages"][-1]))
-        s.respond("Seriously, not right now.")
+        self.assertIn("get curious", once)
+        self.assertIn("what is behind it", once)
+        s.respond("No thanks.")
+        self.assertIn("calm", json.dumps(self.client.requests[-1]["messages"][-1]))
+
+    def test_an_irritated_no_gets_one_last_try_then_a_goodbye(self):
+        from tests.test_logic import reply, text
+        s = self.make(*[reply("end_turn", text("Hm."))] * 4)
+        s.respond("What can I do for you?")
+        s.respond("I said I'm not interested.")
+        self.assertIn("exactly one last light try", json.dumps(self.client.requests[-1]["messages"][-1]))
+        s.respond("No. Seriously, not interested.")
         last = json.dumps(self.client.requests[-1]["messages"][-1])
-        self.assertIn("a third time", last)
+        self.assertIn("time to leave", last)
         self.assertIn("end_call", last)
+
+    def test_the_fourth_refusal_ends_the_call_whatever_the_tone(self):
+        from tests.test_logic import reply, text
+        s = self.make(*[reply("end_turn", text("Hm."))] * 5)
+        s.respond("What can I do for you?")
+        for t in ("No thanks.", "No thanks.", "No thanks.", "No thanks."):
+            s.respond(t)
+        self.assertIn("time to leave", json.dumps(self.client.requests[-1]["messages"][-1]))
+
+    def test_anger_is_a_code_level_stop(self):
+        for t in ("quit bugging me", "I said no, stop calling", "piss off", "leave me alone"):
+            self.assertTrue(ol.stop_request(t), t)
+        self.assertFalse(ol.stop_request("not right now, I'm busy"))
 
     def test_three_meeting_asks_end_the_asking(self):
         from tests.test_logic import reply, text
