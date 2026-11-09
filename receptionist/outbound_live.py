@@ -426,6 +426,88 @@ def call_next(cfg: dict, leads: list[dict], state: State, call_fn, now: datetime
     return {"called": None, "reason": last_reason or "every eligible lead was refused when dialing"}
 
 
+ENDED = {"ended", "error", "not_connected"}   # Retell call_status values that mean the line is closed (unverified: check Retell's docs)
+
+
+class BlockRunner:
+    """Runs one block of outbound calls on the server: dial the next eligible lead, wait for that call to end, pause,
+    repeat, up to `calls` calls. One block at a time. It stops early at the daily budget, outside call hours, when no
+    lead is eligible, when a call can't be confirmed finished, or when `stop()` is called. Every gate is call_next's
+    own (and so place_call's); this only sequences them. A number dialed in this block is never dialed again in it,
+    even if it never answered (an unanswered call leaves no attempt on record)."""
+
+    def __init__(self, cfg: dict, state_path, call_fn, clock=None, sleep=time.sleep):
+        self.cfg, self.state_path, self.call_fn, self.sleep = cfg, Path(state_path), call_fn, sleep
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.lock = threading.Lock()
+        self._stop = threading.Event()
+        self.status: dict = {"running": False}
+
+    def start(self) -> bool:
+        """Claims the runner; False if a block is already running."""
+        if not self.lock.acquire(blocking=False):
+            return False
+        self._stop.clear()
+        self.status = {"running": True, "started": self.clock().isoformat(), "calls": [], "stopped_because": None}
+        return True
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def run(self) -> dict:
+        """Call start() first. Always releases the runner, and always leaves a reason in status."""
+        s = outbound.settings(self.cfg)["block_runner"]
+        reason = "reached the block size"
+        try:
+            dialed: set[str] = set()
+            while len(self.status["calls"]) < int(s["calls"]):
+                if self._stop.is_set():
+                    reason = "stopped by request"
+                    break
+                state = State(self.state_path)   # fresh each time: live calls write their own results to this file
+                leads = [l for l in load_leads(self.cfg) if (normalize_phone(l.get("phone") or "") or "") not in dialed]
+                out = call_next(self.cfg, leads, state, self.call_fn, self.clock())
+                if not out.get("called"):
+                    reason = out.get("reason") or "nothing to call"
+                    break
+                dialed.add(normalize_phone(out["phone"]) or "")
+                self.status["calls"].append({"lead": out["called"], "phone": out["phone"], "at": self.clock().isoformat()})
+                if not self._wait_for_end((out.get("retell") or {}).get("call_id"), int(s["max_call_wait_s"])):
+                    reason = ("stopped by request" if self._stop.is_set()
+                              else "could not confirm the last call ended; no more calls this block")
+                    break
+                if len(self.status["calls"]) < int(s["calls"]):
+                    self._pause(int(s["pause_s"]))
+        except Exception as e:   # never leave the runner locked or the status blank
+            reason = f"error: {e}"
+        finally:
+            self.status.update(running=False, stopped_because=reason, finished=self.clock().isoformat())
+            self.lock.release()
+        return self.status
+
+    def _pause(self, seconds: int) -> None:
+        for _ in range(max(1, seconds)):
+            if self._stop.is_set():
+                return
+            self.sleep(1)
+
+    def _wait_for_end(self, call_id: str | None, max_wait_s: int) -> bool:
+        if not call_id:
+            return False
+        waited = 0
+        while waited <= max_wait_s:
+            if self._stop.is_set():
+                return False
+            try:
+                if (self.call_fn("GET", f"/v2/get-call/{call_id}", None).get("call_status") or "") in ENDED:
+                    return True
+            except RuntimeError:
+                pass   # a failed status check is retried until max_wait_s runs out
+            self.sleep(5)
+            waited += 5
+        return False
+
+
 def place_call(cfg: dict, lead: dict, now: datetime, state: State, call_fn, env=os.environ) -> dict:
     """Starts one outbound call, or raises. `call_fn(method, path, body)` is Retell's REST call (injected for tests)."""
     s = outbound.settings(cfg)

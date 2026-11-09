@@ -34,7 +34,7 @@ import anthropic
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import access, calendar_busy, calendar_feed, dashboard, live, outbound_live, platforms, postcall, prompts, schedule
+from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, platforms, postcall, prompts, schedule
 from .agent import CallSession, prewarm, transcript_text
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
@@ -230,6 +230,9 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         outbound_live.State(Path(cfg["data_dir"]) / "outbound.json").set_slots(slots, datetime.datetime.now(datetime.timezone.utc))
         return {"ok": True, "slots": len(slots)}
 
+    block_runner = outbound_live.BlockRunner(cfg, Path(cfg["data_dir"]) / "outbound.json",
+                                             outbound_live.live_call_fn(retell_key) if retell_key else None)
+
     def _admin_only(request: Request) -> None:
         who = _who(request)
         sent = request.headers.get("authorization", "").removeprefix("Bearer ")
@@ -286,10 +289,27 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         _admin_only(request)
         if not retell_key:
             raise HTTPException(503, "RETELL_API_KEY is not set on this server; no outbound call can be placed.")
+        if outbound.settings(cfg)["block_runner"]["enabled"]:
+            if not block_runner.start():
+                return JSONResponse({"started": False, "reason": "a block is already running"}, status_code=409)
+            threading.Thread(target=block_runner.run, daemon=True, name="outbound-block").start()
+            return JSONResponse({"started": True, "block": block_runner.status}, status_code=202)
         leads = outbound_live.load_leads(cfg)
         state = outbound_live.State(Path(cfg["data_dir"]) / "outbound.json")
         now = datetime.datetime.now(datetime.timezone.utc)
         return outbound_live.call_next(cfg, leads, state, outbound_live.live_call_fn(retell_key), now)
+
+    @app.get("/admin/outbound/block")
+    async def outbound_block_status(request: Request):
+        _admin_only(request)
+        return {"enabled": outbound.settings(cfg)["block_runner"]["enabled"], **block_runner.status}
+
+    @app.post("/admin/outbound/block/stop")
+    async def outbound_block_stop(request: Request):
+        """Ends the running block after its current call; nothing more is dialed."""
+        _admin_only(request)
+        block_runner.stop()
+        return {"stopping": block_runner.status.get("running", False)}
 
     @app.get("/calendar.ics")
     def calendar_feed_route(request: Request, token: str = "", business: str | None = None):

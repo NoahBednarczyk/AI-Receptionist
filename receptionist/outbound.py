@@ -42,6 +42,9 @@ DEFAULTS = {
     "est_cost_per_call_usd": 0.03,
     "budget_reserve_usd": 0.45,
     "cold_enabled": False,                       # stays false until the legal check is done
+    # Server-side runner: when enabled, the scheduled trigger starts a block of up to `calls` calls, one at a time,
+    # instead of one call. Off by default; turn it on only after any other runner (the Mac scripts) is retired.
+    "block_runner": {"enabled": False, "calls": 5, "pause_s": 120, "max_call_wait_s": 900},
     "meeting_minutes": 15,
     # Noah is free any time. Until the manager agent supplies real open slots (State.set_slots), offers come from these
     # wide windows, every day, local time.
@@ -54,6 +57,7 @@ DEFAULTS = {
 def settings(cfg: dict) -> dict:
     out = {**DEFAULTS, **cfg.get("outbound", {})}
     out["meeting_windows"] = {**DEFAULTS["meeting_windows"], **cfg.get("outbound", {}).get("meeting_windows", {})}
+    out["block_runner"] = {**DEFAULTS["block_runner"], **cfg.get("outbound", {}).get("block_runner", {})}
     return out
 
 
