@@ -23,8 +23,8 @@ from .tools import ToolError
 # The opener is only a short "is this the owner?" so the person answers first. Who is calling comes in the next reply
 # (the model says it, see INTRO_NOTE); INTRO is the fixed fallback if noise cuts the exchange short.
 GREETINGS = ["Hi, is this {who}?", "Hello, is this {who}?", "Hey there, am I speaking with {who}?"]
-INTRO = ["Hi, I'm {agent}, an AI assistant with {company} here in {town}.",
-         "It's {agent}, an AI assistant with {company} in {town}."]
+INTRO = ["Hi, I'm {agent} with {company} here in {town}.",
+         "It's {agent} with {company} in {town}."]
 
 
 def trade_of(lead: dict) -> str:
@@ -50,10 +50,10 @@ def opener(lead: dict, s: dict, rng=random) -> str:
 STOP_LINES = ["Understood, I'll take you off our list. Sorry for the interruption.",
               "Got it, you're off our list. Sorry to bother you.",
               "No problem at all, I'll take you off the list. Have a good one."]
-INTRO_NOTE = ("you just asked who you are speaking with and they have answered. In this reply, in the same short breath, say your name, that you "
-              "are an AI assistant with Ringback in Sandpoint, and go straight to your first question about their calls. Do not say it is a "
-              "sales call or a cold call, and no lead-in about why you are calling. If they said it is a wrong person, a bad time or asked "
-              "who you are, handle that first.")
+INTRO_NOTE = ("you just asked who you are speaking with and they have answered. In this reply, in the same short breath, say your name and that you "
+              "are with Ringback in Sandpoint, and go straight to your first question about their calls, warmly. Do not say it is a sales call "
+              "or a cold call, do not bring up being an AI unless they ask, and no lead-in about why you are calling. If they said it is a wrong "
+              "person, a bad time or asked who you are, handle that first.")
 AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Answer with one quick, funny line of your own "
            "that says yes, you are an AI assistant, unmistakably (the joke comes with the yes, never instead of it), then use it "
            "in the same breath to get back to your goal. Never claim to be human.")

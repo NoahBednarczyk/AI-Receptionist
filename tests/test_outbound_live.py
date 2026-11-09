@@ -55,14 +55,13 @@ class SessionTests(Fixture):
                 self.assertNotIn("{", text)
         self.assertGreater(len({ol.opener({"name": "X"}, s, random.Random(i)) for i in range(40)}), 2)
 
-    def test_the_fallback_intro_says_it_is_an_ai_assistant(self):
+    def test_the_fallback_intro_names_the_company_and_does_not_volunteer_ai(self):
         import random
         s = ol.outbound.settings(CFG)
         for seed in range(6):
             intro = ol.opener_parts({"name": "X"}, s, random.Random(seed))[1]
-            self.assertIn("AI assistant", intro)
             self.assertIn("Ringback", intro)
-            self.assertNotRegex(intro, r"(?i)sales|cold")
+            self.assertNotRegex(intro, r"(?i)sales|cold|\bai\b|robot")
 
     def test_uses_the_outbound_model_and_cached_prompt(self):
         self.assertEqual(self.s.cfg["models"]["agent"], "b")
@@ -249,16 +248,17 @@ class OpenerAndSlotsTests(Fixture):
         self.assertEqual([m["role"] for m in self.s.messages], ["user", "assistant"])   # the model sees a normal history
         self.assertFalse(self.s.ended)
 
-    def test_first_model_turn_says_who_is_calling_as_an_ai_and_skips_the_sales_label(self):
+    def test_first_model_turn_says_who_is_calling_without_ai_or_sales_label(self):
         notes = []
         from unittest import mock
         with mock.patch("receptionist.agent.CallSession.respond", lambda self, text, on_text=None, control=None, heard_only=None, note=None: notes.append(note)):
             self.s.respond("Hello?")
             self.s.respond("Why did you call me?")
             self.s.respond("ok and how much")
-        self.assertIn("AI assistant", notes[0])
-        self.assertIn("Do not say it is a sales call", notes[0])
-        self.assertNotIn("AI assistant", notes[1] or "")
+        self.assertIn("Ringback", notes[0])
+        self.assertIn("do not bring up being an AI unless they ask", notes[0])
+        self.assertIn("sales call", notes[0])
+        self.assertNotIn("Ringback", notes[1] or "")
 
     def test_manager_slots_replace_the_defaults_until_stale(self):
         slots = ["2026-11-03T13:15:00-08:00", "2026-11-03T09:00:00-08:00", "2026-11-04T10:00:00-08:00"]
@@ -339,7 +339,7 @@ class OpenerCutOffTests(Fixture):
             {"interaction_type": "call_details", "call": {"call_id": "c1", "metadata": {"lead": LEAD}}},
             {"interaction_type": "response_required", "response_id": 1, "transcript": [{"role": "user", "content": "Hello?"}]},
             {"interaction_type": "response_required", "response_id": 2,
-             "transcript": [{"role": "user", "content": "Hello?"}, {"role": "agent", "content": self.s.opener + " Hi, I'm Riley, an AI assistant with Ringback."},
+             "transcript": [{"role": "user", "content": "Hello?"}, {"role": "agent", "content": self.s.opener + " Hi, I'm Riley with Ringback."},
                             {"role": "user", "content": "(unintelligible audio)"}]}])
         second = [m for m in sent if m.get("response_id") == 2]
         self.assertNotEqual(second[0]["content"], self.s.intro_text)
