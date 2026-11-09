@@ -40,26 +40,29 @@ class StopTests(unittest.TestCase):
 
 
 class SessionTests(Fixture):
-    def test_opener_has_a_hook_names_the_caller_and_says_it_is_a_sales_call_but_not_ai(self):
+    def test_opener_is_only_a_short_question_with_no_ai_or_sales_words(self):
         import random
         s = ol.outbound.settings(CFG)
-        for trade in ("Lawn care", "Snow removal", "Other"):
-            for seed in range(12):
-                text = ol.opener({"name": "Case Lawn Care", "type": trade, "contact": "Dale Smith"}, s, random.Random(seed))
-                self.assertTrue(text.startswith("Hi Dale? "), text)
-                self.assertIn("Case Lawn Care", text)
-                self.assertIn("sales call", text.lower().replace("selling something", "sales call"))
-                self.assertIn("Ringback", text)
-                self.assertNotRegex(text, r"(?i)\b(ai|robot|bot|artificial)\b")
-                self.assertNotRegex(text, r"(?i)\bhuman\b")
+        for seed in range(12):
+            named = ol.opener({"name": "Case Lawn Care", "contact": "Dale Smith"}, s, random.Random(seed))
+            self.assertIn("Dale", named)
+            self.assertNotIn("Smith", named)
+            anon = ol.opener({"name": "Case Lawn Care"}, s, random.Random(seed))
+            self.assertIn("owner of Case Lawn Care", anon)
+            for text in (named, anon):
+                self.assertLess(len(text.split()), 14)
+                self.assertNotRegex(text, r"(?i)sales|cold|selling|ringback|riley|\bai\b|robot")
                 self.assertNotIn("{", text)
+        self.assertGreater(len({ol.opener({"name": "X"}, s, random.Random(i)) for i in range(40)}), 2)
 
-    def test_a_lead_written_hook_wins_and_hooks_vary(self):
+    def test_the_fallback_intro_says_it_is_an_ai_assistant(self):
         import random
         s = ol.outbound.settings(CFG)
-        self.assertTrue(ol.opener({"name": "X", "hook": "Is {biz} the shop with the talking van?"}, s).startswith("Is X the shop with the talking van?"))
-        many = {ol.opener({"name": "X", "type": "Lawn care"}, s, random.Random(i)) for i in range(40)}
-        self.assertGreater(len(many), 10)
+        for seed in range(6):
+            intro = ol.opener_parts({"name": "X"}, s, random.Random(seed))[1]
+            self.assertIn("AI assistant", intro)
+            self.assertIn("Ringback", intro)
+            self.assertNotRegex(intro, r"(?i)sales|cold")
 
     def test_uses_the_outbound_model_and_cached_prompt(self):
         self.assertEqual(self.s.cfg["models"]["agent"], "b")
@@ -147,7 +150,7 @@ class LawnCareOnlyTests(unittest.TestCase):
     def test_pitch_hooks_voicemail_and_keywords_are_lawn_care_only(self):
         import re
         s = outbound.settings(CFG)
-        texts = [outbound.facts(s), outbound.PLAYBOOK.read_text(), json.dumps(ol.HOOKS)]
+        texts = [outbound.facts(s), outbound.PLAYBOOK.read_text(), json.dumps(ol.GREETINGS + ol.INTRO)]
         payload = ol.agent_payload(CFG, "https://x.io", "S")
         texts += [payload["voicemail_option"]["action"]["text"], " ".join(payload["boosted_keywords"])]
         for text in texts:
@@ -241,21 +244,21 @@ class OpenerAndSlotsTests(Fixture):
         turn = self.s.respond("Hello?", said.append)
         self.assertEqual(turn.text, self.s.opener)
         self.assertEqual("".join(said), self.s.opener)
-        self.assertEqual(said, [self.s.hook_text, " " + self.s.intro_text])
-        self.assertTrue(self.s.protected(said[1]) and not self.s.protected(said[0]))
-        self.assertIn("Case Lawn Care", self.s.opener)
+        self.assertEqual(said, [self.s.hook_text])
+        self.assertFalse(self.s.protected(said[0]))
         self.assertEqual([m["role"] for m in self.s.messages], ["user", "assistant"])   # the model sees a normal history
         self.assertFalse(self.s.ended)
 
-    def test_first_model_turn_restates_who_is_calling_in_case_the_opener_was_cut_off(self):
+    def test_first_model_turn_says_who_is_calling_as_an_ai_and_skips_the_sales_label(self):
         notes = []
         from unittest import mock
         with mock.patch("receptionist.agent.CallSession.respond", lambda self, text, on_text=None, control=None, heard_only=None, note=None: notes.append(note)):
             self.s.respond("Hello?")
             self.s.respond("Why did you call me?")
             self.s.respond("ok and how much")
-        self.assertIn("who is calling", notes[0])
-        self.assertNotIn("who is calling", notes[1] or "")
+        self.assertIn("AI assistant", notes[0])
+        self.assertIn("Do not say it is a sales call", notes[0])
+        self.assertNotIn("AI assistant", notes[1] or "")
 
     def test_manager_slots_replace_the_defaults_until_stale(self):
         slots = ["2026-11-03T13:15:00-08:00", "2026-11-03T09:00:00-08:00", "2026-11-04T10:00:00-08:00"]
@@ -317,7 +320,7 @@ class OpenerCutOffTests(Fixture):
         return sent
 
     def test_noise_after_hello_finishes_the_intro_instead_of_asking_to_repeat(self):
-        heard = "Hi Noah? " + self.s.hook_text.split("? ", 1)[-1]   # the hook played, the intro did not
+        heard = self.s.hook_text   # the greeting played, nobody has said who is calling
         sent = self.run_socket([
             {"interaction_type": "call_details", "call": {"call_id": "c1", "metadata": {"lead": LEAD}}},
             {"interaction_type": "response_required", "response_id": 1, "transcript": [{"role": "user", "content": "Hello?"}]},
@@ -325,8 +328,7 @@ class OpenerCutOffTests(Fixture):
              "transcript": [{"role": "user", "content": "Hello?"}, {"role": "agent", "content": heard},
                             {"role": "user", "content": "(unintelligible audio)"}]}])
         first = [m for m in sent if m.get("response_id") == 1]
-        self.assertTrue(any(m.get("no_interruption_allowed") and "Ringback" in m["content"] for m in first))
-        self.assertFalse(any(m.get("no_interruption_allowed") and "Ringback" not in m["content"] for m in first))   # the hook stays interruptible
+        self.assertFalse(any(m.get("no_interruption_allowed") for m in first))   # the greeting stays interruptible
         second = [m for m in sent if m.get("response_id") == 2]
         self.assertEqual(len(second), 1)
         self.assertEqual(second[0]["content"], self.s.intro_text)
@@ -337,7 +339,7 @@ class OpenerCutOffTests(Fixture):
             {"interaction_type": "call_details", "call": {"call_id": "c1", "metadata": {"lead": LEAD}}},
             {"interaction_type": "response_required", "response_id": 1, "transcript": [{"role": "user", "content": "Hello?"}]},
             {"interaction_type": "response_required", "response_id": 2,
-             "transcript": [{"role": "user", "content": "Hello?"}, {"role": "agent", "content": self.s.opener},
+             "transcript": [{"role": "user", "content": "Hello?"}, {"role": "agent", "content": self.s.opener + " Hi, I'm Riley, an AI assistant with Ringback."},
                             {"role": "user", "content": "(unintelligible audio)"}]}])
         second = [m for m in sent if m.get("response_id") == 2]
         self.assertNotEqual(second[0]["content"], self.s.intro_text)

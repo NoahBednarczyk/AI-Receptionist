@@ -79,7 +79,7 @@ class PromptTests(unittest.TestCase):
 
     def test_answers_ai_question_plainly_never_volunteers_and_never_pretends(self):
         self.assertIn("answer yes, plainly", self.text)
-        self.assertIn("You do not bring up that you are an AI", self.text)
+        self.assertIn("you answer yes, plainly, right then", self.text)
         self.assertIn("never deny being an AI", self.text)
         self.assertIn("never claim to be human", self.text.lower())
         self.assertIn("never say you are researching for a different company", self.text.replace("You never", "never"))

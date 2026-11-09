@@ -20,23 +20,11 @@ from .agent import CallSession, Turn, cache_control, transcript_text
 from .speech import normalize_phone, spoken_phone
 from .tools import ToolError
 
-INTRO = ["{agent} here, calling for {founder} at {company} in {town}. Fair warning, it's a sales call, but a short one. Got a minute?",
-         "I'm {agent}, calling on behalf of {founder} at {company}, here in {town}. It's a sales call, I'll keep it quick. Okay?",
-         "This is {agent} with {founder} at {company} in {town}. Heads up, I'm selling something, but I'm fast. Is now terrible?",
-         "{agent} calling for {founder} at {company}, {town}. Yes, it's a sales call, and I'll be short. Can I steal a minute?"]
-# One-liners that need nothing but the shop's name or trade. A lead's own `hook` field (written for that shop) beats these.
-HOOKS = {
-    "lawn": ["Quick one for {biz}: you're mid-mow, the phone rings, who gets it?",
-             "Is {biz} the crew people call when the grass is up to their knees?",
-             "I'm calling {biz} because nobody thinks about their lawn until the neighbor's looks better.",
-             "Is {biz} booked solid by May, or are you still answering the phone in May?"],
-    "snow": ["Is {biz} the plow crew people call at 5 AM when the driveway has vanished?",
-             "Quick one for {biz}: six inches overnight, phones going crazy at 5 AM, who answers?",
-             "I'm calling {biz} because nobody thinks about plowing until the driveway disappears."],
-    "default": ["I'm calling {biz} with the strangest cold call you'll get today.",
-                "Quick one for {biz}: when you're out on a job and the phone rings, who gets it?",
-                "I found {biz} in {town} and had to see what happens when the phone rings."],
-}
+# The opener is only a short "is this the owner?" so the person answers first. Who is calling comes in the next reply
+# (the model says it, see INTRO_NOTE); INTRO is the fixed fallback if noise cuts the exchange short.
+GREETINGS = ["Hi, is this {who}?", "Hello, is this {who}?", "Hey there, am I speaking with {who}?"]
+INTRO = ["Hi, I'm {agent}, an AI assistant with {company} here in {town}.",
+         "It's {agent}, an AI assistant with {company} in {town}."]
 
 
 def trade_of(lead: dict) -> str:
@@ -47,25 +35,25 @@ def trade_of(lead: dict) -> str:
 
 
 def opener_parts(lead: dict, s: dict, rng=random) -> tuple[str, str]:
-    """(hook, intro): the hook about this shop, then who is calling (a person, the company, that it is a sales call) and
-    a small ask. They are spoken as two pieces so the intro can be protected from being talked over."""
-    owner = (lead.get("contact") or "").split(" ")[0]
-    hook = lead.get("hook") or rng.choice(HOOKS[trade_of(lead)])
-    fill = dict(biz=lead.get("name") or "your shop", town=s["town"], agent=s["agent_name"], founder=s["founder"], company=s["company"])
-    return (f"Hi {owner}? " if owner else "") + hook.format(**fill), rng.choice(INTRO).format(**fill)
+    """(greeting, intro): the greeting is all that is said when the person first answers; the intro is the fallback
+    for who is calling, used only if noise cuts in before the model's first reply."""
+    owner = (lead.get("contact") or "").strip().split(" ")[0]
+    who = owner or f"the owner of {lead.get('name') or 'the shop'}"
+    fill = dict(agent=s["agent_name"], company=s["company"], town=s["town"])
+    return rng.choice(GREETINGS).format(who=who), rng.choice(INTRO).format(**fill)
 
 
 def opener(lead: dict, s: dict, rng=random) -> str:
-    hook, intro = opener_parts(lead, s, rng)
-    return f"{hook} {intro}"
+    return opener_parts(lead, s, rng)[0]
 
 
 STOP_LINES = ["Understood, I'll take you off our list. Sorry for the interruption.",
               "Got it, you're off our list. Sorry to bother you.",
               "No problem at all, I'll take you off the list. Have a good one."]
-INTRO_NOTE = ("your opening line may have been cut off when the person talked over it, so they may not have heard who is calling or why. "
-              "In your first words, in a few words, say your name, that you are calling for the owner of Ringback in Sandpoint and that it "
-              "is a sales call (skip this only if they have clearly shown they know), then answer what they said.")
+INTRO_NOTE = ("you just asked who you are speaking with and they have answered. In this reply, in the same short breath, say your name, that you "
+              "are an AI assistant with Ringback in Sandpoint, and go straight to your first question about their calls. Do not say it is a "
+              "sales call or a cold call, and no lead-in about why you are calling. If they said it is a wrong person, a bad time or asked "
+              "who you are, handle that first.")
 AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Answer with one quick, funny line of your own "
            "that says yes, you are an AI assistant, unmistakably (the joke comes with the yes, never instead of it), then use it "
            "in the same breath to get back to your goal. Never claim to be human.")
@@ -266,7 +254,7 @@ class OutboundSession(CallSession):
         self.company_name = s["company"]
         self.greeting = ""   # an empty first message makes Retell wait for the person to say hello
         self.hook_text, self.intro_text = opener_parts(lead, s, rng)
-        self.opener = f"{self.hook_text} {self.intro_text}"
+        self.opener = self.hook_text
         self._resumed = False
         self._opened = False
         self._intro_checked = False
@@ -291,7 +279,6 @@ class OutboundSession(CallSession):
             self._opened = True
             if on_text:
                 on_text(self.hook_text)
-                on_text(" " + self.intro_text)
             messages = [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.opener}]
             self._save(messages, caller_text, {"role": "agent", "text": self.opener, "tools": [], "steps": [{"say": self.opener}]}, None, final=False)
             return Turn(self.opener, [], 0.0, 0.0, False)
@@ -303,11 +290,11 @@ class OutboundSession(CallSession):
         return super().respond(caller_text, on_text, control, heard_only, note)
 
     def protected(self, chunk: str) -> bool:
-        """The intro (who is calling, that it is a sales call) cannot be talked over; the hook can."""
-        return self.intro_text in chunk
+        """Nothing is protected: the greeting is one short question."""
+        return False
 
     def resume_line(self, heard: str) -> str | None:
-        """Noise right after "hello" can cut the opener before the intro was heard. If so, say the intro (once) instead
+        """Noise right after the greeting can leave the person never hearing who is calling. If so, say the intro (once) instead
         of "I didn't catch that"."""
         if self._resumed or self.company_name in (heard or ""):
             return None
