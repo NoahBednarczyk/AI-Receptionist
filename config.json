@@ -14,7 +14,7 @@
     "grader": "claude-sonnet-5-5",
     "grader_effort": "low",
     "outbound": "claude-sonnet-5-5",
-    "outbound_effort": "medium"
+    "outbound_effort": "low"
   },
   "agent": {
     "max_tokens": 2048,
