@@ -45,6 +45,8 @@ DEFAULTS = {
     # Server-side runner: when enabled, the scheduled trigger starts a block of up to `calls` calls, one at a time,
     # instead of one call. Off by default; turn it on only after any other runner (the Mac scripts) is retired.
     "block_runner": {"enabled": False, "calls": 5, "pause_s": 120, "max_call_wait_s": 900},
+    "cache_ttl": "5m",                           # prompt cache life for outbound calls (inbound keeps its own)
+    "disclose_ai_in_intro": True,                # say "an AI assistant" in the intro line (set false to restore the old intro)
     "meeting_minutes": 15,
     # Noah is free any time. Until the manager agent supplies real open slots (State.set_slots), offers come from these
     # wide windows, every day, local time.

@@ -6,6 +6,7 @@ outbound.mode is not "dry-run", OUTBOUND_LIVE=1 is set, and the lead passes outb
 from __future__ import annotations
 
 import json
+import logging
 import os
 import random
 import re
@@ -17,9 +18,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import callreview, outbound, tools
-from .agent import CallSession, Turn, cache_control, transcript_text
+from .agent import CallSession, Turn, cache_control, thinking_param, transcript_text
 from .speech import normalize_phone, spoken_phone
 from .tools import ToolError
+
+log = logging.getLogger("receptionist")
 
 # The opener is only a short "is this the owner?" so the person answers first. Who is calling comes in the next reply
 # (the model says it, see INTRO_NOTE); INTRO is the fixed fallback if noise cuts the exchange short.
@@ -238,6 +241,66 @@ def mark_do_not_call(ctx, a):
 tools.HANDLERS.update({f.__name__: f for f in (check_meeting_slots, book_meeting, log_call, mark_do_not_call)})
 
 
+# ---------------------------------------------------------------- the cached prompt prefix
+
+def session_cfg(cfg: dict) -> dict:
+    """The cfg an outbound call runs with: the outbound model and effort, and its own cache life (five minutes: every
+    dial re-warms it, and the block runner's gaps fit inside, so writes cost 1.25x instead of 2x)."""
+    m, a = cfg["models"], cfg.get("agent", {})
+    return {**cfg, "models": {**m, "agent": m.get("outbound", m["agent"]), "agent_effort": m.get("outbound_effort", m["agent_effort"])},
+            "agent": {**a, "cache_ttl": outbound.settings(cfg)["cache_ttl"]}}
+
+
+def _stable_system(cfg: dict, now: datetime) -> list[dict]:
+    """The cached system block (the sales prompt, the same for every lead). OutboundSession and warm() both build it
+    here: the cache only hits on a byte-identical prefix."""
+    return [{**outbound.build_prompt({}, now, cfg)[0], "cache_control": cache_control(session_cfg(cfg))}]
+
+
+def _tools() -> list[dict]:
+    return [{**t, "strict": True} for t in outbound.schemas()]
+
+
+_warm_lock = threading.Lock()
+_last_warm: float | None = None
+
+
+def warm(client, cfg: dict, now: datetime, *, min_gap_s: int = 240) -> dict | None:
+    """Writes the outbound prompt into the cache (prefill only, nothing generated) so the first model turn of a call
+    reads it instead of waiting 3 to 4 seconds. Skipped when it ran less than `min_gap_s` ago. Returns the token
+    usage, or None if skipped or it failed."""
+    global _last_warm
+    with _warm_lock:
+        if _last_warm is not None and time.monotonic() - _last_warm < min_gap_s:
+            return None
+        _last_warm = time.monotonic()
+    c = session_cfg(cfg)
+    try:
+        resp = client.messages.create(
+            model=c["models"]["agent"], max_tokens=0, output_config={"effort": c["models"]["agent_effort"]},
+            system=_stable_system(cfg, now), tools=_tools(),
+            messages=[{"role": "user", "content": "warmup"}], **thinking_param(c["models"]))
+    except Exception as e:   # a failed warm only costs the wait it would have saved
+        with _warm_lock:
+            _last_warm = None
+        log.warning("outbound cache warm failed: %s", e)
+        return None
+    usage = {"input": resp.usage.input_tokens or 0, "output": 0,
+             "cache_read": getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
+             "cache_write": getattr(resp.usage, "cache_creation_input_tokens", 0) or 0}
+    log.info("outbound cache warm: %s", usage)
+    return usage
+
+
+def warm_in_background(warm_fn) -> threading.Thread | None:
+    """Runs warm_fn on its own thread; never raises into the caller."""
+    if warm_fn is None:
+        return None
+    t = threading.Thread(target=lambda: warm_fn(), daemon=True, name="outbound-warm")
+    t.start()
+    return t
+
+
 # ---------------------------------------------------------------- session
 
 class OutboundSession(CallSession):
@@ -245,11 +308,10 @@ class OutboundSession(CallSession):
     machinery (streaming, sentence filters, dropped turns, cut-ins) is inherited unchanged."""
 
     def __init__(self, client, cfg: dict, lead: dict, state: State, store, now: datetime,
-                 call_id: str | None = None, platform: str = "retell", rng=random):
+                 call_id: str | None = None, platform: str = "retell", rng=random, warm_cache: bool = False):
         s = outbound.settings(cfg)
-        m = cfg["models"]
         self.client, self.store = client, store
-        self.cfg = {**cfg, "models": {**m, "agent": m.get("outbound", m["agent"]), "agent_effort": m.get("outbound_effort", m["agent_effort"])}}
+        self.cfg = session_cfg(cfg)
         self.biz = {"id": "outbound", "vertical": "outbound", "name": s["company"], "spoken_name": s["company"],
                     "agent_name": s["agent_name"], "timezone": s["timezone"]}
         self.lead, self.state, self.started = lead, state, now
@@ -263,8 +325,8 @@ class OutboundSession(CallSession):
         self._intro_checked = False
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
-        self.system = [{**blocks[0], "cache_control": cache_control(cfg)}, blocks[1]]
-        self.tools = [{**t, "strict": True} for t in outbound.schemas()]
+        self.system = [*_stable_system(cfg, now), blocks[1]]
+        self.tools = _tools()
         phone = normalize_phone(lead.get("phone") or "")
         self.ctx = tools.ToolContext(self.biz, store, now, phone, self.call_id)
         self.ctx.extra.update(cfg=cfg, state=state, lead=lead)
@@ -274,6 +336,12 @@ class OutboundSession(CallSession):
         self._before = None
         self._said_once, self._recent_acks, self._held_back, self._interjections = set(), [], [], []
         store.start_call(self.call_id, "outbound", platform, phone, now)
+        if warm_cache and client is not None:   # a safety net: place_call normally warmed it while the phone rang
+            def _warm():
+                got = warm(client, cfg, now)
+                for k in ("input", "output", "cache_read", "cache_write"):
+                    self.usage[k] += (got or {}).get(k, 0)
+            warm_in_background(_warm)
 
     def respond(self, caller_text, on_text=None, control=None, heard_only=None, note=None):
         if not self.ctx.ended and stop_request(caller_text):
@@ -398,7 +466,7 @@ def live_call_fn(api_key: str):
     return call
 
 
-def call_next(cfg: dict, leads: list[dict], state: State, call_fn, now: datetime) -> dict:
+def call_next(cfg: dict, leads: list[dict], state: State, call_fn, now: datetime, warm_fn=None) -> dict:
     """Finds the first callable lead in `outbound.plan_queue`'s own order (consent-yes first, then a due follow-up,
     then the rest) and places one call to it. Dials nothing and says why if no lead is eligible right now (outside
     call hours, the week's attempt limit, on the do-not-call list, cold calling still switched off...). A lead that
@@ -418,7 +486,7 @@ def call_next(cfg: dict, leads: list[dict], state: State, call_fn, now: datetime
     for r in candidates:
         lead = r["lead"]
         try:
-            result = place_call(cfg, lead, now, state, call_fn)
+            result = place_call(cfg, lead, now, state, call_fn, warm_fn=warm_fn)
         except RuntimeError as e:
             last_reason = str(e)
             continue
@@ -436,8 +504,9 @@ class BlockRunner:
     own (and so place_call's); this only sequences them. A number dialed in this block is never dialed again in it,
     even if it never answered (an unanswered call leaves no attempt on record)."""
 
-    def __init__(self, cfg: dict, state_path, call_fn, clock=None, sleep=time.sleep):
+    def __init__(self, cfg: dict, state_path, call_fn, clock=None, sleep=time.sleep, warm_fn=None):
         self.cfg, self.state_path, self.call_fn, self.sleep = cfg, Path(state_path), call_fn, sleep
+        self.warm_fn = warm_fn
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.lock = threading.Lock()
         self._stop = threading.Event()
@@ -466,7 +535,7 @@ class BlockRunner:
                     break
                 state = State(self.state_path)   # fresh each time: live calls write their own results to this file
                 leads = [l for l in load_leads(self.cfg) if (normalize_phone(l.get("phone") or "") or "") not in dialed]
-                out = call_next(self.cfg, leads, state, self.call_fn, self.clock())
+                out = call_next(self.cfg, leads, state, self.call_fn, self.clock(), warm_fn=self.warm_fn)
                 if not out.get("called"):
                     reason = out.get("reason") or "nothing to call"
                     break
@@ -508,7 +577,7 @@ class BlockRunner:
         return False
 
 
-def place_call(cfg: dict, lead: dict, now: datetime, state: State, call_fn, env=os.environ) -> dict:
+def place_call(cfg: dict, lead: dict, now: datetime, state: State, call_fn, env=os.environ, warm_fn=None) -> dict:
     """Starts one outbound call, or raises. `call_fn(method, path, body)` is Retell's REST call (injected for tests)."""
     s = outbound.settings(cfg)
     if s["mode"] == "dry-run":
@@ -521,6 +590,7 @@ def place_call(cfg: dict, lead: dict, now: datetime, state: State, call_fn, env=
     rec = json.loads((Path(cfg["data_dir"]) / "retell_outbound.json").read_text())
     if not rec.get("number"):
         raise RuntimeError("No outbound number yet: run `outbound-number --number +1...` once you have one from Retell.")
+    warm_in_background(warm_fn)   # the ringing time pays for the prompt prefill
     return call_fn("POST", "/v2/create-phone-call", {
         "from_number": rec["number"], "to_number": normalize_phone(lead["phone"]), "override_agent_id": rec["agent_id"],
         "idempotency_key": f"{lead.get('id') or 'lead'}-{int(now.timestamp())}",   # a retry within an hour cannot dial twice

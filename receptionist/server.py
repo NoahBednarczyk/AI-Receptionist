@@ -231,7 +231,8 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         return {"ok": True, "slots": len(slots)}
 
     block_runner = outbound_live.BlockRunner(cfg, Path(cfg["data_dir"]) / "outbound.json",
-                                             outbound_live.live_call_fn(retell_key) if retell_key else None)
+                                             outbound_live.live_call_fn(retell_key) if retell_key else None,
+                                             warm_fn=lambda: outbound_live.warm(client, cfg, datetime.datetime.now(datetime.timezone.utc)))
 
     def _admin_only(request: Request) -> None:
         who = _who(request)
@@ -297,7 +298,8 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         leads = outbound_live.load_leads(cfg)
         state = outbound_live.State(Path(cfg["data_dir"]) / "outbound.json")
         now = datetime.datetime.now(datetime.timezone.utc)
-        return outbound_live.call_next(cfg, leads, state, outbound_live.live_call_fn(retell_key), now)
+        return outbound_live.call_next(cfg, leads, state, outbound_live.live_call_fn(retell_key), now,
+                                       warm_fn=lambda: outbound_live.warm(client, cfg, now))
 
     @app.get("/admin/outbound/block")
     async def outbound_block_status(request: Request):
@@ -409,7 +411,7 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
                 log.error("outbound socket opened without a lead or while outbound.mode is dry-run; hanging up")
                 return None
             return outbound_live.OutboundSession(client, cfg, lead, out_state, store, datetime.datetime.now(datetime.timezone.utc),
-                                                 call_id=f"retell-{call.get('call_id') or retell_call_id}")
+                                                 call_id=f"retell-{call.get('call_id') or retell_call_id}", warm_cache=True)
 
         def finish(session) -> None:
             now = datetime.datetime.now(datetime.timezone.utc)

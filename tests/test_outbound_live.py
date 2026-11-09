@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -509,3 +510,61 @@ class BlockRunnerTests(Fixture):
 
     def test_off_by_default(self):
         self.assertFalse(outbound.settings({})["block_runner"]["enabled"])
+
+
+class WarmTests(Fixture):
+    class Client:
+        def __init__(self):
+            from types import SimpleNamespace
+            self.requests = []
+            self.messages = self
+            self._ns = SimpleNamespace
+
+        def create(self, **kw):
+            self.requests.append(kw)
+            return self._ns(usage=self._ns(input_tokens=5, cache_read_input_tokens=0, cache_creation_input_tokens=1800))
+
+    def setUp(self):
+        super().setUp()
+        ol._last_warm = None
+        self.addCleanup(setattr, ol, "_last_warm", None)
+        self.cfg = {**CFG, "data_dir": self.dir.name}
+
+    def test_warm_sends_zero_tokens_and_the_exact_prefix_a_call_uses(self):
+        c = self.Client()
+        usage = ol.warm(c, self.cfg, NOW)
+        self.assertEqual(usage["cache_write"], 1800)
+        req = c.requests[0]
+        self.assertEqual(req["max_tokens"], 0)
+        self.assertEqual(json.dumps(req["system"][0], sort_keys=True), json.dumps(self.s.system[0], sort_keys=True))
+        self.assertEqual(json.dumps(req["tools"], sort_keys=True), json.dumps(self.s.tools, sort_keys=True))
+        self.assertEqual(req["model"], "b")
+
+    def test_outbound_cache_is_five_minutes_and_priced_that_way(self):
+        self.assertEqual(self.s.system[0]["cache_control"], {"type": "ephemeral"})
+        from receptionist.agent import cache_write_mult
+        self.assertEqual(cache_write_mult(self.s.cfg), 1.25)
+
+    def test_a_second_warm_within_the_gap_is_skipped(self):
+        c = self.Client()
+        self.assertIsNotNone(ol.warm(c, self.cfg, NOW))
+        self.assertIsNone(ol.warm(c, self.cfg, NOW))
+        self.assertEqual(len(c.requests), 1)
+
+    def test_place_call_warms_before_dialing(self):
+        order = []
+        rec = Path(self.dir.name) / "retell_outbound.json"
+        rec.write_text(json.dumps({"agent_id": "agent_1", "number": "+12085550000"}))
+        cfg = {**self.cfg, "outbound": {"mode": "warm-only"}}
+        done = threading.Event()
+
+        def warm_fn():
+            order.append("warm")
+            done.set()
+
+        def call_fn(*a):
+            done.wait(2)   # the warm thread starts first; the dial must come after it began
+            order.append("dial")
+            return {}
+        ol.place_call(cfg, {**LEAD, "consent": "yes"}, NOW, self.state, call_fn, env={"OUTBOUND_LIVE": "1"}, warm_fn=warm_fn)
+        self.assertEqual(order, ["warm", "dial"])
