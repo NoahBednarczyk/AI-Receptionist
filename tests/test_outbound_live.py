@@ -720,3 +720,87 @@ class StallPoolTests(ScriptedFixture):
         first = next(m["content"] for m in sent if m.get("response_id") == 1 and m.get("content"))
         self.assertIn(first.strip(), live.OUTBOUND_STILL_WORKING["en"])
         self.assertTrue(any("call t2" in l and "stall line" in l for l in logged.output))
+
+
+class MachineTests(ScriptedFixture):
+    """Replays of real calls from 2026-11-09 that reached a machine instead of a person."""
+    ASPEN = ["You have reached the office for ask Landscaping. Small Lizards Lawn Care, and Dump and Run Hauling. To reach Aspen Ridge "
+             "Landscaping, enter extension zero pound. To reach lawn mowers lawn care, enter extension one pound",
+             "To reach dump and run calling, enter extension two. Pound. Thank you for calling.",
+             "You have reached the offices for Aspen Ridge Landscaping Long Lizards lawn care, and Gump and Run hauling. To reach Aspen Ridge "
+             "landscaping, enter extension zero pound."]
+    THOMPSON = ["Thank you for calling Thompson Turf Services. Please stay on the line, or press zero to be transferred to the receptionist.",
+                "Please hold while I try to connect you."]
+    VOICEMAILS = ["Hi. This is Taylor Marsh with TCL Concrete Excavation. Leave your name and number, and I'll get back to you as soon as I can. Thanks.",
+                  "Thank you for calling. Please leave a message or call two zero",
+                  "All right, leave your message after the beep.",
+                  "The person you are trying to reach is not available. At the tone, please record your message."]
+
+    def fresh(self, *script):
+        from tests.test_logic import CFG as FULL, FakeClient
+        self.client = FakeClient(*script)
+        return ol.OutboundSession(self.client, {**FULL, "data_dir": self.dir.name, "outbound": {"mode": "warm-only"}}, LEAD,
+                                  self.state, self.store, NOW, call_id="m1")
+
+    def test_kinds(self):
+        for t in self.VOICEMAILS:
+            self.assertEqual(ol.machine_kind(t), "voicemail", t)
+        for t in self.ASPEN + self.THOMPSON[:1]:
+            self.assertEqual(ol.machine_kind(t), "menu", t)
+        self.assertEqual(ol.machine_kind(self.THOMPSON[1]), "hold")
+        for t in ("Hello?", "This is On Track.", "Yeah, this is Dale.", "What can I do for you?", "Aspen Ridge, this is Mike."):
+            self.assertIsNone(ol.machine_kind(t), t)
+
+    def test_voicemail_gets_the_message_then_a_hang_up_with_no_model_call(self):
+        for greeting in self.VOICEMAILS:
+            s, said = self.fresh(), []
+            turn = s.respond(greeting, said.append)
+            self.assertEqual(said, [ol.voicemail_text(outbound.settings(s.cfg))])
+            self.assertNotIn("is this", said[0].lower())
+            self.assertTrue(turn.ended and s.ended)
+            self.assertEqual(s.ctx.extra["log"]["outcome"], "Voicemail")
+            self.assertEqual(self.client.requests, [])
+
+    def test_a_phone_menu_gets_silence_then_a_hang_up_when_it_keeps_repeating(self):
+        s, said = self.fresh(), []
+        for t in self.ASPEN[:2]:
+            turn = s.respond(t, said.append)
+            self.assertEqual(turn.text, "")
+            self.assertFalse(turn.ended)
+            self.assertFalse(s.revert_last())   # the next words stay a turn of their own
+        turn = s.respond(self.ASPEN[2], said.append)
+        self.assertTrue(turn.ended)
+        self.assertEqual(said, [])            # never a word to the machine, never "this is an automated menu"
+        self.assertEqual(s.ctx.extra["log"]["outcome"], "No answer")
+        self.assertEqual(self.client.requests, [])
+
+    def test_the_person_after_the_menu_gets_the_opener(self):
+        s, said = self.fresh(), []
+        for t in self.THOMPSON:
+            s.respond(t, said.append)
+        self.assertEqual(said, [])
+        turn = s.respond("Thompson Turf, this is Jim.", said.append)
+        self.assertEqual(turn.text, s.hook_text)
+        self.assertEqual(self.client.requests, [])
+
+    def test_after_a_person_has_talked_voicemail_words_are_ordinary_talk(self):
+        from tests.test_logic import reply, text
+        s = self.fresh(reply("end_turn", text("I'm Riley, an AI assistant calling for Noah. How often do calls get missed?")),
+                       reply("end_turn", text("Five a week, huh?")))
+        s.respond("Hello?")
+        s.respond("Yeah, what's up?")
+        turn = s.respond("We get maybe five voicemails a week, people leave a message and I call back.")
+        self.assertFalse(turn.ended)
+        self.assertEqual(len(self.client.requests), 2)
+
+    def test_machine_narration_is_never_spoken(self):
+        from receptionist.speech import unspeakable
+        for t in ("Sounds like a phone menu, so I'll hang on for the Aspen Ridge extension.",
+                  "This is an automated menu, not a person, so I'll log it and hang up.",
+                  "Oh, wait, this isn't actually a person.", "Oh wait, it's a recording."):
+            self.assertTrue(unspeakable(t), t)
+        for t in ("Yep, I'm an AI, not a person.", "Got it, so I'll put you down for Tuesday.", "Oh nice, that's great."):
+            self.assertFalse(unspeakable(t), t)
+
+    def test_the_prompt_says_to_stay_silent_for_recordings(self):
+        self.assertIn("reply with exactly (listening)", outbound.SPEAKING)

@@ -9,8 +9,10 @@ from datetime import date
 SPOKEN_INTERNALS = re.compile(r"\b(safety (line|step)s?|playbook|business facts|read-?back|check_availability|book_appointment|"
                               r"lookup_customer|create_lead|take_message|transfer_call|end_call)\b|\bstart with:|<[a-z/]", re.I)
 # A sentence that starts like the model thinking out loud ("Wait, I should just ask...", "The caller wants...").
-SELF_TALK = re.compile(r"^(?:(?:they|he|she|the owner|the person)(?:\W+\w+){0,3}?\W+(?:said|told|asked|want|wants|doesn't|don't|declined|stated|seems?|sounds?|"
-                       r"is (?:being|getting))\b|wait\b|hmm+\b|let me (?:think|rethink|reconsider)\b|i should\b|i need to (?:ask|check|find out|"
+SELF_TALK = re.compile(r"^(?:(?:this|that|it)(?:'s| is) (?:an? |just an? )?(?:automated|recorded|recording|machine|phone (?:menu|tree)|voice ?mail|answering)\b|"
+                       r"(?:sounds|looks) like (?:a |an |the )?(?:phone (?:menu|tree)|recording|machine|voice ?mail|automated|answering)\b|"
+                       r"(?:they|he|she|the owner|the person)(?:\W+\w+){0,3}?\W+(?:said|told|asked|want|wants|doesn't|don't|declined|stated|seems?|sounds?|"
+                       r"is (?:being|getting))\b|(?:oh|um|uh),? wait\b|wait\b|hmm+\b|let me (?:think|rethink|reconsider)\b|i should\b|i need to (?:ask|check|find out|"
                        r"figure|first|follow)\b|(?:actually|okay|ok|so),? (?:i should|i need to|let me (?:think|rethink))\b|"
                        r"the caller\b|this caller\b|that'?s (?:the|a) (?:first|second|third) (?:no|ask|soft no)\b|this is a (?:gentle|soft|firm|hard) (?:first |second )?(?:no|ask)\b|"
                        r"the (?:owner|person|speaker)\b.{0,30}\b(?:said|wants|doesn't|isn't|is not|declined)\b|(?:they|he|she)(?:'ve| has| have)? (?:told me|asked|are asking|is asking|want|wants|wanted|said|are declining|"
@@ -20,7 +22,8 @@ SELF_TALK = re.compile(r"^(?:(?:they|he|she|the owner|the person)(?:\W+\w+){0,3}
 
 
 # Reasoning that can sit anywhere in a sentence ("...so that's the closest match", "...from them").
-NARRATION = re.compile(r"\b(?:closest match|better (?:fit|match)|available services|from them|i shouldn't have said|"
+NARRATION = re.compile(r"\b(?:(?:this|that|it)(?: isn'?t| is not|'s not) (?:actually |really )?(?:a |an )?(?:real )?(?:person|human)\b|not a (?:real )?person, so\b|so i'?ll (?:log (?:it|this|the call)|hang up|hang on for|end the call|wait for (?:a|the) (?:person|human|extension|beep))\b|"
+                       r"closest match|better (?:fit|match)|available services|from them|i shouldn't have said|"
                        r"intake|since i don't have (?:one|it|a number|your number)|(?:save|create|log|record) (?:a|the) lead|(?:the|your) (?:cost|price|pricing) question|"
                        r"(?:since|because) (?:they|he|she)(?:'ve| has| have)? (?:told me|asked|want|wanted|said|are|is|declined)|"
                        r"i'll (?:book|put|file|log) (?:it|this|that) (?:as|under) (?:a |an )?(?:leak|drain|fixture|"

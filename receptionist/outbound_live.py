@@ -107,6 +107,36 @@ NOTE_NO_MORE_ASKS = "No more meeting asks on this call."
 NOTE_CALLBACK = ("you just offered to have {founder} call them himself instead. If they agree, use check_meeting_slots and book_meeting for that "
                  "callback; if they decline, thank them, call log_call, then end_call.")
 
+# Machines that answer before (or instead of) a person. Checked by code before the model ever sees them, and only
+# until a person has spoken with us: later in a call these words are ordinary talk ("we get five voicemails a week").
+VOICEMAIL = re.compile(r"\b(leave (a |your |me a |us a )?(message|name|number)|after the (beep|tone)|at the (beep|tone)|record your message|"
+                       r"(not|unable to|can'?t) (available|come to the phone|get to the phone|take your call|answer)|mailbox|"
+                       r"voice ?mail|get back to you|return your call|reached the (voice|mail))", re.I)
+PHONE_MENU = re.compile(r"\b(press (zero|one|two|three|four|five|six|seven|eight|nine|pound|star|\d)|(enter|dial) (the |your |an? )?extension|"
+                        r"extension (zero|one|two|three|\d)|para español|you have reached (the |our )?(office|offices|main line)|"
+                        r"main menu|menu options|office hours are|(we are|we're|office is|office is currently) (currently )?closed)\b", re.I)
+ON_HOLD = re.compile(r"\b(stay on the line|please hold|hold (on )?while|(while|as) (i|we) (try to )?(connect|transfer)|"
+                     r"your call is (important|being (transferred|connected|recorded))|transferring your call|connecting you)\b", re.I)
+MAX_MENU_TURNS = 3   # a menu that keeps repeating with no person behind it: log it and hang up
+
+
+def machine_kind(text: str) -> str | None:
+    """"voicemail", "menu" (a phone tree or office recording), "hold", or None for what sounds like a person."""
+    if VOICEMAIL.search(text):
+        return "voicemail"
+    if PHONE_MENU.search(text):
+        return "menu"
+    if ON_HOLD.search(text):
+        return "hold"
+    return None
+
+
+def voicemail_text(s: dict) -> str:
+    """The message left on an answering machine (also given to Retell as its own voicemail message)."""
+    return (f"Hi, this is {s['agent_name']}, calling for {s['founder']} at {s['company']} in {s['town']}. "
+            f"We're building a phone assistant for lawn care and snow removal businesses and {s['founder']} would like ten minutes "
+            f"of your time. You can try our demo line any time at {spoken_phone(s['demo_line'])}. Thanks, and have a good day.")
+
 
 def stop_request(text: str) -> bool:
     return bool(HARD_STOP.search(text) or (SOFT_STOP.search(text) and not PICKING_A_TIME.search(text)))
@@ -361,6 +391,8 @@ class OutboundSession(CallSession):
         self._nos = 0             # refusals the caller has given
         self._offered_callback = False
         self._ai_refused = False
+        self._person = False      # a person has talked with us (not a recording)
+        self._menu_turns = 0
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
         self.system = [*_stable_system(cfg, now), blocks[1]]
@@ -384,6 +416,9 @@ class OutboundSession(CallSession):
     def respond(self, caller_text, on_text=None, control=None, heard_only=None, note=None):
         if not self.ctx.ended and stop_request(caller_text):
             return self._stop(caller_text, on_text)
+        kind = None if self._person or self.ctx.ended else machine_kind(caller_text)
+        if kind:
+            return self._machine(kind, caller_text, on_text)
         if not self._opened and not self.ctx.ended:   # their first words ("Hello?"): the opener answers, no model call
             self._opened = True
             if on_text:
@@ -404,6 +439,7 @@ class OutboundSession(CallSession):
             return Turn(line, [], 0.0, 0.0, False)
         if not self._intro_checked:   # the first model turn after the opener
             self._intro_checked = True
+            self._person = True   # someone answered our "is this the owner?": from here machine words are ordinary talk
             intro = intro_note(outbound.settings(self.cfg))
             note = f"{note} {intro}" if note else intro
         if asked_if_ai(caller_text):
@@ -439,6 +475,34 @@ class OutboundSession(CallSession):
         self._resumed = True
         self.transcript.append({"role": "agent", "text": self.intro_text, "resumed": True})
         return self.intro_text
+
+    def _machine(self, kind: str, caller_text: str, on_text) -> Turn:
+        """A recording, not a person. Handled by code, so the model never has to work out (out loud) what it is hearing.
+        Voicemail: leave the message and hang up. A phone menu or hold message: say nothing and wait for a person; a menu
+        that keeps repeating is logged and hung up on. The opener is still unsaid, so the first person who picks up gets it."""
+        if kind == "voicemail":
+            line = voicemail_text(outbound.settings(self.cfg))
+            if on_text:
+                on_text(line)
+            outcome, summary, end = "Voicemail", "Reached voicemail and left the standard message.", "voicemail"
+        else:
+            line = ""
+            if kind == "menu":
+                self._menu_turns += 1
+            if self._menu_turns < MAX_MENU_TURNS:
+                self.transcript += [{"role": "caller", "text": caller_text, "machine": kind}]
+                self._before = None   # nothing to take back: the next words are a new turn, not joined to the recording
+                return Turn("", [], None, 0.0, False)
+            outcome, summary, end = "No answer", "Reached a phone menu that repeated with no person; hung up.", "phone menu"
+        used = []
+        for name, args in (("log_call", {"outcome": outcome, "objection": "None", "summary": summary}),
+                           ("end_call", {"reason": end})):
+            result, err = tools.run_tool(self.ctx, name, args)
+            used.append({"name": name, "args": args, "result": result, "error": err})
+        self.transcript += [{"role": "caller", "text": caller_text, "machine": kind},
+                            {"role": "agent", "text": line, "tools": used, "steps": [*([{"say": line}] if line else []), *({"tool": c} for c in used)]}]
+        self._before = None
+        return Turn(line, used, 0.0 if line else None, 0.0, True)
 
     def _stop(self, caller_text: str, on_text) -> Turn:
         """A clear request to stop: said and done by code, no model call. Marks the number and hangs up."""
@@ -496,9 +560,7 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = No
     s = outbound.settings(cfg)
     base = base_url.rstrip("/")
     ws = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
-    voicemail = (f"Hi, this is {s['agent_name']}, calling for {s['founder']} at {s['company']} in {s['town']}. "
-                 f"We're building a phone assistant for lawn care and snow removal businesses and {s['founder']} would like ten minutes "
-                 f"of your time. You can try our demo line any time at {spoken_phone(s['demo_line'])}. Thanks, and have a good day.")
+    voicemail = voicemail_text(s)
     return {"agent_name": f"{s['company']} discovery caller",
             "response_engine": {"type": "custom-llm", "llm_websocket_url": f"{ws}/llm-websocket-out/{secret}"},
             **(voice or {}),
