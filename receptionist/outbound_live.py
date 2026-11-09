@@ -88,24 +88,28 @@ AI_QUESTION = re.compile(r"(\b(are|is) (you|this|that)\b.*\b(robot|a\.?i\.?|arti
                          r"\b(am i|i'?m) (talking|speaking) (to|with)\b.*\b(robot|a\.?i\.?|bot|machine|computer|real|human|person)\b|"
                          r"\b(robot|a robot|an ai|a bot)\b.*\?|"
                          r"\b(this is|you'?re|you are) (a |an )?(robot|bot|ai|a\.i\.|machine|recording)\b)", re.I)
-# "I don't want to talk to an AI": answered by code with one honest line and an offer of a human, no model call.
+# "I don't want to talk to an AI": the model answers honestly and pushes back playfully (see NOTE_AI_REFUSAL).
 AI_REFUSAL = re.compile(r"\b(not interested in|don'?t want to|won'?t|not gonna|i don'?t)\b.{0,20}\b(talk|speak|deal)\w*\b.{0,12}\b(an? )?(a\.?i\.?|ai|bot|robot|machine|computer|recording)\b|"
                         r"\bi (hate|don'?t do) (robo ?calls|bots|robots|ai)\b", re.I)
-AI_REFUSAL_LINES = ["Fair, I am an AI. Want Noah to call you himself instead? Takes two minutes.",
-                    "Totally fair, yes, I'm an AI. I can have Noah give you a call himself, would that be better?",
-                    "Understood, and you're right, I'm an AI. Want a two-minute call from Noah instead?"]
 
 # What the caller said that counts as a refusal, and what our own reply counts as a meeting ask. Code keeps these
 # counts and hands the model the next move as a note, so the model has no state to reason about out loud.
 NO_SIGNAL = re.compile(r"\b(not interested|no thanks|no thank you|not right now|we'?re (good|fine|all set)|i'?m (good|fine|all set)|"
                        r"don'?t need (it|that|this)|pass(?! (it|that|this|me|you|along|the)\b))\b|^\W*no\W*$", re.I)
 MEETING_ASK = re.compile(r"\b(fifteen|15|ten|10)[- ]minutes?\b|\bwhich (is|works) (easier|better)\b", re.I)
-NOTE_NO_ONCE = ("they said no once. Accept it in a few words, then ask one curious question about how calls get answered when they are on a job. "
-                "Do not mention counting or the no itself.")
-NOTE_NO_AGAIN = "they said no again. Thank them, call log_call, then end_call. No further ask."
+PLAYFUL = ("Reply with one quick, friendly, playful quip in fresh words (never one you have already used on this call) that turns their "
+           "no around by pointing at what it costs them, such as jobs or money lost to calls nobody picks up, then one short question. "
+           "Tease the objection, never the person or their business. Light and warm, never pushy or sarcastic at them. "
+           "Do not mention counting or the no itself.")
+NOTE_NO_ONCE = "they said no. Do not fold. " + PLAYFUL
+NOTE_NO_TWICE = ("they said no again. One more try from a different angle (a much smaller ask, or what would have to be true for it to be "
+                 "worth ten minutes), still playful and short, and not the line you just used.")
+NOTE_NO_AGAIN = "they said no a third time. Thank them warmly with a light parting quip, call log_call, then end_call. No further ask."
 NOTE_NO_MORE_ASKS = "No more meeting asks on this call."
-NOTE_CALLBACK = ("you just offered to have {founder} call them himself instead. If they agree, use check_meeting_slots and book_meeting for that "
-                 "callback; if they decline, thank them, call log_call, then end_call.")
+NOTE_AI_REFUSAL = ("they don't want to talk to an AI. Say yes, you are an AI, in a few playful words (honest, once, never claim to be human), then "
+                   "push back with a quip about what an AI that always picks up is worth to someone who can't answer on the mower, and one short question. "
+                   "Fresh words every time, never a line you used before. Do not mention counting or the no itself.")
+
 
 # Machines that answer before (or instead of) a person. Checked by code before the model ever sees them, and only
 # until a person has spoken with us: later in a call these words are ordinary talk ("we get five voicemails a week").
@@ -389,8 +393,6 @@ class OutboundSession(CallSession):
         self._intro_checked = False
         self._asks = 0            # meeting asks we have made
         self._nos = 0             # refusals the caller has given
-        self._offered_callback = False
-        self._ai_refused = False
         self._person = False      # a person has talked with us (not a recording)
         self._menu_turns = 0
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
@@ -427,16 +429,6 @@ class OutboundSession(CallSession):
             self._save(messages, caller_text, {"role": "agent", "text": self.opener, "tools": [], "steps": [{"say": self.opener}]}, None, final=False)
             return Turn(self.opener, [], 0.0, 0.0, False)
         refusal = AI_REFUSAL.search(caller_text)
-        if refusal and not self._ai_refused and not self.ctx.ended:   # said by code: honest, short, and a human is offered
-            self._ai_refused = True
-            self._nos += 1
-            self._offered_callback = True
-            line = random.choice(AI_REFUSAL_LINES)
-            if on_text:
-                on_text(line)
-            messages = [*self.messages, {"role": "user", "content": caller_text}, {"role": "assistant", "content": line}]
-            self._save(messages, caller_text, {"role": "agent", "text": line, "tools": [], "steps": [{"say": line}]}, None, final=False)
-            return Turn(line, [], 0.0, 0.0, False)
         if not self._intro_checked:   # the first model turn after the opener
             self._intro_checked = True
             self._person = True   # someone answered our "is this the owner?": from here machine words are ordinary talk
@@ -447,13 +439,10 @@ class OutboundSession(CallSession):
         directive = None
         if NO_SIGNAL.search(caller_text) or refusal:
             self._nos += 1
-            directive = NOTE_NO_ONCE if self._nos == 1 else NOTE_NO_AGAIN
+            directive = (NOTE_AI_REFUSAL if refusal else NOTE_NO_ONCE) if self._nos == 1 else NOTE_NO_TWICE if self._nos == 2 else NOTE_NO_AGAIN
         elif self._asks >= 3:
             directive = NOTE_NO_MORE_ASKS
-        if directive is None and self._offered_callback:
-            directive = NOTE_CALLBACK.format(founder=outbound.settings(self.cfg)["founder"])
         if directive:
-            self._offered_callback = False
             note = f"{note} {directive}" if note else directive
         tone = callreview.tone_note(caller_text)
         if tone:
