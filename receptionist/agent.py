@@ -67,12 +67,14 @@ class Sentences:
         self.say, self.buf, self.kept, self.dropped, self.held = say, "", [], [], []
         self.recent = list(recent or ())   # acknowledgements used lately this call, oldest first
         self.silent = False   # the model chose to stay quiet (LISTENING)
+        self.tainted = False  # a sentence of this text block was thinking out loud: the rest of the block is dropped too
         self.budget, self.used, self.cut = budget, 0, False
         self.said_once = set(said_once or ())
 
     def new_reply(self) -> None:
         """A tool call starts a new reply: the caller hears a pause in between."""
         self.used, self.cut = 0, False
+        self.tainted = False
 
     def add(self, text: str) -> None:
         *done, self.buf = SENTENCE_BREAK.split(self.buf + text)
@@ -88,6 +90,7 @@ class Sentences:
         """End of a text block: release the rest and return what was said of the block."""
         self._release(self.buf, final=True)
         said, self.buf, self.kept = " ".join(self.kept), "", []
+        self.tainted = False
         return said
 
     def _fresh(self, sentence: str, final: bool) -> str | None:
@@ -109,6 +112,9 @@ class Sentences:
         sentence = sentence.strip()
         if not sentence:
             return
+        if self.tainted:   # reasoning comes in runs: once one sentence of a block was caught, the rest of it is dropped unheard
+            self.dropped.append(sentence)
+            return
         fresh = self._fresh(sentence, final)
         if fresh is None:
             self.dropped.append(sentence)
@@ -121,9 +127,12 @@ class Sentences:
         repeat = bool(ANYTHING_ELSE.search(sentence)) and "anything_else" in self.said_once
         if self.budget and self.used and self.used + words > self.budget:
             self.cut = True
-        if self.cut or repeat or unspeakable(sentence):
+        caught = unspeakable(sentence)
+        if caught:
+            self.tainted = True
+        if self.cut or repeat or caught:
             self.dropped.append(sentence)
-            if self.cut and not repeat and not unspeakable(sentence):
+            if self.cut and not repeat and not caught:
                 self.held.append(sentence)
             return
         if ANYTHING_ELSE.search(sentence):

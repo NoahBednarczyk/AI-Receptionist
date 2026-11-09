@@ -9,7 +9,8 @@ from datetime import date
 SPOKEN_INTERNALS = re.compile(r"\b(safety (line|step)s?|playbook|business facts|read-?back|check_availability|book_appointment|"
                               r"lookup_customer|create_lead|take_message|transfer_call|end_call)\b|\bstart with:|<[a-z/]", re.I)
 # A sentence that starts like the model thinking out loud ("Wait, I should just ask...", "The caller wants...").
-SELF_TALK = re.compile(r"^(?:wait\b|hmm+\b|let me (?:think|rethink|reconsider)\b|i should\b|i need to (?:ask|check|find out|"
+SELF_TALK = re.compile(r"^(?:(?:they|he|she|the owner|the person)(?:\W+\w+){0,3}?\W+(?:said|told|asked|want|wants|doesn't|don't|declined|stated|seems?|sounds?|"
+                       r"is (?:being|getting))\b|wait\b|hmm+\b|let me (?:think|rethink|reconsider)\b|i should\b|i need to (?:ask|check|find out|"
                        r"figure|first|follow)\b|(?:actually|okay|ok|so),? (?:i should|i need to|let me (?:think|rethink))\b|"
                        r"the caller\b|this caller\b|that'?s (?:the|a) (?:first|second|third) (?:no|ask|soft no)\b|this is a (?:gentle|soft|firm|hard) (?:first |second )?(?:no|ask)\b|"
                        r"the (?:owner|person|speaker)\b.{0,30}\b(?:said|wants|doesn't|isn't|is not|declined)\b|(?:they|he|she)(?:'ve| has| have)? (?:told me|asked|are asking|is asking|want|wants|wanted|said|are declining|"

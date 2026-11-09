@@ -1184,3 +1184,49 @@ class TurnStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TaintedBlockTests(unittest.TestCase):
+    LEAK = ("That's the first no, and it's a fair one. They've told me they don't want to talk to an AI. "
+            "This is a gentle first no, but they've also stated it directly.")
+
+    def feed(self, words, text):
+        for piece in re.findall(r"\S+\s*|\s+", text):
+            words.add(piece)
+        return words.close()
+
+    def test_the_leaked_reply_is_never_spoken(self):
+        from receptionist.agent import Sentences
+        heard = []
+        words = Sentences(heard.append)
+        self.assertEqual(self.feed(words, self.LEAK), "")
+        self.assertEqual(heard, [])
+        self.assertEqual(" ".join(words.dropped), self.LEAK)   # every word dropped, none held back for later
+        self.assertEqual(words.held, [])
+
+    def test_a_clean_sentence_before_is_spoken_and_every_sentence_after_is_not(self):
+        from receptionist.agent import Sentences
+        heard = []
+        words = Sentences(heard.append)
+        self.feed(words, "Got it. The owner just said they're busy. Totally fine, what time works?")
+        self.assertEqual(heard, ["Got it."])
+        self.assertEqual(len(words.dropped), 2)
+        self.assertEqual(words.held, [])
+
+    def test_a_new_block_after_a_tool_call_speaks_normally(self):
+        from receptionist.agent import Sentences
+        heard = []
+        words = Sentences(heard.append)
+        self.feed(words, "They said no. Hmm.")
+        self.assertEqual(heard, [])
+        self.feed(words, "Booked for Tuesday at 4:30.")
+        self.assertEqual(heard, ["Booked for Tuesday at 4:30."])
+
+    def test_third_person_openers_are_caught_but_owner_directed_speech_is_not(self):
+        from receptionist.speech import unspeakable
+        for t in ("They said they're busy.", "He doesn't want it.", "The owner just told me no.", "She seems annoyed.",
+                  "The person is being short."):
+            self.assertTrue(unspeakable(t), t)
+        for t in ("Noah will call you at 4:30.", "You said Tuesday, right?", "Which is easier, Tuesday or Thursday?",
+                  "They'll text you the details."):
+            self.assertFalse(unspeakable(t), t)
