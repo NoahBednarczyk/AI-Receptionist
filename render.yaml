@@ -43,7 +43,7 @@ services:
     plan: starter
     schedule: "0 16 * * 1-5"   # Mon-Fri, UTC
     buildCommand: "true"
-    startCommand: 'curl -sS -f -X POST "$TARGET_URL/admin/outbound/call-next" -H "Authorization: Bearer $DASHBOARD_TOKEN"'
+    startCommand: 'code=$(curl -sS -o /tmp/out.txt -w "%{http_code}" -X POST "$TARGET_URL/admin/outbound/call-next" -H "Authorization: Bearer $DASHBOARD_TOKEN"); echo "status $code"; head -c 600 /tmp/out.txt; echo; [ "$code" -lt 400 ]'
     envVars:
       - key: TARGET_URL
         value: https://receptionist-575z.onrender.com
