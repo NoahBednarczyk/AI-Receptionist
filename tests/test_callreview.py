@@ -74,3 +74,13 @@ class FallbackLogTests(unittest.TestCase):
         self.assertNotIn("asked to hear", outbound.build_prompt(base, now, cfg)[1]["text"])
         note = outbound.build_prompt({**base, "consent_note": "they filled in our web form"}, now, cfg)[1]["text"]
         self.assertIn("they filled in our web form", note)
+
+
+class SpokenReasoningTests(unittest.TestCase):
+    def test_the_first_no_narration_from_the_real_call_is_never_spoken(self):
+        from receptionist.speech import unspeakable
+        for s in ("That's the first no, and it's a fair one.", "They've told me they don't want to talk to an AI.",
+                  "This is a gentle first no, but they've also stated it directly."):
+            self.assertTrue(unspeakable(s), s)
+        for s in ("Totally fair, I'll let you go.", "Got it, thanks for your time."):
+            self.assertFalse(unspeakable(s), s)
