@@ -444,3 +444,68 @@ class BudgetAndRedialTests(unittest.TestCase):
                              [{"name": "X", "phone": "208-555-0100"}], state, lambda *a: self.fail("dialed"), now)
             self.assertIsNone(r["called"])
             self.assertIn("daily budget", r["reason"])
+
+
+class BlockRunnerTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        import os
+        self.cfg = {**CFG, "data_dir": self.dir.name,
+                    "outbound": {"mode": "warm-only", "block_runner": {"enabled": True, "calls": 3, "pause_s": 1, "max_call_wait_s": 10}}}
+        d = Path(self.dir.name)
+        (d / "retell_outbound.json").write_text(json.dumps({"number": "+12085550100", "agent_id": "ag"}))
+        ol.save_leads(self.cfg, [{**LEAD, "id": f"L{i}", "consent": "yes", "phone": f"208-555-01{i:02d}"} for i in range(5)])
+        self._env = dict(os.environ)
+        os.environ["OUTBOUND_LIVE"] = "1"
+        self.addCleanup(lambda: os.environ.clear() or os.environ.update(self._env))
+        self.dials, self.polls = [], []
+
+    def runner(self, status="ended"):
+        def fn(method, path, body):
+            if method == "POST":
+                self.dials.append(body["to_number"])
+                return {"call_id": f"c{len(self.dials)}"}
+            self.polls.append(path)
+            return {"call_status": status}
+        return ol.BlockRunner(self.cfg, Path(self.dir.name) / "outbound.json", fn, clock=lambda: NOW, sleep=lambda s: None)
+
+    def go(self, r):
+        self.assertTrue(r.start())
+        return r.run()
+
+    def test_dials_the_block_size_one_at_a_time_and_never_the_same_number_twice(self):
+        out = self.go(self.runner())
+        self.assertEqual(len(self.dials), 3)
+        self.assertEqual(len(set(self.dials)), 3)
+        self.assertEqual(len(self.polls), 3)   # waited for each call to end before the next dial
+        self.assertEqual(out["stopped_because"], "reached the block size")
+        self.assertFalse(out["running"])
+
+    def test_stops_when_a_call_cannot_be_confirmed_finished(self):
+        out = self.go(self.runner(status="ongoing"))
+        self.assertEqual(len(self.dials), 1)   # never dials over a call that may still be live
+        self.assertIn("could not confirm", out["stopped_because"])
+
+    def test_stops_when_no_lead_is_eligible(self):
+        ol.save_leads(self.cfg, [])
+        out = self.go(self.runner())
+        self.assertEqual(self.dials, [])
+        self.assertEqual(out["stopped_because"], "no leads on the list")
+
+    def test_only_one_block_at_a_time(self):
+        r = self.runner()
+        self.assertTrue(r.start())
+        self.assertFalse(r.start())
+        r.run()
+        self.assertTrue(r.start())   # released after the block ends
+        r.run()
+
+    def test_stop_request_ends_the_block_before_the_next_dial(self):
+        r = self.runner()
+        r.sleep = lambda s: r.stop()
+        out = self.go(r)
+        self.assertEqual(len(self.dials), 1)
+        self.assertEqual(out["stopped_because"], "stopped by request")
+
+    def test_off_by_default(self):
+        self.assertFalse(outbound.settings({})["block_runner"]["enabled"])
