@@ -121,7 +121,7 @@ class RetellTests(Fixture):
         p = ol.agent_payload(CFG, "https://x.onrender.com/", "SECRET", {"voice_id": "voice_1", "voice_speed": 1.15})
         self.assertEqual((p["voice_id"], p["voice_speed"]), ("voice_1", 1.15))
         self.assertEqual(p["response_engine"]["llm_websocket_url"], "wss://x.onrender.com/llm-websocket-out/SECRET")
-        self.assertIn("Ringback", p["voicemail_option"]["action"]["text"])
+        self.assertEqual(p["voicemail_option"]["action"], {"type": "hangup"})
         self.assertIsNone(p["post_call_analysis_model"])
 
     def test_place_call_is_refused_until_everything_allows_it(self):
@@ -157,7 +157,7 @@ class LawnCareOnlyTests(unittest.TestCase):
         s = outbound.settings(CFG)
         texts = [outbound.facts(s), outbound.PLAYBOOK.read_text(), json.dumps(ol.GREETINGS + ol.INTRO)]
         payload = ol.agent_payload(CFG, "https://x.io", "S")
-        texts += [payload["voicemail_option"]["action"]["text"], " ".join(payload["boosted_keywords"])]
+        texts += [" ".join(payload["boosted_keywords"])]
         for text in texts:
             self.assertIsNone(re.search(self.BAD, text), text[:80])
 
@@ -762,32 +762,19 @@ class MachineTests(ScriptedFixture):
         for t in ("Hello?", "This is On Track.", "Yeah, this is Dale.", "What can I do for you?", "Aspen Ridge, this is Mike."):
             self.assertIsNone(ol.machine_kind(t), t)
 
-    def test_voicemail_gets_the_message_then_a_hang_up_with_no_model_call(self):
-        for greeting in self.VOICEMAILS:
+    def test_voicemail_and_menus_are_hung_up_on_in_silence_with_no_model_call(self):
+        for greeting in self.VOICEMAILS + self.ASPEN + self.THOMPSON[:1]:
             s, said = self.fresh(), []
             turn = s.respond(greeting, said.append)
-            self.assertEqual(said, [ol.voicemail_text(outbound.settings(s.cfg))])
-            self.assertNotIn("is this", said[0].lower())
+            self.assertEqual(said, [])
+            self.assertEqual(turn.text, "")
             self.assertTrue(turn.ended and s.ended)
             self.assertEqual(s.ctx.extra["log"]["outcome"], "Voicemail")
             self.assertEqual(self.client.requests, [])
 
-    def test_a_phone_menu_gets_silence_then_a_hang_up_when_it_keeps_repeating(self):
+    def test_the_person_after_a_hold_message_gets_the_opener(self):
         s, said = self.fresh(), []
-        for t in self.ASPEN[:2]:
-            turn = s.respond(t, said.append)
-            self.assertEqual(turn.text, "")
-            self.assertFalse(turn.ended)
-            self.assertFalse(s.revert_last())   # the next words stay a turn of their own
-        turn = s.respond(self.ASPEN[2], said.append)
-        self.assertTrue(turn.ended)
-        self.assertEqual(said, [])            # never a word to the machine, never "this is an automated menu"
-        self.assertEqual(s.ctx.extra["log"]["outcome"], "No answer")
-        self.assertEqual(self.client.requests, [])
-
-    def test_the_person_after_the_menu_gets_the_opener(self):
-        s, said = self.fresh(), []
-        for t in self.THOMPSON:
+        for t in self.THOMPSON[1:]:
             s.respond(t, said.append)
         self.assertEqual(said, [])
         turn = s.respond("Thompson Turf, this is Jim.", said.append)

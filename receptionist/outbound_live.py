@@ -125,7 +125,6 @@ PHONE_MENU = re.compile(r"\b(press (zero|one|two|three|four|five|six|seven|eight
 ON_HOLD = re.compile(r"\b(stay on the line|please hold|hold (on )?while|(while|as) (i|we) (try to )?(connect|transfer)|"
                      r"your call is (important|being (transferred|connected|recorded))|transferring your call|connecting you)\b", re.I)
 MAX_NOS = 4          # the backstop: after this many refusals of any kind the call ends
-MAX_MENU_TURNS = 3   # a menu that keeps repeating with no person behind it: log it and hang up
 
 
 def machine_kind(text: str) -> str | None:
@@ -137,13 +136,6 @@ def machine_kind(text: str) -> str | None:
     if ON_HOLD.search(text):
         return "hold"
     return None
-
-
-def voicemail_text(s: dict) -> str:
-    """The message left on an answering machine (also given to Retell as its own voicemail message)."""
-    return (f"Hi, this is {s['agent_name']}, calling for {s['founder']} at {s['company']} in {s['town']}. "
-            f"We're building a phone assistant for lawn care and snow removal businesses and {s['founder']} would like ten minutes "
-            f"of your time. You can try our demo line any time at {spoken_phone(s['demo_line'])}. Thanks, and have a good day.")
 
 
 def stop_request(text: str) -> bool:
@@ -398,7 +390,6 @@ class OutboundSession(CallSession):
         self._asks = 0            # meeting asks we have made
         self._nos = 0             # refusals the caller has given
         self._person = False      # a person has talked with us (not a recording)
-        self._menu_turns = 0
         self._last_try = False    # the one extra try after a flat or irritated no has been used
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
@@ -485,31 +476,24 @@ class OutboundSession(CallSession):
 
     def _machine(self, kind: str, caller_text: str, on_text) -> Turn:
         """A recording, not a person. Handled by code, so the model never has to work out (out loud) what it is hearing.
-        Voicemail: leave the message and hang up. A phone menu or hold message: say nothing and wait for a person; a menu
-        that keeps repeating is logged and hung up on. The opener is still unsaid, so the first person who picks up gets it."""
-        if kind == "voicemail":
-            line = voicemail_text(outbound.settings(self.cfg))
-            if on_text:
-                on_text(line)
-            outcome, summary, end = "Voicemail", "Reached voicemail and left the standard message.", "voicemail"
-        else:
-            line = ""
-            if kind == "menu":
-                self._menu_turns += 1
-            if self._menu_turns < MAX_MENU_TURNS:
-                self.transcript += [{"role": "caller", "text": caller_text, "machine": kind}]
-                self._before = None   # nothing to take back: the next words are a new turn, not joined to the recording
-                return Turn("", [], None, 0.0, False)
-            outcome, summary, end = "No answer", "Reached a phone menu that repeated with no person; hung up.", "phone menu"
+        Voicemail and any key-press menu ("press one...") are the same thing to us: a message costs call minutes and reaches
+        nobody, so hang up at once without a word and log it. A hold message ("please hold") is waited out in silence; the first
+        person who picks up still gets the opener."""
+        if kind == "hold":
+            self.transcript += [{"role": "caller", "text": caller_text, "machine": kind}]
+            self._before = None   # nothing to take back: the next words are a new turn, not joined to the recording
+            return Turn("", [], None, 0.0, False)
+        outcome, summary = "Voicemail", ("Reached voicemail; hung up without leaving a message." if kind == "voicemail"
+                                         else "Reached a phone menu or recording; hung up without leaving a message.")
         used = []
         for name, args in (("log_call", {"outcome": outcome, "objection": "None", "summary": summary}),
-                           ("end_call", {"reason": end})):
+                           ("end_call", {"reason": kind})):
             result, err = tools.run_tool(self.ctx, name, args)
             used.append({"name": name, "args": args, "result": result, "error": err})
         self.transcript += [{"role": "caller", "text": caller_text, "machine": kind},
-                            {"role": "agent", "text": line, "tools": used, "steps": [*([{"say": line}] if line else []), *({"tool": c} for c in used)]}]
+                            {"role": "agent", "text": "", "tools": used, "steps": [{"tool": c} for c in used]}]
         self._before = None
-        return Turn(line, used, 0.0 if line else None, 0.0, True)
+        return Turn("", used, None, 0.0, True)
 
     def _stop(self, caller_text: str, on_text) -> Turn:
         """A clear request to stop: said and done by code, no model call. Marks the number and hangs up."""
@@ -567,13 +551,12 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = No
     s = outbound.settings(cfg)
     base = base_url.rstrip("/")
     ws = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
-    voicemail = voicemail_text(s)
     return {"agent_name": f"{s['company']} discovery caller",
             "response_engine": {"type": "custom-llm", "llm_websocket_url": f"{ws}/llm-websocket-out/{secret}"},
             **(voice or {}),
             "boosted_keywords": [s["agent_name"], s["company"], s["founder"], s["town"], "lawn care", "landscaping", "snow removal", "plowing", "voicemail"],
             "webhook_url": f"{base}/retell/webhook", "language": "en-US",
-            "voicemail_option": {"action": {"type": "static_text", "text": voicemail}},
+            "voicemail_option": {"action": {"type": "hangup"}},   # a message reaches nobody and costs minutes
             "end_call_after_silence_ms": 15000, "max_call_duration_ms": 600000,
             "post_call_analysis_model": None}
 
