@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from . import callreview, outbound, tools
 from .agent import CallSession, Turn, cache_control, thinking_param, transcript_text
+from .live import OUTBOUND_STILL_WORKING
 from .speech import normalize_phone, spoken_phone
 from .tools import ToolError
 
@@ -337,6 +338,8 @@ def warm_in_background(warm_fn) -> threading.Thread | None:
 class OutboundSession(CallSession):
     """A CallSession whose prompt, tools and opening line come from the sales playbook. The receptionist's reply
     machinery (streaming, sentence filters, dropped turns, cut-ins) is inherited unchanged."""
+
+    still_working_pool = OUTBOUND_STILL_WORKING   # live.py plays one of these if the model is slow
 
     def __init__(self, client, cfg: dict, lead: dict, state: State, store, now: datetime,
                  call_id: str | None = None, platform: str = "retell", rng=random, warm_cache: bool = False):

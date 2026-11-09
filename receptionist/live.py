@@ -38,6 +38,8 @@ NOT_HEARD = {"en": ["Sorry, I didn't catch that. Could you say that again?", "I 
 STILL_WORKING = {"en": ["Hmm.", "Mm, let's see.", "Uh...", "Okay, so.", "Mm, let me think.", "Hm, okay.",
                         "Bear with me."],
                  "es": ["A ver.", "Mm, déjeme ver.", "Veamos.", "Bueno, a ver."]}
+# The discovery caller's own pool: plain acknowledgements, never "thinking" sounds (they make a sales call sound slow).
+OUTBOUND_STILL_WORKING = {"en": ["Mm.", "Mm-hm.", "Okay."], "es": STILL_WORKING["es"]}
 SLOW_REPLY_S = 3.0   # no words yet after this long: a short thinking sound, never the same one twice running
 GARBLED = re.compile(r"^([\s(\[]*(unintelligible|inaudible|no speech|silence)[^)\]]*[)\]]?|\s*[(\[][^)\]]*(noise|static|crosstalk|cross talk|music|muffled)[^)\]]*[)\]])[\s.]*$", re.I)
 TROUBLE = {"en": ["I'm sorry, we're having a technical problem. Please call back in a few minutes.",
@@ -86,7 +88,7 @@ def _words(text: str) -> list[str]:
 def cut_short(heard: str, said: str) -> str | None:
     """What the caller heard of our last reply if they talked over it partway, else None. Retell's transcript keeps
     only the part of an interrupted reply that was played (its last word may be cut mid-way)."""
-    for line in [x for pool in STILL_WORKING.values() for x in pool]:   # played before the reply itself, so not part of what the session said
+    for line in [x for pools in (STILL_WORKING, OUTBOUND_STILL_WORKING) for pool in pools.values() for x in pool]:   # played before the reply itself, so not part of what the session said
         if heard.strip().startswith(line):
             heard = heard.strip()[len(line):]
     h, s = _words(heard), _words(said)
@@ -264,8 +266,11 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
     last_still = []
 
     def still_working(lang: str) -> str:
-        pool = [x for x in STILL_WORKING[lang] if x not in last_still] or STILL_WORKING[lang]
+        pools = getattr(session, "still_working_pool", None) or STILL_WORKING
+        every = pools.get(lang) or STILL_WORKING[lang]
+        pool = [x for x in every if x not in last_still] or every
         line = random.choice(pool)
+        log.warning("call %s: slow reply, played a stall line (%r); the first model turn should not need one", session.call_id, line)
         last_still[:] = [line]
         return line
 

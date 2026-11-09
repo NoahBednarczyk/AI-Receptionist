@@ -1,6 +1,7 @@
 import json
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -677,3 +678,45 @@ class DisclosureFlagTests(unittest.TestCase):
         for flag in (True, False):
             text = outbound.build_prompt({}, NOW, {"outbound": {"disclose_ai_in_intro": flag}})[0]["text"]
             self.assertIn("never claim to be human", text)
+
+
+class StallPoolTests(ScriptedFixture):
+    def test_a_slow_outbound_reply_plays_a_plain_acknowledgement_and_logs_a_warning(self):
+        import asyncio
+        from receptionist import live
+        from tests.test_logic import reply, text
+        sess = self.make(reply("end_turn", text("Hi, Riley with Ringback.")))
+        real = self.client.stream
+
+        def slow(**kw):
+            time.sleep(0.5)
+            return real(**kw)
+        self.client.stream = slow
+        sent = []
+
+        async def run():
+            inbox = asyncio.Queue()
+            await inbox.put({"interaction_type": "call_details", "call": {"call_id": "c1"}})
+            await inbox.put({"interaction_type": "response_required", "response_id": 1, "transcript": [
+                {"role": "agent", "content": "Hi, is this Dale?"}, {"role": "user", "content": "What can I do for you?"}]})
+
+            async def send(m):
+                sent.append(m)
+                if m.get("response_id") == 1 and m.get("content_complete"):
+                    raise asyncio.CancelledError
+
+            task = asyncio.create_task(live.run_retell_call(inbox.get, send, lambda call: sess, lambda s: None))
+            try:
+                await asyncio.wait_for(task, 10)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+        original = live.SLOW_REPLY_S
+        live.SLOW_REPLY_S = 0.1
+        try:
+            with self.assertLogs("receptionist", level="WARNING") as logged:
+                asyncio.run(run())
+        finally:
+            live.SLOW_REPLY_S = original
+        first = next(m["content"] for m in sent if m.get("response_id") == 1 and m.get("content"))
+        self.assertIn(first.strip(), live.OUTBOUND_STILL_WORKING["en"])
+        self.assertTrue(any("call t2" in l and "stall line" in l for l in logged.output))
