@@ -29,6 +29,8 @@ log = logging.getLogger("receptionist")
 GREETINGS = ["Hi, is this {who}?", "Hello, is this {who}?", "Hey there, am I speaking with {who}?"]
 INTRO = ["Hi, I'm {agent} with {company} here in {town}.",
          "It's {agent} with {company} in {town}."]
+INTRO_AI = ["Hi, I'm {agent}, an AI assistant calling for {founder} at {company} in {town}.",
+            "It's {agent}, an AI assistant calling for {founder} at {company} in {town}."]
 
 
 def trade_of(lead: dict) -> str:
@@ -43,8 +45,8 @@ def opener_parts(lead: dict, s: dict, rng=random) -> tuple[str, str]:
     for who is calling, used only if noise cuts in before the model's first reply."""
     owner = (lead.get("contact") or "").strip().split(" ")[0]
     who = owner or f"the owner of {lead.get('name') or 'the shop'}"
-    fill = dict(agent=s["agent_name"], company=s["company"], town=s["town"])
-    return rng.choice(GREETINGS).format(who=who), rng.choice(INTRO).format(**fill)
+    fill = dict(agent=s["agent_name"], company=s["company"], town=s["town"], founder=s["founder"])
+    return rng.choice(GREETINGS).format(who=who), rng.choice(INTRO_AI if s["disclose_ai_in_intro"] else INTRO).format(**fill)
 
 
 def opener(lead: dict, s: dict, rng=random) -> str:
@@ -58,6 +60,16 @@ INTRO_NOTE = ("you just asked who you are speaking with and they have answered. 
               "are with Ringback in Sandpoint, and go straight to your first question about their calls, warmly. Do not say it is a sales call "
               "or a cold call, do not bring up being an AI unless they ask, and no lead-in about why you are calling. If they said it is a wrong "
               "person, a bad time or asked who you are, handle that first.")
+INTRO_NOTE_AI = ("you just asked who you are speaking with and they have answered. In this reply, in the same short breath, say your name, that you "
+                 "are an AI assistant calling for {founder} at {company} in {town}, then go straight to your first question about their calls, warmly. "
+                 "Do not say it is a sales call or a cold call, and no lead-in about why you are calling. If they said it is a wrong "
+                 "person, a bad time or asked who you are, handle that first.")
+
+
+def intro_note(s: dict) -> str:
+    return INTRO_NOTE_AI.format(**s) if s["disclose_ai_in_intro"] else INTRO_NOTE
+
+
 AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Answer with one quick, funny line of your own "
            "that says yes, you are an AI assistant, unmistakably (the joke comes with the yes, never instead of it), then use it "
            "in the same breath to get back to your goal. Never claim to be human.")
@@ -73,7 +85,14 @@ PICKING_A_TIME = re.compile(r"\b(until|after|tomorrow|next week|later|this (morn
                             r"\b(at|around) \d", re.I)
 AI_QUESTION = re.compile(r"(\b(are|is) (you|this|that)\b.*\b(robot|a\.?i\.?|artificial|human|real (person|human)|bot|machine|computer|recording)\b|"
                          r"\b(am i|i'?m) (talking|speaking) (to|with)\b.*\b(robot|a\.?i\.?|bot|machine|computer|real|human|person)\b|"
-                         r"\b(robot|a robot|an ai|a bot)\b.*\?)", re.I)
+                         r"\b(robot|a robot|an ai|a bot)\b.*\?|"
+                         r"\b(this is|you'?re|you are) (a |an )?(robot|bot|ai|a\.i\.|machine|recording)\b)", re.I)
+# "I don't want to talk to an AI": answered by code with one honest line and an offer of a human, no model call.
+AI_REFUSAL = re.compile(r"\b(not interested in|don'?t want to|won'?t|not gonna|i don'?t)\b.{0,20}\b(talk|speak|deal)\w*\b.{0,12}\b(an? )?(a\.?i\.?|ai|bot|robot|machine|computer|recording)\b|"
+                        r"\bi (hate|don'?t do) (robo ?calls|bots|robots|ai)\b", re.I)
+AI_REFUSAL_LINES = ["Fair, I am an AI. Want Noah to call you himself instead? Takes two minutes.",
+                    "Totally fair, yes, I'm an AI. I can have Noah give you a call himself, would that be better?",
+                    "Understood, and you're right, I'm an AI. Want a two-minute call from Noah instead?"]
 
 # What the caller said that counts as a refusal, and what our own reply counts as a meeting ask. Code keeps these
 # counts and hands the model the next move as a note, so the model has no state to reason about out loud.
@@ -338,6 +357,7 @@ class OutboundSession(CallSession):
         self._asks = 0            # meeting asks we have made
         self._nos = 0             # refusals the caller has given
         self._offered_callback = False
+        self._ai_refused = False
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
         self.system = [*_stable_system(cfg, now), blocks[1]]
@@ -368,13 +388,25 @@ class OutboundSession(CallSession):
             messages = [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.opener}]
             self._save(messages, caller_text, {"role": "agent", "text": self.opener, "tools": [], "steps": [{"say": self.opener}]}, None, final=False)
             return Turn(self.opener, [], 0.0, 0.0, False)
+        refusal = AI_REFUSAL.search(caller_text)
+        if refusal and not self._ai_refused and not self.ctx.ended:   # said by code: honest, short, and a human is offered
+            self._ai_refused = True
+            self._nos += 1
+            self._offered_callback = True
+            line = random.choice(AI_REFUSAL_LINES)
+            if on_text:
+                on_text(line)
+            messages = [*self.messages, {"role": "user", "content": caller_text}, {"role": "assistant", "content": line}]
+            self._save(messages, caller_text, {"role": "agent", "text": line, "tools": [], "steps": [{"say": line}]}, None, final=False)
+            return Turn(line, [], 0.0, 0.0, False)
         if not self._intro_checked:   # the first model turn after the opener
             self._intro_checked = True
-            note = f"{note} {INTRO_NOTE}" if note else INTRO_NOTE
+            intro = intro_note(outbound.settings(self.cfg))
+            note = f"{note} {intro}" if note else intro
         if asked_if_ai(caller_text):
             note = f"{note} {AI_NOTE}" if note else AI_NOTE
         directive = None
-        if NO_SIGNAL.search(caller_text):
+        if NO_SIGNAL.search(caller_text) or refusal:
             self._nos += 1
             directive = NOTE_NO_ONCE if self._nos == 1 else NOTE_NO_AGAIN
         elif self._asks >= 3:

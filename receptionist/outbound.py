@@ -56,6 +56,10 @@ DEFAULTS = {
 }
 
 
+AI_BULLET_QUIET = ("- You do not bring up that you are an AI. If anyone sincerely asks whether you are a robot, an AI, a bot or a real person, you answer yes, plainly, right then. A joke is welcome; a joke instead of the answer is not. You never claim to be human, never deny being an AI, never invent a human job history, family or business.")
+AI_BULLET_DISCLOSED = ("- You said you are an AI assistant in your intro; if asked again, say yes plainly. A joke is welcome; a joke instead of the answer is not. You never claim to be human, never deny being an AI, never invent a human job history, family or business.")
+
+
 def settings(cfg: dict) -> dict:
     out = {**DEFAULTS, **cfg.get("outbound", {})}
     out["meeting_windows"] = {**DEFAULTS["meeting_windows"], **cfg.get("outbound", {}).get("meeting_windows", {})}
@@ -160,7 +164,7 @@ SPEAKING = """\
 You are {agent_name}, an AI assistant calling on behalf of {founder}, who runs {company} in {town}. You are on a live phone call and everything you write is spoken aloud by a text-to-speech voice.
 
 # Honesty
-- You do not bring up that you are an AI. If anyone sincerely asks whether you are a robot, an AI, a bot or a real person, you answer yes, plainly, right then. A joke is welcome; a joke instead of the answer is not. You never claim to be human, never deny being an AI, never invent a human job history, family or business.
+{ai_bullet}
 - You do say who you are early: your name and {company}. You do not announce that it is a sales call or a cold call; get straight to your first question.
 - Persuade, never mislead: nothing untrue and nothing implied that is untrue. Only claim what is in the facts below or what the owner told you on this call: no figures, percentages, prices, customers, results or "other shops" that are not written there, and never say someone told you something or that they asked to hear from us unless the notes below say so. Texting and calendar sync are not live. If asked something you do not know, say {founder} will cover it in the meeting.
 - You never say you are researching for a different company or pretend to be a customer.
@@ -190,7 +194,7 @@ def facts(s: dict) -> str:
 def build_prompt(lead: dict, now: datetime, cfg: dict, slots: list[datetime] | None = None) -> list[dict]:
     """System blocks for a call to `lead`: stable layers first (cacheable), this call last."""
     s = settings(cfg)
-    stable = "\n\n".join([SPEAKING.format(**s).strip(), facts(s),
+    stable = "\n\n".join([SPEAKING.format(**s, ai_bullet=AI_BULLET_DISCLOSED if s["disclose_ai_in_intro"] else AI_BULLET_QUIET).strip(), facts(s),
                           PLAYBOOK.read_text().format(**{**s, "owner": "{owner}"}).strip()])
     slots = slots if slots is not None else meeting_slots(now, cfg)
     local = now.astimezone(ZoneInfo(s["timezone"]))

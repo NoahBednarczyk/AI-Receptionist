@@ -58,11 +58,15 @@ class SessionTests(Fixture):
 
     def test_the_fallback_intro_names_the_company_and_does_not_volunteer_ai(self):
         import random
-        s = ol.outbound.settings(CFG)
+        s = ol.outbound.settings({**CFG, "outbound": {"disclose_ai_in_intro": False}})
         for seed in range(6):
             intro = ol.opener_parts({"name": "X"}, s, random.Random(seed))[1]
             self.assertIn("Ringback", intro)
             self.assertNotRegex(intro, r"(?i)sales|cold|\bai\b|robot")
+        on = ol.outbound.settings(CFG)
+        for seed in range(6):
+            intro = ol.opener_parts({"name": "X"}, on, random.Random(seed))[1]
+            self.assertIn("an AI assistant calling for Noah at Ringback", intro)
 
     def test_uses_the_outbound_model_and_cached_prompt(self):
         self.assertEqual(self.s.cfg["models"]["agent"], "b")
@@ -257,7 +261,7 @@ class OpenerAndSlotsTests(Fixture):
             self.s.respond("Why did you call me?")
             self.s.respond("ok and how much")
         self.assertIn("Ringback", notes[0])
-        self.assertIn("do not bring up being an AI unless they ask", notes[0])
+        self.assertIn("an AI assistant calling for Noah at Ringback in Sandpoint", notes[0])
         self.assertIn("sales call", notes[0])
         self.assertNotIn("Ringback", notes[1] or "")
 
@@ -615,3 +619,61 @@ class CallStateTests(ScriptedFixture):
 
     def test_speaking_says_every_word_is_spoken_aloud(self):
         self.assertIn("Never describe the owner", outbound.SPEAKING)
+
+
+class AiRefusalTests(ScriptedFixture):
+    HEARD = "I'm not interested in talking to an AI bot."
+
+    def test_the_regex(self):
+        for t in (self.HEARD, "I don't want to talk to a robot", "I hate robocalls", "I won't speak with a machine"):
+            self.assertTrue(ol.AI_REFUSAL.search(t), t)
+        for t in ("I'm interested in AI", "tell me about the AI", "I talk to customers all day"):
+            self.assertFalse(ol.AI_REFUSAL.search(t), t)
+
+    def test_statements_about_being_a_bot_count_as_the_ai_question(self):
+        for t in ("this is a robot", "you're a bot", "You are an AI."):
+            self.assertTrue(ol.asked_if_ai(t), t)
+
+    def test_the_first_refusal_is_answered_by_code_with_no_model_call(self):
+        said = []
+        s = self.make()
+        before = len(self.client.requests)
+        turn = s.respond(self.HEARD, said.append)
+        self.assertEqual(len(self.client.requests), before)
+        self.assertEqual(self.client.create_requests, [])
+        self.assertIn(turn.text, ol.AI_REFUSAL_LINES)
+        self.assertEqual(said, [turn.text])
+        for line in ol.AI_REFUSAL_LINES:
+            self.assertRegex(line, r"(?i)\bI'?m an AI|I am an AI|I'm an AI")
+        self.assertEqual(s._nos, 1)
+        self.assertEqual(s.messages[-2:], [{"role": "user", "content": self.HEARD}, {"role": "assistant", "content": turn.text}])
+
+    def test_a_second_refusal_goes_to_the_model_with_the_stop_note(self):
+        from tests.test_logic import reply, text
+        s = self.make(reply("end_turn", text("Thanks for your time.")))
+        s.respond(self.HEARD)
+        s.respond("No, I'm good.")
+        last = json.dumps(self.client.requests[-1]["messages"][-1])
+        self.assertIn("they said no again", last)
+
+    def test_a_yes_to_the_offered_callback_gets_the_booking_note(self):
+        from tests.test_logic import reply, text
+        s = self.make(reply("end_turn", text("Great, which works better?")))
+        s.respond(self.HEARD)
+        s.respond("Sure, have him call.")
+        self.assertIn("check_meeting_slots", json.dumps(self.client.requests[-1]["messages"][-1]))
+
+
+class DisclosureFlagTests(unittest.TestCase):
+    def test_flag_off_keeps_todays_intro_note_and_fallback(self):
+        s = outbound.settings({"outbound": {"disclose_ai_in_intro": False}})
+        self.assertEqual(ol.intro_note(s), ol.INTRO_NOTE)
+        self.assertIn(ol.INTRO[0].format(agent="Riley", company="Ringback", town="Sandpoint"), ["Hi, I'm Riley with Ringback here in Sandpoint."])
+
+    def test_flag_on_says_an_ai_assistant_and_keeps_the_honesty_rules(self):
+        s = outbound.settings({})
+        self.assertTrue(s["disclose_ai_in_intro"])
+        self.assertIn("an AI assistant calling for Noah at Ringback in Sandpoint", ol.intro_note(s))
+        for flag in (True, False):
+            text = outbound.build_prompt({}, NOW, {"outbound": {"disclose_ai_in_intro": flag}})[0]["text"]
+            self.assertIn("never claim to be human", text)

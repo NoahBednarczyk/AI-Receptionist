@@ -78,14 +78,18 @@ class PromptTests(unittest.TestCase):
         self.text = "\n".join(b["text"] for b in self.blocks)
 
     def test_answers_ai_question_plainly_never_volunteers_and_never_pretends(self):
-        self.assertIn("answer yes, plainly", self.text)
-        self.assertIn("You do not bring up that you are an AI", self.text)
+        self.assertIn("say yes plainly", self.text)
+        self.assertIn("You said you are an AI assistant in your intro", self.text)
         self.assertIn("never deny being an AI", self.text)
         self.assertIn("never claim to be human", self.text.lower())
+        quiet = "\n".join(b["text"] for b in outbound.build_prompt(LEAD, TUE_10AM, cfg(disclose_ai_in_intro=False)))
+        self.assertIn("You do not bring up that you are an AI", quiet)   # the flag off: today's text
+        self.assertIn("answer yes, plainly", quiet)
+        self.assertIn("never claim to be human", quiet.lower())
         self.assertIn("never say you are researching for a different company", self.text.replace("You never", "never"))
 
     def test_has_structure_pushback_and_hard_stop(self):
-        for needle in ("Call structure", "insistence ladder", "up to **three** asks", "mark_do_not_call", "Hard stops", "208-428-6760",
+        for needle in ("Call structure", "When they hold back", "at most three times", "mark_do_not_call", "Hard stops", "208-428-6760",
                        "cheerfully naive", "say yes in the same breath", "Persuade; never mislead", "Angry, rude or hostile"):
             self.assertIn(needle, self.text)
 
@@ -127,8 +131,8 @@ class PromptLintTests(unittest.TestCase):
         text = outbound.PLAYBOOK.read_text()
         for o in ("Not interested", "Send me some info", "already have someone", "How much", "Is this a robot", "don't trust AI", "bad time", "how'd you get my number"):
             self.assertIn(o.lower(), text.lower())
-        for ask in ("Ask 1", "Ask 2", "Ask 3"):
-            self.assertIn(ask, text)
+        for move in ("The plain ask", "A smaller ask", "What's really in the way"):
+            self.assertIn(move, text)
 
 
 class DetailedNotesTests(unittest.TestCase):
