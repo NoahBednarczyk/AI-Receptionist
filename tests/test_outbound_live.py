@@ -568,3 +568,50 @@ class WarmTests(Fixture):
             return {}
         ol.place_call(cfg, {**LEAD, "consent": "yes"}, NOW, self.state, call_fn, env={"OUTBOUND_LIVE": "1"}, warm_fn=warm_fn)
         self.assertEqual(order, ["warm", "dial"])
+
+
+class ScriptedFixture(Fixture):
+    """An outbound session whose model is a scripted fake client; the opener exchange has already happened."""
+
+    def make(self, *script, cfg=None):
+        from tests.test_logic import CFG as FULL, FakeClient
+        self.client = FakeClient(*script)
+        s = ol.OutboundSession(self.client, {**FULL, "data_dir": self.dir.name, "outbound": {"mode": "warm-only"}, **(cfg or {})}, LEAD, self.state, self.store, NOW, call_id="t2")
+        s.respond("Hello?")   # the opener, no model call
+        return s
+
+
+class CallStateTests(ScriptedFixture):
+    def test_no_signals(self):
+        for t in ("I'm not interested in talking to an AI bot.", "No thanks", "not right now", "We're good", "No, I'm good.", "no", "I'll pass"):
+            self.assertTrue(ol.NO_SIGNAL.search(t), t)
+        for t in ("what can I do for you?", "I need to pass it to my wife", "we get ten calls a week", "I don't know"):
+            self.assertFalse(ol.NO_SIGNAL.search(t), t)
+
+    def test_the_next_move_comes_from_code_as_a_note(self):
+        from tests.test_logic import reply, text
+        s = self.make(reply("end_turn", text("Hi, Riley with Ringback.")), reply("end_turn", text("Fair enough.")),
+                      reply("end_turn", text("Thanks for your time.")))
+        s.respond("What can I do for you?")
+        s.respond("Not interested.")
+        self.assertIn("they said no once", json.dumps(self.client.requests[-1]["messages"][-1]))
+        s.respond("No thanks, I'm good.")
+        last = json.dumps(self.client.requests[-1]["messages"][-1])
+        self.assertIn("they said no again", last)
+        self.assertIn("end_call", last)
+
+    def test_three_meeting_asks_end_the_asking(self):
+        from tests.test_logic import reply, text
+        s = self.make(*[reply("end_turn", text("Fifteen minutes Tuesday, which is easier?"))] * 4)
+        for t in ("What can I do for you?", "Hm.", "Maybe.", "Go on."):
+            s.respond(t)
+        self.assertEqual(s._asks, 3 + 1)
+        self.assertIn("No more meeting asks", json.dumps(self.client.requests[-1]["messages"][-1]))
+
+    def test_the_playbook_teaches_no_counting_labels(self):
+        text = outbound.PLAYBOOK.read_text().lower()
+        for w in ("ladder", "ask 1", "ask 2", "ask 3", "first time", "second firm no", "first no", "soft no", "gentle"):
+            self.assertNotIn(w, text)
+
+    def test_speaking_says_every_word_is_spoken_aloud(self):
+        self.assertIn("Never describe the owner", outbound.SPEAKING)

@@ -75,6 +75,18 @@ AI_QUESTION = re.compile(r"(\b(are|is) (you|this|that)\b.*\b(robot|a\.?i\.?|arti
                          r"\b(am i|i'?m) (talking|speaking) (to|with)\b.*\b(robot|a\.?i\.?|bot|machine|computer|real|human|person)\b|"
                          r"\b(robot|a robot|an ai|a bot)\b.*\?)", re.I)
 
+# What the caller said that counts as a refusal, and what our own reply counts as a meeting ask. Code keeps these
+# counts and hands the model the next move as a note, so the model has no state to reason about out loud.
+NO_SIGNAL = re.compile(r"\b(not interested|no thanks|no thank you|not right now|we'?re (good|fine|all set)|i'?m (good|fine|all set)|"
+                       r"don'?t need (it|that|this)|pass(?! (it|that|this|me|you|along|the)\b))\b|^\W*no\W*$", re.I)
+MEETING_ASK = re.compile(r"\b(fifteen|15|ten|10)[- ]minutes?\b|\bwhich (is|works) (easier|better)\b", re.I)
+NOTE_NO_ONCE = ("they said no once. Accept it in a few words, then ask one curious question about how calls get answered when they are on a job. "
+                "Do not mention counting or the no itself.")
+NOTE_NO_AGAIN = "they said no again. Thank them, call log_call, then end_call. No further ask."
+NOTE_NO_MORE_ASKS = "No more meeting asks on this call."
+NOTE_CALLBACK = ("you just offered to have {founder} call them himself instead. If they agree, use check_meeting_slots and book_meeting for that "
+                 "callback; if they decline, thank them, call log_call, then end_call.")
+
 
 def stop_request(text: str) -> bool:
     return bool(HARD_STOP.search(text) or (SOFT_STOP.search(text) and not PICKING_A_TIME.search(text)))
@@ -323,6 +335,9 @@ class OutboundSession(CallSession):
         self._resumed = False
         self._opened = False
         self._intro_checked = False
+        self._asks = 0            # meeting asks we have made
+        self._nos = 0             # refusals the caller has given
+        self._offered_callback = False
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
         self.system = [*_stable_system(cfg, now), blocks[1]]
@@ -358,10 +373,24 @@ class OutboundSession(CallSession):
             note = f"{note} {INTRO_NOTE}" if note else INTRO_NOTE
         if asked_if_ai(caller_text):
             note = f"{note} {AI_NOTE}" if note else AI_NOTE
+        directive = None
+        if NO_SIGNAL.search(caller_text):
+            self._nos += 1
+            directive = NOTE_NO_ONCE if self._nos == 1 else NOTE_NO_AGAIN
+        elif self._asks >= 3:
+            directive = NOTE_NO_MORE_ASKS
+        if directive is None and self._offered_callback:
+            directive = NOTE_CALLBACK.format(founder=outbound.settings(self.cfg)["founder"])
+        if directive:
+            self._offered_callback = False
+            note = f"{note} {directive}" if note else directive
         tone = callreview.tone_note(caller_text)
         if tone:
             note = f"{note} {tone}" if note else tone
-        return super().respond(caller_text, on_text, control, heard_only, note)
+        turn = super().respond(caller_text, on_text, control, heard_only, note)
+        if MEETING_ASK.search(getattr(turn, "text", "") or ""):
+            self._asks += 1
+        return turn
 
     def protected(self, chunk: str) -> bool:
         """Nothing is protected: the greeting is one short question."""
