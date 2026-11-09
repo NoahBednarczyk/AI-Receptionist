@@ -409,3 +409,38 @@ class VoiceTests(unittest.TestCase):
             self.assertEqual(voice[k], shop[k])
         self.assertEqual(voice["interruption_sensitivity"], 0.9)
         self.assertNotIn("post_call_analysis_model", voice)
+
+
+class BudgetAndRedialTests(unittest.TestCase):
+    def test_the_same_number_is_never_dialed_twice_in_one_day(self):
+        from datetime import datetime, timezone, timedelta
+        now = datetime(2026, 11, 9, 16, 12, tzinfo=timezone.utc)   # Monday 8:12 AM Pacific
+        cfg = {"outbound": {"mode": "cold", "cold_enabled": True}}
+        lead = {"name": "Highcraft", "phone": "208-920-0024"}
+        self.assertEqual(ol.outbound.can_call(lead, now, cfg, [now - timedelta(minutes=1)]), (False, "already called today"))
+        self.assertTrue(ol.outbound.can_call(lead, now, cfg, [now - timedelta(days=1)])[0])
+
+    def test_daily_budget_stops_new_calls_and_counts_calls_in_progress(self):
+        s = ol.outbound.settings({})
+        from datetime import datetime, timezone
+        now = datetime(2026, 11, 9, 20, 0, tzinfo=timezone.utc)
+        calls = [{"date": "2026-11-09", "duration": 0.5}, {"date": "2026-11-09", "duration": 0.5},
+                 {"date": "2026-11-09", "duration": 0.7}, {"date": "2026-11-08", "duration": 9}]
+        attempts = {"+1": ["2026-11-09T16:11:00+00:00", "2026-11-09T16:12:00+00:00"], "+2": ["2026-11-09T16:13:00+00:00"]}
+        spent = ol.outbound.spent_today(calls, attempts, now, s)
+        self.assertAlmostEqual(spent, 0.5 * 0.17 * 2 + 0.7 * 0.17 + 0.09, places=3)
+        in_progress = {**attempts, "+3": ["2026-11-09T19:59:00+00:00"]}
+        self.assertAlmostEqual(ol.outbound.spent_today(calls, in_progress, now, s), spent + 0.45, places=3)
+
+    def test_call_next_refuses_once_the_budget_is_used(self):
+        import tempfile
+        from datetime import datetime, timezone
+        from pathlib import Path
+        now = datetime(2026, 11, 9, 20, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as d:
+            state = ol.State(Path(d) / "o.json")
+            state.data["calls"] = [{"date": "2026-11-09", "duration": 6.5}]   # about $1.14
+            r = ol.call_next({"outbound": {"mode": "cold", "cold_enabled": True}, "data_dir": d},
+                             [{"name": "X", "phone": "208-555-0100"}], state, lambda *a: self.fail("dialed"), now)
+            self.assertIsNone(r["called"])
+            self.assertIn("daily budget", r["reason"])

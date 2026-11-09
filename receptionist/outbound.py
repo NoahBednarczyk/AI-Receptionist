@@ -34,6 +34,13 @@ DEFAULTS = {
     "timezone": "America/Los_Angeles",
     "call_hours": ["08:00", "18:00"],            # the shop's local time; enforced here, not in the prompt
     "max_attempts_per_week": 2,
+    "max_attempts_per_day": 1,                   # never dial the same number twice in one day
+    # Spend cap for real outbound calls (Retell voice + model), per local day. Costs are estimated from call minutes;
+    # a new call is placed only if today's estimate plus a reserve for that call stays under the cap.
+    "daily_budget_usd": 1.50,
+    "est_cost_per_min_usd": 0.17,
+    "est_cost_per_call_usd": 0.03,
+    "budget_reserve_usd": 0.45,
     "cold_enabled": False,                       # stays false until the legal check is done
     "meeting_minutes": 15,
     # Noah is free any time. Until the manager agent supplies real open slots (State.set_slots), offers come from these
@@ -78,6 +85,9 @@ def can_call(lead: dict, now: datetime, cfg: dict, attempts: list[datetime] | No
     week = [a for a in (attempts or []) if now - a < timedelta(days=7)]
     if len(week) >= s["max_attempts_per_week"]:
         return False, f"already tried {len(week)} times this week"
+    today = [a for a in (attempts or []) if a.astimezone(local.tzinfo).date() == local.date()]
+    if len(today) >= s["max_attempts_per_day"]:
+        return False, "already called today"
     if lead.get("followDate") and lead["followDate"] > local.strftime("%Y-%m-%d"):
         return False, f"follow-up is set for {lead['followDate']}"
     return True, "ok"
@@ -213,6 +223,24 @@ def schemas() -> list[dict]:
          "input_schema": obj({"reason": text}, ["reason"])},
         {"name": "end_call", "description": "Hang up after the goodbye.", "input_schema": obj({"reason": text}, ["reason"])},
     ]
+
+
+# ---------------------------------------------------------------- spend cap
+
+def est_cost(minutes: float, s: dict) -> float:
+    """What one call probably cost (Retell per minute plus a small fixed model cost)."""
+    return round(max(minutes, 0.0) * s["est_cost_per_min_usd"] + s["est_cost_per_call_usd"], 3)
+
+
+def spent_today(calls: list[dict], attempts: dict[str, list[str]], now: datetime, s: dict) -> float:
+    """Estimated outbound spend for the local day: logged calls by their estimate, and any call dialed today that has
+    no result row yet (still ringing or in progress) at the full reserve."""
+    day = now.astimezone(ZoneInfo(s["timezone"])).strftime("%Y-%m-%d")
+    rows = [c for c in calls if c.get("date") == day]
+    spent = sum(c.get("estCost", est_cost(c.get("duration") or 0, s)) for c in rows)
+    dialed = sum(1 for ts in attempts.values() for t in ts
+                 if datetime.fromisoformat(t).astimezone(ZoneInfo(s["timezone"])).strftime("%Y-%m-%d") == day)
+    return round(spent + max(0, dialed - len(rows)) * s["budget_reserve_usd"], 3)
 
 
 # ---------------------------------------------------------------- results into the CRM

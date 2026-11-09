@@ -332,6 +332,7 @@ class OutboundSession(CallSession):
         log = self.ctx.extra.get("log") or callreview.fallback_log(self.transcript, self.lead, reason)
         row = outbound.call_row(self.lead, log, self.started, minutes, self.state.next_call_number(), self.cfg,
                                 transcript_text(self.transcript, with_tools=False))
+        row["estCost"] = outbound.est_cost(minutes, outbound.settings(self.cfg))
         if self.first_word_times:
             row["latency"] = {"median_s": round(statistics.median(self.first_word_times), 2),
                               "max_s": round(max(self.first_word_times), 2), "replies": len(self.first_word_times)}
@@ -405,6 +406,10 @@ def call_next(cfg: dict, leads: list[dict], state: State, call_fn, now: datetime
     outbound number/agent isn't set up yet) is skipped in favor of the next one rather than failing the whole run."""
     history = {phone: state.attempts(phone) for phone in
                {normalize_phone(l.get("phone") or "") or "" for l in leads} if phone}
+    s = outbound.settings(cfg)
+    spent = outbound.spent_today(state.data["calls"], state.data["attempts"], now, s)
+    if spent + s["budget_reserve_usd"] > s["daily_budget_usd"]:
+        return {"called": None, "reason": f"daily budget: about ${spent:.2f} of ${s['daily_budget_usd']:.2f} spent today"}
     rows = outbound.plan_queue(leads, now, cfg, history, state.dnc())
     candidates = [r for r in rows if r["would_call"]]
     if not candidates:
