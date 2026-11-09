@@ -39,7 +39,7 @@ STILL_WORKING = {"en": ["Hmm.", "Mm, let's see.", "Uh...", "Okay, so.", "Mm, let
                         "Bear with me."],
                  "es": ["A ver.", "Mm, déjeme ver.", "Veamos.", "Bueno, a ver."]}
 SLOW_REPLY_S = 3.0   # no words yet after this long: a short thinking sound, never the same one twice running
-GARBLED = re.compile(r"^[\s(\[]*(unintelligible|inaudible|no speech|silence)[^)\]]*[)\]]?[\s.]*$", re.I)
+GARBLED = re.compile(r"^([\s(\[]*(unintelligible|inaudible|no speech|silence)[^)\]]*[)\]]?|\s*[(\[][^)\]]*(noise|static|crosstalk|cross talk|music|muffled)[^)\]]*[)\]])[\s.]*$", re.I)
 TROUBLE = {"en": ["I'm sorry, we're having a technical problem. Please call back in a few minutes.",
                   "Sorry, something broke on our end. Please try calling back in a few minutes.",
                   "I'm having a technical problem right now. Could you call back in a few minutes?"],
@@ -316,6 +316,8 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
                     break
         finally:
             newer_wait.cancel()
+        if first is not None and isinstance(getattr(session, "first_word_times", None), list):
+            session.first_word_times.append(first)
         log.info("call %s: reply %s, first words %s, done %.2fs", session.call_id, rid,
                  f"{first:.2f}s" if first is not None else "none", loop.time() - started)
         while not chunks.empty():

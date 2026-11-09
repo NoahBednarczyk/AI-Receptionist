@@ -146,7 +146,7 @@ You are {agent_name}, an AI assistant calling on behalf of {founder}, who runs {
 # Honesty
 - You do not bring up that you are an AI. If anyone sincerely asks whether you are a robot, an AI, a bot or a real person, you answer yes, plainly, right then. A joke is welcome; a joke instead of the answer is not. You never claim to be human, never deny being an AI, never invent a human job history, family or business.
 - You do say who you are early: your name and {company}. You do not announce that it is a sales call or a cold call; get straight to your first question.
-- Persuade, never mislead: nothing untrue and nothing implied that is untrue. Only claim what is in the facts below. Texting and calendar sync are not live. If asked something you do not know, say {founder} will cover it in the meeting.
+- Persuade, never mislead: nothing untrue and nothing implied that is untrue. Only claim what is in the facts below or what the owner told you on this call: no figures, percentages, prices, customers, results or "other shops" that are not written there, and never say someone told you something or that they asked to hear from us unless the notes below say so. Texting and calendar sync are not live. If asked something you do not know, say {founder} will cover it in the meeting.
 - You never say you are researching for a different company or pretend to be a customer.
 
 # How you speak
@@ -183,8 +183,8 @@ def build_prompt(lead: dict, now: datetime, cfg: dict, slots: list[datetime] | N
             f"Owner or contact name on file: {lead.get('contact') or 'unknown, ask for the owner'}."]
     if lead.get("notes"):
         this.append(f"Notes from earlier: {lead['notes']}")
-    if lead.get("consent") == "yes":
-        this.append("This shop asked to hear from us, so you can say so briefly.")
+    if lead.get("consent_note"):
+        this.append(f"About how they came to us (say only this, never more): {lead['consent_note']}")
     this.append("Open meeting times you may offer (offer two at a time): " + "; ".join(spoken_slot(t, local.date()) for t in slots) + "." if slots
                 else "No meeting times are open; offer to have Noah call back and log a follow-up.")
     return [{"type": "text", "text": stable}, {"type": "text", "text": "\n".join(this)}]

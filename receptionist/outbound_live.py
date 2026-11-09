@@ -12,10 +12,11 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+import statistics
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import outbound, tools
+from . import callreview, outbound, tools
 from .agent import CallSession, Turn, cache_control, transcript_text
 from .speech import normalize_phone, spoken_phone
 from .tools import ToolError
@@ -62,7 +63,8 @@ AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person
 # caller is only picking another time ("don't call me today, try Thursday").
 HARD_STOP = re.compile(r"\b(stop calling|quit calling|never call|do not call|take (me|us|this number|my number) off|"
                        r"remove (me|us|my number|this number)|(put|add) (me|us|this number) on (the |your )?(do[- ]not[- ]call|dnc)|"
-                       r"leave (me|us) alone)\b", re.I)
+                       r"leave (me|us) alone|(lose|delete|forget) (my|this|our) (number|info)|stop (bothering|harassing|texting)( me| us)?|"
+                       r"(quit|stop) (it|that)|get off my phone|(i|we)'?m on the (do[- ]not[- ]call|dnc))\b", re.I)
 SOFT_STOP = re.compile(r"\b(don'?t|do not) call( me| us)?( here)?( again| back| anymore| any more)\b", re.I)
 PICKING_A_TIME = re.compile(r"\b(until|after|tomorrow|next week|later|this (morning|afternoon|evening)|mon|tues|wednes|thurs|fri)(day)?\b|"
                             r"\b(at|around) \d", re.I)
@@ -255,6 +257,7 @@ class OutboundSession(CallSession):
         self.greeting = ""   # an empty first message makes Retell wait for the person to say hello
         self.hook_text, self.intro_text = opener_parts(lead, s, rng)
         self.opener = self.hook_text
+        self.first_word_times: list[float] = []   # seconds to first words, per reply (set by live.py)
         self._resumed = False
         self._opened = False
         self._intro_checked = False
@@ -287,6 +290,9 @@ class OutboundSession(CallSession):
             note = f"{note} {INTRO_NOTE}" if note else INTRO_NOTE
         if asked_if_ai(caller_text):
             note = f"{note} {AI_NOTE}" if note else AI_NOTE
+        tone = callreview.tone_note(caller_text)
+        if tone:
+            note = f"{note} {tone}" if note else tone
         return super().respond(caller_text, on_text, control, heard_only, note)
 
     def protected(self, chunk: str) -> bool:
@@ -323,10 +329,12 @@ class OutboundSession(CallSession):
         """Called when the line closes: records the attempt, the result row and the lead update."""
         phone = self.ctx.caller or ""
         self.state.add_attempt(phone, self.started)
-        log = self.ctx.extra.get("log") or {"outcome": "No answer" if len(self.transcript) < 3 else "Gatekeeper",
-                                            "summary": f"Call ended without a log ({reason or 'hung up'})."}
+        log = self.ctx.extra.get("log") or callreview.fallback_log(self.transcript, self.lead, reason)
         row = outbound.call_row(self.lead, log, self.started, minutes, self.state.next_call_number(), self.cfg,
                                 transcript_text(self.transcript, with_tools=False))
+        if self.first_word_times:
+            row["latency"] = {"median_s": round(statistics.median(self.first_word_times), 2),
+                              "max_s": round(max(self.first_word_times), 2), "replies": len(self.first_word_times)}
         self.state.add_result(row, self.lead.get("id"), outbound.lead_update(self.lead, log, f"{row['date']} {row['time']}"))
         self.store.end_call(self.call_id, self.transcript, log["outcome"], now)
         return row

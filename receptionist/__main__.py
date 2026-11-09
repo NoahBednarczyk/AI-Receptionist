@@ -280,6 +280,29 @@ def cmd_outbound_sync(cfg, a):
     print(f"{len(data.get('calls', []))} calls, {len(data.get('bookings', []))} meetings, {len(data.get('dnc', []))} on the do-not-call list.")
 
 
+def cmd_review_calls(cfg, a):
+    """Lint every stored outbound call (no API spend): laughs at problems, sympathy boilerplate, sales or AI labels said
+    unasked, claims with no source, repeated questions, long replies, slow replies. Writes data/reports/call-review.json."""
+    from . import callreview, outbound
+    data = _admin_get(a.server, "/admin/outbound")
+    facts = outbound.facts(outbound.settings(cfg))
+    report = []
+    for c in data.get("calls", [])[-a.last:]:
+        lat = c.get("latency") or {}
+        problems = callreview.lint(c.get("transcript", ""), facts + " " + c.get("business", ""),
+                                   [lat["median_s"]] * 2 if lat.get("median_s") else None)
+        report.append({"n": c.get("n"), "date": c.get("date"), "business": c.get("business"), "outcome": c.get("outcome"),
+                       "duration": c.get("duration"), "problems": problems})
+        print(f"call {c.get('n')} {c.get('date')} {c.get('business')} [{c.get('outcome')}, {c.get('duration')} min]: "
+              f"{'clean' if not problems else f'{len(problems)} problem(s)'}")
+        for p in problems:
+            print("   -", p)
+    out = Path(cfg["data_dir"]) / "reports" / "call-review.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=1))
+    print(f"Wrote {out}. Each problem is a candidate regression test: add the transcript line to tests/test_callreview.py.")
+
+
 def cmd_outbound_agent(cfg, a):
     from . import outbound_live, retell_setup
     voice = outbound_live.receptionist_voice(cfg)   # always the receptionist's voice
@@ -463,6 +486,11 @@ def main():
     sp.add_argument("--number", help="outbound number, if you already have one (otherwise it stays PENDING)")
     sp.add_argument("--create", action="store_true", help="really create it in Retell (a change to your account)")
     sp.set_defaults(fn=cmd_outbound_agent)
+
+    sp = sub.add_parser("review-calls", help="lint stored outbound calls for tone, invented claims, repeats and slowness (free)")
+    sp.add_argument("--server", default=os.environ.get("PUBLIC_BASE_URL", "https://receptionist-575z.onrender.com"))
+    sp.add_argument("--last", type=int, default=20)
+    sp.set_defaults(fn=cmd_review_calls)
 
     sp = sub.add_parser("outbound-number", help="record the Retell number the outbound caller dials from")
     sp.add_argument("--number", required=True)
