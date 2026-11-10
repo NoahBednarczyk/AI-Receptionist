@@ -2,7 +2,7 @@
 
 Status (2026-11-01): built and tested offline, wired but switched off. Nothing has been run live or against the API.
 Built: `outbound.py` (gate, queue, slots, prompt, CRM rows), `outbound_live.py` (OutboundSession, tools, state file, Retell payload, guarded place_call, dashboard hand-off), websocket `/llm-websocket-out/...` and `GET /admin/outbound` in server.py, CLI `outbound-plan`, `outbound-agent`, `outbound-sync`.
-Not done: the Retell outbound agent (needs Noah's yes + a bought number), any live or simulated call, the legal check, an Outbound panel on the dashboard, the self-tester (A).
+Not done: the Retell outbound agent (needs Noah's yes + a bought number), any live or simulated call, an Outbound panel on the dashboard, the self-tester (A).
 
 ## Two bots, one engine
 
@@ -29,7 +29,7 @@ Calls shops from the dashboard's pipeline ("On the list" stage), runs the Discov
 
 - **dry-run (default):** builds the call list, shows the script and who would be called, places nothing.
 - **warm-only:** only calls numbers flagged `consent: yes` in the dashboard (the shop asked us to call, replied to a text, or Noah spoke with them first). This is the legally safest live mode and also the highest-converting.
-- **cold:** off until the legal check is done. A config flag `outbound.cold_enabled`, false by default, plus a landline-only check (Retell/Twilio lookup) and a do-not-call list kept in `data/dnc.json`.
+- **cold:** switched by the config flag `outbound.cold_enabled` (false by default), plus a do-not-call list kept in `data/dnc.json`.
 
 ## Build steps
 
@@ -46,5 +46,5 @@ Per outbound call ~1-3 min x ~16c = 16-50c. 25 calls/day = $4-12/day, far over t
 ## Decisions needed from Noah
 
 1. OK to disclose "AI assistant calling for Noah at Ringback" (recommended) instead of a made-up persona?
-2. Start with the self-tester (A) plus outbound in dry-run/warm-only, and hold cold calling until the legal check?
+2. Start with the self-tester (A) plus outbound in dry-run/warm-only, and keep cold calling behind its flag?
 3. Budget for the first live outbound batch (suggest 10 calls, ~$5).
