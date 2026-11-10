@@ -251,3 +251,44 @@ class HonestPitchTests(unittest.TestCase):
         stable = outbound.build_prompt({}, NOW, {"outbound": {}})[0]["text"].lower()
         for w in ("teases the objection", "playful pushback", "a no is where", "the one you missed"):
             self.assertNotIn(w, stable)
+
+
+class TakenBackTurnsAreNotCountedTwice(_t.ScriptedFixture):
+    """The live call of 2026-11-09: the code-spoken intro was taken back (the caller's next words arrived first) and a dropped
+    'not interested' turn was re-run, so one no counted twice and the call ended on the first no."""
+
+    def test_a_taken_back_intro_is_spoken_again_by_code_not_left_to_the_model(self):
+        s = self.make()
+        s.respond("Yeah.", lambda c: None)
+        self.assertTrue(s._intro_checked)
+        self.assertTrue(s.revert_last())
+        self.assertFalse(s._intro_checked)
+        said = []
+        s.respond("Yeah. It is.", said.append)
+        self.assertEqual(len(said), 2)          # intro + first question again, from code
+        self.assertEqual(self.client.requests, [])
+
+    def test_a_dropped_no_is_not_counted_before_it_is_run_again(self):
+        from receptionist.agent import TurnControl, TurnDropped
+        s = self.make(*[reply("end_turn", text("Fair enough, is it the timing?"))] * 3)
+        s.respond("Why are you calling?")
+        control = TurnControl()
+        control.drop()
+        with self.assertRaises(TurnDropped):
+            s.respond("I'm not interested in talking to Aaron.", None, control)
+        self.assertEqual(s._nos, 0)
+        s.respond("I'm not interested in talking to Aaron.")
+        self.assertEqual(s._nos, 1)
+        self.assertIn("one sincere question", last_note(self.client))
+        self.assertNotIn("end_call", last_note(self.client))
+
+    def test_a_taken_back_no_does_not_count_either(self):
+        s = self.make(*[reply("end_turn", text("Fair enough, is it the timing?"))] * 3)
+        s.respond("Why are you calling?")
+        s.respond("Not interested.")
+        self.assertEqual(s._nos, 1)
+        self.assertTrue(s.revert_last())
+        self.assertEqual(s._nos, 0)
+        s.respond("Not interested.")
+        self.assertEqual(s._nos, 1)
+        self.assertIn("one sincere question", last_note(self.client))

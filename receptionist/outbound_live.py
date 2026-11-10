@@ -18,7 +18,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import callreview, outbound, tools
-from .agent import CallSession, Turn, cache_control, thinking_param, transcript_text
+from .agent import CallSession, Turn, TurnDropped, cache_control, thinking_param, transcript_text
 from .live import OUTBOUND_STILL_WORKING
 from .speech import normalize_phone, spoken_phone
 from .tools import ToolError
@@ -519,7 +519,39 @@ class OutboundSession(CallSession):
                     self.usage[k] += (got or {}).get(k, 0)
             warm_in_background(_warm)
 
+    COUNTERS = ("_opened", "_intro_checked", "_person", "_asks", "_nos")
+
+    def _snapshot(self) -> dict:
+        return {k: getattr(self, k) for k in self.COUNTERS}
+
+    def _restore(self, snap: dict) -> None:
+        for k, v in snap.items():
+            setattr(self, k, v)
+
+    def _save(self, *args, **kwargs) -> None:
+        """A kept turn remembers the counters from before it, so revert_last() can undo them with the conversation."""
+        self._saved_snap = getattr(self, "_turn_snap", None) or self._snapshot()
+        super()._save(*args, **kwargs)
+
+    def revert_last(self) -> bool:
+        """Taking back a reply the caller never heard also takes back what it counted (a no, an intro, a meeting ask):
+        the same words come back with the next request, and must not be counted twice."""
+        snap = getattr(self, "_saved_snap", None)
+        if super().revert_last():
+            if snap:
+                self._restore(snap)
+            return True
+        return False
+
     def respond(self, caller_text, on_text=None, control=None, heard_only=None, note=None):
+        self._turn_snap = self._snapshot()
+        try:
+            return self._respond(caller_text, on_text, control, heard_only, note)
+        except TurnDropped:   # the caller kept talking: this turn never happened, so neither did its counting
+            self._restore(self._turn_snap)
+            raise
+
+    def _respond(self, caller_text, on_text=None, control=None, heard_only=None, note=None):
         if not self.ctx.ended and stop_request(caller_text):
             return self._stop(caller_text, on_text)
         kind = None if self._person or self.ctx.ended else machine_kind(caller_text)
