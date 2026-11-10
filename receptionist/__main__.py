@@ -336,6 +336,25 @@ def cmd_outbound_number(cfg, a):
     print(f"Outbound number set to {number}.")
 
 
+def cmd_latency_report(cfg, a):
+    """Read-only. Straight from Retell if RETELL_API_KEY is here; otherwise through the server's /admin/latency (needs
+    --base-url and DASHBOARD_TOKEN in the environment)."""
+    from . import latency
+    try:
+        if os.environ.get("RETELL_API_KEY"):
+            table = latency.report(a.last, cfg)
+        else:
+            import urllib.request
+            token, base = os.environ.get("DASHBOARD_TOKEN"), (a.base_url or "").rstrip("/")
+            if not (token and base):
+                raise SystemExit("No RETELL_API_KEY here. Pass --base-url and set DASHBOARD_TOKEN to read it through the server.")
+            req = urllib.request.Request(f"{base}/admin/latency?last={a.last}", headers={"Authorization": f"Bearer {token}"})
+            table = json.loads(urllib.request.urlopen(req, timeout=60).read())["rows"]
+    except RuntimeError as e:
+        raise SystemExit(str(e))
+    print(latency.render(table))
+
+
 def cmd_serve(cfg, a):
     import logging
     import uvicorn
@@ -505,6 +524,11 @@ def main():
     biz_args(sp, at=False)
     sp.add_argument("--push", action="store_true", help="send every booking from yesterday on, and recent cancellations")
     sp.set_defaults(fn=cmd_calendar_sync)
+
+    sp = sub.add_parser("latency-report", help="where the time goes on the last Retell calls (read-only)")
+    sp.add_argument("--last", type=int, default=10)
+    sp.add_argument("--base-url", help="the server's https address, used only when RETELL_API_KEY is not on this machine")
+    sp.set_defaults(fn=cmd_latency_report)
 
     sp = sub.add_parser("serve", help="webhook server for Vapi and Retell")
     sp.add_argument("--host", default="127.0.0.1")

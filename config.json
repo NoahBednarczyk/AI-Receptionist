@@ -75,6 +75,8 @@
     ]
   },
   "live": {
+    "cache_refresh": true,
+    "cache_refresh_minutes": 50,
     "interject": {
       "enabled": true,
       "min_words": 25,

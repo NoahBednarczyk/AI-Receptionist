@@ -35,6 +35,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket,
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, platforms, postcall, prompts, schedule
+from . import keepwarm, latency as latency_mod
 from .agent import CallSession, prewarm, transcript_text
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
@@ -76,6 +77,8 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     if not ws_secret:
         log.warning("RETELL_WS_SECRET is not set: live Retell calls are off")
 
+    refresher = keepwarm.CacheRefresher(cfg, client, prewarm_targets, prewarm)
+
     def keep_warm() -> None:
         """The API answers the first request after a long idle stretch slowly (20+ s seen), so keep the connection
         fresh with a free model lookup every 3 minutes. The prompt cache itself is written at the start of each
@@ -87,7 +90,9 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
                 if once:   # warm the cache at startup too, so the first call after a deploy is quick
                     for biz in prewarm_targets(cfg):
                         prewarm(client, cfg, biz)
+                        refresher.mark(biz["id"], datetime.datetime.now(datetime.timezone.utc))
                     once = False
+                refresher.tick()   # every live shop, every 50 minutes in its day (live.cache_refresh)
                 client.models.retrieve(cfg["models"]["agent"])
             except anthropic.APIError as e:
                 log.warning("keep-warm request failed: %s", e)
@@ -240,6 +245,17 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         if limiter.blocked(who) or not (dashboard_token and secrets.compare_digest(sent, dashboard_token)):
             limiter.record(who)
             raise HTTPException(404)
+
+    @app.get("/admin/latency")
+    async def latency(request: Request, last: int = 10):
+        """The latency-report table as JSON (admin key), for when RETELL_API_KEY is only on this server. Read-only."""
+        _admin_only(request)
+        if not retell_key:
+            raise HTTPException(503, "RETELL_API_KEY is not set on this server.")
+        try:
+            return {"rows": latency_mod.report(max(1, min(last, 50)), cfg, {"RETELL_API_KEY": retell_key})}
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
 
     @app.put("/admin/outbound/agent")
     async def outbound_agent_put(request: Request):
