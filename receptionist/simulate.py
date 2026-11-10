@@ -250,6 +250,10 @@ def run_scenario(client: anthropic.Anthropic, cfg: dict, biz: dict, sc: dict) ->
         "seconds": round(time.monotonic() - started, 1), "transcript": text,
         "texts": [s["body"] for s in store.for_call("sms_outbox", session.call_id)],
         "not_said": [d for t in session.transcript if t["role"] == "agent" for d in t.get("dropped", [])],
+        # the say channel, per agent turn: private words (never spoken) and whether each text block opened with <say>
+        "private": [t.get("private", []) for t in session.transcript if t["role"] == "agent" and "began_with_say" in t],
+        "began_with_say": [t["began_with_say"] for t in session.transcript if t["role"] == "agent" and "began_with_say" in t],
+        "shadow": [d for t in session.transcript if t["role"] == "agent" for d in t.get("shadow", [])],
     }
 
 
@@ -324,6 +328,12 @@ def run_all(cfg: dict, biz: dict, client: anthropic.Anthropic, ids: list[str] | 
     ran = [r for r in results if not r.get("skipped") and not r.get("error")]
     firsts = [x for r in ran for x in r["first_words_s"]]
     passed = sum(r["passed"] for r in ran)
+    began = [b for r in ran for b in r.get("began_with_say", [])]
+    notes = [n for r in ran for turn in r.get("private", []) for n in turn]
+    if began:
+        print(f"\nSay channel: {sum(began)}/{len(began)} text blocks began with <say> ({100 * sum(began) / len(began):.0f}%); "
+              f"{len(notes)} private notes, longest {max((len(n.split()) for n in notes), default=0)} words; "
+              f"{sum(len(r.get('shadow', [])) for r in ran)} shadow sentences.")
     print(f"\n{passed}/{len(ran)} passed" + (f" ({len(results) - len(ran)} skipped or errored)." if len(ran) < len(results) else "."), end=" ")
     if firsts:
         print(f"First words: median {statistics.median(firsts):.2f}s, 95th percentile {_pct(firsts, 0.95):.2f}s.", end="")

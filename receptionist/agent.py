@@ -68,11 +68,11 @@ class SayChannel:
     OPEN, CLOSE = "<say>", "</say>"
 
     def __init__(self, words: "Sentences"):
-        self.words, self.privates = words, []
+        self.words, self.privates, self.began = words, [], []   # began: per text block, did it open with <say>
         self._reset()
 
     def _reset(self) -> None:
-        self.inside, self.buf, self.private, self.spoke = False, "", "", False
+        self.inside, self.buf, self.private, self.spoke, self.head = False, "", "", False, ""
 
     @property
     def dirty(self) -> bool:
@@ -88,6 +88,8 @@ class SayChannel:
             self.private += text
 
     def feed(self, text: str) -> None:
+        if len(self.head) < 12:
+            self.head += text
         self.buf += text
         while True:
             tag = self.CLOSE if self.inside else self.OPEN
@@ -116,6 +118,8 @@ class SayChannel:
                 self.privates.append(note)
                 log.info("private (not spoken): %s", note)
         spoke = self.spoke
+        if self.head.strip():
+            self.began.append(self.head.lstrip().startswith(self.OPEN))
         self._reset()
         said = self.words.close()
         return said if spoke else ""
@@ -493,6 +497,8 @@ class CallSession:
             entry["dropped"] = words.dropped   # for tests and reports; never spoken
         if chan and chan.privates:
             entry["private"] = chan.privates   # what the model wrote outside <say>; never spoken, kept for the report
+        if chan:
+            entry["began_with_say"] = chan.began
         if words.shadow:
             entry["shadow"] = words.shadow
         final = any(c["name"] in IRREVERSIBLE for c in used)
