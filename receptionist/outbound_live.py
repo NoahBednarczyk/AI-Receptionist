@@ -95,23 +95,45 @@ AI_REFUSAL = re.compile(r"\b(not interested in|don'?t want to|won'?t|not gonna|i
 
 # What the caller said that counts as a refusal, and what our own reply counts as a meeting ask. Code keeps these
 # counts and hands the model the next move as a note, so the model has no state to reason about out loud.
-NO_SIGNAL = re.compile(r"\b(not interested|no thanks|no thank you|not right now|we'?re (good|fine|all set)|i'?m (good|fine|all set)|"
+NO_SIGNAL = re.compile(r"\b(not interested|no thanks|no thank you|we'?re (good|fine|all set)|i'?m (good|fine|all set)|"
                        r"don'?t need (it|that|this)|pass(?! (it|that|this|me|you|along|the)\b))\b|^\W*no\W*$", re.I)
+# A bad time is not a refusal: it gets a callback, not a "no".
+TIMING = re.compile(r"\b(not (right )?now|bad time|busy|in the middle of|on a job|driving|call (me )?(back|later)|later|another time)\b", re.I)
 IRRITATED = re.compile(r"\b(i (already )?(said|told you)|again|seriously|for the last time|quit|enough|waste of)\b|!", re.I)
 MEETING_ASK = re.compile(r"\b(fifteen|15|ten|10)[- ]minutes?\b|\bwhich (is|works) (easier|better)\b", re.I)
-PLAYFUL_RULES = ("Keep it light and warm, tease the objection never the person or their business, use fresh words (never a line already used on this call) "
-                 "and one short question. Do not mention counting or the no itself.")
-NOTE_NO_ONCE = ("they said no. Do not fold, and get curious about it: ask what is behind it, lightly and warmly (why is that? what's the "
-                "catch? what have they tried?), with a quick playful touch if it fits. " + PLAYFUL_RULES)
-NOTE_NO_AGAIN_CALM = ("they said no again, but they sound calm. Do not repeat yourself: ask what is really behind the no, or come at it from "
-                      "a different angle (money, missed jobs, a much smaller ask), playful and short. " + PLAYFUL_RULES)
-NOTE_LAST_TRY = ("their no sounds flat or irritated. Give exactly one last light try: one short, warm, playful line, with no pressure and "
-                 "no new pitch (an easy out they can say yes to, or a one-sentence reason it costs them nothing). If they refuse after this, you will be told to leave.")
-NOTE_NO_AGAIN = "they said no and it is time to leave. Thank them warmly with a light parting quip, call log_call, then end_call. No further ask."
+NOTE_NO_ONCE = ("they said no. Accept it in a few words, then ask one sincere question about the reason (is it the timing, the AI, or are "
+                "missed calls simply not a problem for them). Take the answer at face value. No joke about the no, no teasing, no pitch.")
+NOTE_NO_AGAIN = ("they said no again. Thank them, wish them a good season, call log_call, then end_call. No further ask and no parting quip.")
 NOTE_NO_MORE_ASKS = "No more meeting asks on this call."
-NOTE_AI_REFUSAL = ("they don't want to talk to an AI. Say yes, you are an AI, in a few playful words (honest, once, never claim to be human), then "
-                   "push back with a quip about what an AI that always picks up is worth to someone who can't answer on the mower, and one short question. "
-                   "Fresh words every time, never a line you used before. Do not mention counting or the no itself.")
+NOTE_AI_REFUSAL = ("they don't want to talk to an AI. Say plainly that yes, you are one (never claim to be human), and offer the alternative: "
+                   "{founder} can call them himself. One short question. Nothing else.")
+NOTE_TIMING = ("bad time for them. Offer one specific callback time from the open list, get a yes or a better time, call log_call with "
+               "Callback requested and the date, then end_call. No questions about their calls now.")
+
+
+# ---- the first two turns are spoken by code: who is calling, then question one
+AFFIRM = re.compile(r"\b(yes|yeah|yep|yup|speaking|this is (he|she|him|her|\w+)|that'?s me|you got (him|her|me)|it is|uh[- ]?huh|mm[- ]?hm+|"
+                    r"hello|hi|hey|go ahead|what can i do for you|how can i help( you)?|what'?s up|who'?s (this|calling)|who is this)\b", re.I)
+NOT_AFFIRM = re.compile(r"\b(no|not|wrong|busy)\b", re.I)
+FIRST_QUESTIONS = {
+    "lawn": ["When's the last time the phone rang while you were on a mower and you couldn't get to it?",
+             "Think of the last call you missed while you were out mowing. When was that?",
+             "When did a call last go to voicemail because you were busy on a lawn?"],
+    "snow": ["When's the last time the phone rang while you were in the plow truck and you couldn't get to it?",
+             "Think of the last call you missed while you were out plowing. When was that?",
+             "When did a call last go to voicemail because you were busy on a driveway?"],
+    "default": ["When's the last time the phone rang while you were out on a job and you couldn't get to it?",
+                "Think of the last call you missed while you were on a job. When was that?",
+                "When did a call last go to voicemail because you were busy working?"],
+}
+
+
+def affirmed(text: str) -> bool:
+    """The owner's answer to "is this the owner?" is a plain yes, hello or "who's this" (8 words or fewer)."""
+    t = text or ""
+    return (len(t.split()) <= 8 and bool(AFFIRM.search(t)) and not NOT_AFFIRM.search(t) and not stop_request(t)
+            and not NO_SIGNAL.search(t) and not AI_QUESTION.search(t) and not AI_REFUSAL.search(t)
+            and not TIMING.search(t) and not machine_kind(t))
 
 
 # Machines that answer before (or instead of) a person. Checked by code before the model ever sees them, and only
@@ -124,7 +146,7 @@ PHONE_MENU = re.compile(r"\b(press (zero|one|two|three|four|five|six|seven|eight
                         r"main menu|menu options|office hours are|(we are|we're|office is|office is currently) (currently )?closed)\b", re.I)
 ON_HOLD = re.compile(r"\b(stay on the line|please hold|hold (on )?while|(while|as) (i|we) (try to )?(connect|transfer)|"
                      r"your call is (important|being (transferred|connected|recorded))|transferring your call|connecting you)\b", re.I)
-MAX_NOS = 4          # the backstop: after this many refusals of any kind the call ends
+MAX_NOS = 2          # a second refusal of any kind ends the call
 
 
 def machine_kind(text: str) -> str | None:
@@ -475,7 +497,7 @@ class OutboundSession(CallSession):
         self._asks = 0            # meeting asks we have made
         self._nos = 0             # refusals the caller has given
         self._person = False      # a person has talked with us (not a recording)
-        self._last_try = False    # the one extra try after a flat or irritated no has been used
+        self._rng = rng
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
         blocks = outbound.build_prompt(lead, now, cfg)
         self.system = [*_stable_system(cfg, now), blocks[1]]
@@ -509,6 +531,8 @@ class OutboundSession(CallSession):
             messages = [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.opener}]
             self._save(messages, caller_text, {"role": "agent", "text": self.opener, "tools": [], "steps": [{"say": self.opener}]}, None, final=False)
             return Turn(self.opener, [], 0.0, 0.0, False)
+        if not self._intro_checked and not self.ctx.ended and affirmed(caller_text):
+            return self._intro_and_first_question(caller_text, on_text)
         refusal = AI_REFUSAL.search(caller_text)
         if not self._intro_checked:   # the first model turn after the opener
             self._intro_checked = True
@@ -521,7 +545,9 @@ class OutboundSession(CallSession):
         if NO_SIGNAL.search(caller_text) or refusal:
             self._nos += 1
             directive = self._no_directive(caller_text, bool(refusal))
-        elif self._asks >= 3:
+        elif TIMING.search(caller_text):
+            directive = NOTE_TIMING
+        elif self._asks >= 2:
             directive = NOTE_NO_MORE_ASKS
         if directive:
             note = f"{note} {directive}" if note else directive
@@ -534,8 +560,21 @@ class OutboundSession(CallSession):
         return turn
 
     def protected(self, chunk: str) -> bool:
-        """Nothing is protected: the greeting is one short question."""
-        return False
+        """Who is calling must be heard whole: line noise cannot cut off the intro chunk."""
+        return bool(chunk) and chunk == self.intro_text
+
+    def _intro_and_first_question(self, caller_text: str, on_text) -> Turn:
+        """The owner said yes (or hello, or "who's this"): code says who is calling and asks question one. No model call."""
+        self._intro_checked = True
+        self._person = True
+        question = self._rng.choice(FIRST_QUESTIONS[trade_of(self.lead)])
+        if on_text:
+            on_text(self.intro_text)
+            on_text(" " + question)
+        line = f"{self.intro_text} {question}"
+        messages = [*self.messages, {"role": "user", "content": caller_text}, {"role": "assistant", "content": line}]
+        self._save(messages, caller_text, {"role": "agent", "text": line, "tools": [], "steps": [{"say": self.intro_text}, {"say": question}]}, None, final=False)
+        return Turn(line, [], 0.0, 0.0, False)
 
     def resume_line(self, heard: str) -> str | None:
         """Noise right after the greeting can leave the person never hearing who is calling. If so, say the intro (once) instead
@@ -547,17 +586,13 @@ class OutboundSession(CallSession):
         return self.intro_text
 
     def _no_directive(self, caller_text: str, ai_refusal: bool) -> str:
-        """Curious and playful on a calm no. A flat, irritated or repeated no gets exactly one last light try; after that, or
-        after the fourth no of any kind, the call ends warmly."""
-        irritated = bool(IRRITATED.search(caller_text))
-        if self._nos >= MAX_NOS or ((irritated or self._nos >= 3) and self._last_try):
+        """The first no gets one sincere question (or, for "I don't want to talk to an AI", an honest yes and Noah's offer to call
+        himself). A second no of any kind, or an irritated first one, ends the call warmly."""
+        if self._nos >= MAX_NOS or IRRITATED.search(caller_text):
             return NOTE_NO_AGAIN
-        if irritated or self._nos >= 3:
-            self._last_try = True
-            return NOTE_LAST_TRY
-        if self._nos == 1:
-            return NOTE_AI_REFUSAL if ai_refusal else NOTE_NO_ONCE
-        return NOTE_NO_AGAIN_CALM
+        if ai_refusal:
+            return NOTE_AI_REFUSAL.format(founder=outbound.settings(self.cfg)["founder"])
+        return NOTE_NO_ONCE
 
     def _machine(self, kind: str, caller_text: str, on_text) -> Turn:
         """A recording, not a person. Handled by code, so the model never has to work out (out loud) what it is hearing.

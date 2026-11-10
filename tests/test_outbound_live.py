@@ -588,57 +588,57 @@ class ScriptedFixture(Fixture):
 
 class CallStateTests(ScriptedFixture):
     def test_no_signals(self):
-        for t in ("I'm not interested in talking to an AI bot.", "No thanks", "not right now", "We're good", "No, I'm good.", "no", "I'll pass"):
+        for t in ("I'm not interested in talking to an AI bot.", "No thanks", "We're good", "No, I'm good.", "no", "I'll pass"):
             self.assertTrue(ol.NO_SIGNAL.search(t), t)
         for t in ("what can I do for you?", "I need to pass it to my wife", "we get ten calls a week", "I don't know"):
             self.assertFalse(ol.NO_SIGNAL.search(t), t)
 
-    def test_a_calm_no_gets_curiosity_then_a_new_angle(self):
+    def test_a_calm_no_gets_one_sincere_question_then_the_second_no_ends_the_call(self):
         from tests.test_logic import reply, text
         s = self.make(*[reply("end_turn", text("Hm."))] * 4)
-        s.respond("What can I do for you?")
+        s.respond("Why are you calling?")
         s.respond("Not interested.")
         once = json.dumps(self.client.requests[-1]["messages"][-1])
-        self.assertIn("get curious", once)
-        self.assertIn("what is behind it", once)
+        self.assertIn("one sincere question about the reason", once)
+        self.assertIn("No joke about the no", once)
         s.respond("No thanks.")
-        self.assertIn("calm", json.dumps(self.client.requests[-1]["messages"][-1]))
+        self.assertIn("end_call", json.dumps(self.client.requests[-1]["messages"][-1]))
 
-    def test_an_irritated_no_gets_one_last_try_then_a_goodbye(self):
+    def test_an_irritated_first_no_ends_the_call(self):
         from tests.test_logic import reply, text
         s = self.make(*[reply("end_turn", text("Hm."))] * 4)
-        s.respond("What can I do for you?")
+        s.respond("Why are you calling?")
         s.respond("I said I'm not interested.")
-        self.assertIn("exactly one last light try", json.dumps(self.client.requests[-1]["messages"][-1]))
-        s.respond("No. Seriously, not interested.")
         last = json.dumps(self.client.requests[-1]["messages"][-1])
-        self.assertIn("time to leave", last)
+        self.assertIn("they said no again", last)
         self.assertIn("end_call", last)
+        self.assertNotIn("last light try", last)
 
-    def test_the_fourth_refusal_ends_the_call_whatever_the_tone(self):
+    def test_the_second_refusal_ends_the_call_whatever_the_tone(self):
         from tests.test_logic import reply, text
         s = self.make(*[reply("end_turn", text("Hm."))] * 5)
-        s.respond("What can I do for you?")
-        for t in ("No thanks.", "No thanks.", "No thanks.", "No thanks."):
+        s.respond("Why are you calling?")
+        for t in ("No thanks.", "We're good."):
             s.respond(t)
-        self.assertIn("time to leave", json.dumps(self.client.requests[-1]["messages"][-1]))
+        self.assertIn("end_call", json.dumps(self.client.requests[-1]["messages"][-1]))
 
     def test_anger_is_a_code_level_stop(self):
         for t in ("quit bugging me", "I said no, stop calling", "piss off", "leave me alone"):
             self.assertTrue(ol.stop_request(t), t)
         self.assertFalse(ol.stop_request("not right now, I'm busy"))
 
-    def test_three_meeting_asks_end_the_asking(self):
+    def test_two_meeting_asks_end_the_asking(self):
         from tests.test_logic import reply, text
         s = self.make(*[reply("end_turn", text("Fifteen minutes Tuesday, which is easier?"))] * 4)
-        for t in ("What can I do for you?", "Hm.", "Maybe.", "Go on."):
+        for t in ("Why are you calling?", "Hm.", "Maybe.", "Go on."):
             s.respond(t)
-        self.assertEqual(s._asks, 3 + 1)
+        self.assertEqual(s._asks, 4)
         self.assertIn("No more meeting asks", json.dumps(self.client.requests[-1]["messages"][-1]))
 
     def test_the_playbook_teaches_no_counting_labels(self):
         text = outbound.PLAYBOOK.read_text().lower()
-        for w in ("ladder", "ask 1", "ask 2", "ask 3", "first time", "second firm no", "first no", "soft no", "gentle"):
+        for w in ("ladder", "ask 1", "ask 2", "ask 3", "first time", "second firm no", "first no", "soft no", "gentle",
+                  "playful pushback", "where the conversation starts", "stubborn", "naive", "tuesday?"):
             self.assertNotIn(w, text)
 
     def test_speaking_says_every_word_is_spoken_aloud(self):
@@ -663,17 +663,17 @@ class AiRefusalTests(ScriptedFixture):
         s = self.make(reply("end_turn", text("Guilty, I'm an AI. But are you interested in money?")))
         s.respond(self.HEARD)
         note = json.dumps(self.client.requests[-1]["messages"][-1])
-        self.assertIn("you are an AI", note)
+        self.assertIn("yes, you are one", note)
         self.assertIn("never claim to be human", note)
-        self.assertIn("Fresh words every time", note)
+        self.assertIn("Noah can call them himself", note)
         self.assertEqual(s._nos, 1)
 
-    def test_a_second_refusal_pushes_once_more_from_another_angle(self):
+    def test_a_second_refusal_after_the_ai_refusal_ends_the_call(self):
         from tests.test_logic import reply, text
         s = self.make(reply("end_turn", text("One.")), reply("end_turn", text("Two.")))
         s.respond(self.HEARD)
         s.respond("No, I'm good.")
-        self.assertIn("different angle", json.dumps(self.client.requests[-1]["messages"][-1]))
+        self.assertIn("end_call", json.dumps(self.client.requests[-1]["messages"][-1]))
 
 
 class DisclosureFlagTests(unittest.TestCase):
@@ -709,7 +709,7 @@ class StallPoolTests(ScriptedFixture):
             inbox = asyncio.Queue()
             await inbox.put({"interaction_type": "call_details", "call": {"call_id": "c1"}})
             await inbox.put({"interaction_type": "response_required", "response_id": 1, "transcript": [
-                {"role": "agent", "content": "Hi, is this Dale?"}, {"role": "user", "content": "What can I do for you?"}]})
+                {"role": "agent", "content": "Hi, is this Dale?"}, {"role": "user", "content": "Why are you calling?"}]})
 
             async def send(m):
                 sent.append(m)
@@ -783,13 +783,12 @@ class MachineTests(ScriptedFixture):
 
     def test_after_a_person_has_talked_voicemail_words_are_ordinary_talk(self):
         from tests.test_logic import reply, text
-        s = self.fresh(reply("end_turn", text("I'm Riley, an AI assistant calling for Noah. How often do calls get missed?")),
-                       reply("end_turn", text("Five a week, huh?")))
+        s = self.fresh(reply("end_turn", text("Five a week, huh?")))
         s.respond("Hello?")
-        s.respond("Yeah, what's up?")
+        s.respond("Yeah, what's up?")   # code says the intro and the first question
         turn = s.respond("We get maybe five voicemails a week, people leave a message and I call back.")
         self.assertFalse(turn.ended)
-        self.assertEqual(len(self.client.requests), 2)
+        self.assertEqual(len(self.client.requests), 1)
 
     def test_machine_narration_is_never_spoken(self):
         from receptionist.speech import unspeakable
