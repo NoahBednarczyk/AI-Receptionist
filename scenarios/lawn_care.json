@@ -203,5 +203,20 @@
       "When the caller said 'Snow plowing?' with a question mark, the agent treated it as a question or a check and answered or confirmed it, and did not start booking snow service from it.",
       "The agent booked weekly mowing (lawn_mowing) after the caller said 'Mowing.', and did not also book snow removal."
     ]
+  },
+  {
+    "id": "out_of_season_pushback",
+    "title": "Core aeration asked for in January",
+    "at": "2027-01-12T10:15",
+    "caller_id": "+12085550185",
+    "persona": "You're Pat Lindqvist at 40 Cedar Lane in Sandpoint. Open with exactly: 'Hi, I'd like to book core aeration for my lawn.' You have patchy, thin spots from last summer and read online that aeration fixes that. You don't realize the ground is frozen in January. If the receptionist says it's out of season and asks what's going on with the lawn, explain the thin patches. Take their suggestion of waiting for spring, and be happy to be put on the list. Your cell is 208-555-0185, the number you're calling from. Don't insist on a January visit.",
+    "expect": {
+      "booked": false
+    },
+    "rubric": [
+      "Said plainly that core aeration is out of season now (the ground is frozen), instead of booking it.",
+      "Asked one real question about what the caller is trying to fix, then helped with what they decided.",
+      "Did not book the aeration visit unless the caller chose that; promised no start date and no results."
+    ]
   }
 ]

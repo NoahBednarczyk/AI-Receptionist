@@ -41,8 +41,8 @@ class PromptFeelTests(unittest.TestCase):
     def test_the_new_speaking_rules_are_in_every_prompt(self):
         for biz in (LAWN, ACME):
             p = prompts.stable_prompt(biz)
-            for needle in ("There is no script.", "Know the business like a long-time employee", "Sound inviting.",
-                           "Read the caller's punctuation as their tone of voice", "answer in your first few words, plainly"):
+            for needle in ("Contractions, everyday words, no script", "Know the business like a long-time employee",
+                           "Read the caller's punctuation as tone", "answer in your first few words, plainly"):
                 self.assertIn(needle, p, biz["id"])
 
     def test_the_ai_disclosure_rule_is_untouched_and_the_joke_comes_after_the_plain_answer(self):
@@ -233,9 +233,9 @@ class RespondDontInterviewTests(unittest.TestCase):
     def test_every_vertical_tells_the_agent_to_respond_first_and_steer_only_at_the_end(self):
         for biz in (LAWN, ACME, load_business(CFG, "glow")):
             p = prompts.stable_prompt(biz)
-            for needle in ("You respond; you don't run an interview", "Never open by asking for their name, address",
-                           "Only when everything they wanted has been said and dealt with do you steer",
-                           "Be human in the small ways", "Don't steer back to your own agenda",
+            for needle in ("You respond; you don't run an interview", "Don't open by asking for their name, address",
+                           "Once everything they wanted is dealt with, offer the next step",
+                           "# Who you are", "Don't steer back to your own agenda",
                            "This is what a booking needs, not the order of the conversation"):
                 self.assertIn(needle, p, biz["id"])
             self.assertNotIn("Ask one new question at a time and end your reply with it", p)

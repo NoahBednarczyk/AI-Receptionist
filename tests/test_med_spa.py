@@ -161,11 +161,10 @@ class VarietyAndSpeedTests(unittest.TestCase):
         self.assertNotIn(GLOW["greeting"], prompts.stable_prompt(GLOW))
         s = CallSession(FakeClient(), CFG, GLOW, Store(":memory:"), TUE_1015, caller="+13125550177")
         self.assertIn(s.greeting, s.system[1]["text"])
-        self.assertIn("Style for this call:", s.system[1]["text"])
+        self.assertNotIn("Style for this call:", s.system[1]["text"])   # the random style draw is gone
         self.assertEqual(s.transcript[0]["text"], s.greeting)
-        styles = {prompts.call_state(GLOW, TUE_1015, None, None, []).split("Style for this call: ")[1].split(" Change up")[0]
-                  for _ in range(100)}
-        self.assertGreaterEqual(len(styles), 4)
+        greetings = {prompts.pick_greeting(GLOW, TUE_1015) for _ in range(100)}
+        self.assertGreaterEqual(len(greetings), 4)
 
     def test_the_first_clause_is_spoken_before_the_sentence_ends(self):
         from receptionist.agent import Sentences

@@ -54,7 +54,7 @@ class Shop(unittest.TestCase):
         self.assertIn("Is this call recorded?", p)
         self.assertTrue(LAWN["notice_waived"])
         for needle in ("Never give advice about chemicals", "Never quote a price for a particular lot", "never claim",
-                       "Season awareness", "Power line down", "urgent_visit", "How you sound", "never open with"):
+                       "Season awareness", "Power line down", "urgent_visit", "How you sound"):
             self.assertIn(needle.lower(), p.lower(), needle)
         for forbidden in ("gas smell", "carbon monoxide", "rotten-egg", "furnace"):
             self.assertNotIn(forbidden, p.lower(), forbidden)
@@ -128,10 +128,11 @@ class Character(unittest.TestCase):
         import random
         now = schedule.local_now(LAWN, "2026-10-20T10:15")
         seen = {prompts.call_state(LAWN, now, None, None, [], rng=random.Random(i)) for i in range(40)}
-        self.assertGreater(len(seen), 30)
+        self.assertGreater(len(seen), 15)   # the surface varies (one quirk, one optional aside); the character does not
         text = "\n".join(seen)
         self.assertIn("Your character on this call:", text)
-        self.assertIn("answer most of the time with no acknowledgement word at all", text)
+        self.assertNotIn("Style for this call", text)           # no random style: the values stay fixed
+        self.assertNotIn("Acknowledgement words you lean on", text)
         self.assertIn("leaf drop", text)                                   # an October aside
         self.assertNotIn("snowbanks", text)                                # but no deep-winter aside in October
         self.assertNotIn("one sec", text.lower())
@@ -143,7 +144,7 @@ class Character(unittest.TestCase):
 
     def test_the_prompt_keeps_the_character_inside_the_rules(self):
         p = prompts.stable_prompt(LAWN).lower()
-        for needle in ("riley has real character", "no body", "made-up personal history", "don't reuse a phrase twice"):
+        for needle in ("you are riley", "no body", "no life story", "don't use the same phrase or opener twice"):
             self.assertIn(needle, p)
 
     def test_thinking_sounds_and_stall_lines_vary_and_never_say_one_sec(self):
