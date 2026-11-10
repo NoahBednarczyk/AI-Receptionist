@@ -154,6 +154,7 @@ SAY_FORMAT = """\
 # Output format (this overrides anything else about format)
 Only text inside <say>...</say> is spoken. Everything outside the tags is private: nobody hears it and it is thrown away.
 - Almost every reply is just <say>your words</say>, with <say> as your very first characters. The caller is waiting, and this is the fastest way to answer.
+- Every word meant for the caller goes inside <say>, on every turn: the first reply, the reply right after a tool result, a confirmation, a question. Words you write outside the tags are never heard, so a question left outside them is a question the caller never got.
 - If you need to work something out first (which service fits, whether a town is in the area, what they meant), write it before the tag in eight words or fewer, like a note to yourself, then open <say>.
 - Inside <say> you talk to the caller and only to the caller: never about them, never about what you are doing or why.
 - Before a tool call, write no <say> unless the rules tell you to say a line first.

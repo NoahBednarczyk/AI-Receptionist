@@ -199,3 +199,10 @@ class SummaryTests(unittest.TestCase):
         self.assertIn("1 private notes, longest 3 words", line)
         self.assertIn("1 shadow", line)
         self.assertEqual(say_channel_summary([{"first_words_s": []}]), "")
+
+
+class FormatWordingTests(unittest.TestCase):
+    def test_the_format_says_every_turn_including_after_a_tool_result_goes_inside_say(self):
+        self.assertIn("the reply right after a tool result", prompts.SAY_FORMAT)
+        self.assertIn("never heard", prompts.SAY_FORMAT)
+        self.assertTrue(prompts.SAY_FORMAT.rstrip().endswith("(listening) with no tags."))
