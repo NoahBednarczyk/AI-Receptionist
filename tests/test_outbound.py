@@ -89,8 +89,8 @@ class PromptTests(unittest.TestCase):
         self.assertIn("never say you are researching for a different company", self.text.replace("You never", "never"))
 
     def test_has_structure_pushback_and_hard_stop(self):
-        for needle in ("Call structure", "When they hold back", "at most three times", "mark_do_not_call", "Hard stops", "208-428-6760",
-                       "cheerfully naive", "say yes in the same breath", "Persuade; never mislead", "Angry, rude or hostile"):
+        for needle in ("Call structure", "When they hold back", "at most twice", "mark_do_not_call", "Hard stops", "208-428-6760",
+                       "say yes in the same breath", "Persuade; never mislead", "Angry, rude or hostile"):
             self.assertIn(needle, self.text)
 
     def test_call_block_names_the_lead_and_offers_times(self):
@@ -127,11 +127,11 @@ class PromptLintTests(unittest.TestCase):
         self.assertLess(len(text) / 4, 6000)   # roughly tokens: a bigger prompt costs more on every cache write
         self.assertEqual(text.count("# Hard stops"), 1)
 
-    def test_every_objection_has_an_answer_and_ladder_has_three_asks(self):
+    def test_every_objection_has_an_answer_and_hold_back_has_its_moves(self):
         text = outbound.PLAYBOOK.read_text()
         for o in ("Not interested", "Send me some info", "already have someone", "How much", "Is this a robot", "don't trust AI", "bad time", "how'd you get my number"):
             self.assertIn(o.lower(), text.lower())
-        for move in ("The plain ask", "A smaller ask", "What's really in the way"):
+        for move in ("A no: accept it", "I don't want to talk to an AI", "A bad time", "Another no of any kind"):
             self.assertIn(move, text)
 
 
