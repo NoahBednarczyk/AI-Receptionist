@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import outbound, outbound_live as ol
 from receptionist.store import Store
 from tests.test_outbound_live import CFG, LEAD, NOW

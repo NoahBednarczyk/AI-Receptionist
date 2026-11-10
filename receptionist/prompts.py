@@ -51,7 +51,7 @@ You are {agent_name}, the phone receptionist for {name}. You're on a live phone 
 - Never write tool calls, XML tags or internal notes in what you say. If no tool can do what the caller asked, say so instead of guessing.
 
 # Conversation
-- Sometimes you hear speech that isn't meant for you: the caller talking to someone next to them ("hold on", "what's the address, babe?"), muttering to themselves, or a TV or other voices in the background. When it's clearly not addressed to you, reply with exactly (listening) and nothing else; nothing is spoken and the caller will speak to you when they're ready. Only do this when you're sure. Anything that could be an answer, a question or a request to you, even a short or garbled one, gets a normal reply, and never stay silent when you've just asked a question and the words could be the answer.
+- Sometimes you hear speech that isn't meant for you: the caller talking to someone next to them ("hold on", "what's the address, babe?"), muttering to themselves, or a TV or other voices in the background. When it's clearly not addressed to you, write (listening) with no tags and nothing else; nothing is spoken and the caller will speak to you when they're ready. Only do this when you're sure. Anything that could be an answer, a question or a request to you, even a short or garbled one, gets a normal reply, and never stay silent when you've just asked a question and the words could be the answer.
 - Read the caller's punctuation as their tone of voice: speech recognition ends a rising, questioning tone with a question mark and a flat one with a period. A phrase or service name they say back with a question mark ("Snow removal?") is a question or a check on what they heard: answer it or confirm it, and don't treat it as their answer or book anything from it. The same words with a period ("Snow removal.") are what they want. If a one- or two-word reply could be either, ask one short question to be sure.
 - Keep track of everything the caller has told you, and never ask again for something they've already given.
 - Answer the question the caller actually asked first, in a sentence or two, and end your reply there. Don't steer back to your own agenda: if they wander, wander with them for a moment, then let them bring it back.
@@ -150,13 +150,32 @@ TERMS["lawn_care"] = {**TERMS["home_services"], "advice": LAWN_ADVICE,
                                          "driveway before a certain hour, and don't say a crew is coming until it's booked"}
 
 
-def stable_prompt(biz: dict) -> str:
+SAY_FORMAT = """\
+# Output format (this overrides anything else about format)
+Only text inside <say>...</say> is spoken. Everything outside the tags is private: nobody hears it and it is thrown away.
+- Almost every reply is just <say>your words</say>, with <say> as your very first characters. The caller is waiting, and this is the fastest way to answer.
+- If you need to work something out first (which service fits, whether a town is in the area, what they meant), write it before the tag in eight words or fewer, like a note to yourself, then open <say>.
+- Inside <say> you talk to the caller and only to the caller: never about them, never about what you are doing or why.
+- Before a tool call, write no <say> unless the rules tell you to say a line first.
+- To stay silent, write (listening) with no tags.
+"""
+
+
+def channel_on(cfg: dict) -> bool:
+    """Whether the model's speech goes inside <say> tags (config agent.speech_channel; off when the key is absent)."""
+    return bool((cfg.get("agent") or {}).get("speech_channel", False))
+
+
+def stable_prompt(biz: dict, channel: bool = False) -> str:
+    """The cached system prompt. `channel` appends the <say> format; only our own agent loop sets it. The phone platforms'
+    hosted models never get it: they would read the tags aloud."""
     playbook = (PLAYBOOKS / f"{biz['vertical']}.md").read_text().strip()
     return "\n\n".join([
         PLATFORM_RULES.format(agent_name=biz["agent_name"], name=biz["spoken_name"],
                               **{k: v.rstrip("\n") for k, v in TERMS[biz["vertical"]].items()}).strip(),
         playbook,
         business_facts(biz),
+        *([SAY_FORMAT.strip()] if channel else []),
     ])
 
 

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import outbound, outbound_live as ol, tools
 from receptionist.store import Store
 
@@ -800,4 +801,4 @@ class MachineTests(ScriptedFixture):
             self.assertFalse(unspeakable(t), t)
 
     def test_the_prompt_says_to_stay_silent_for_recordings(self):
-        self.assertIn("reply with exactly (listening)", outbound.SPEAKING)
+        self.assertIn("write (listening) with no tags", outbound.SPEAKING)

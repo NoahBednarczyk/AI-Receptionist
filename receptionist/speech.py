@@ -34,6 +34,18 @@ NARRATION = re.compile(r"\b(?:(?:this|that|it)(?: isn'?t| is not|'s not) (?:actu
                        r"^(?:i (?:used|picked|chose|went with)|i(?:'ll| will) ask (?:for|about)|no caller id)\b", re.I)
 
 
+# Channel mode: the model puts what it says inside <say>, so reasoning cannot reach the caller by being unrecognised. What
+# remains to catch is internals that slip inside the tag, and a sentence that talks about "the caller" (a note to self).
+CHANNEL_INTERNALS = re.compile(SPOKEN_INTERNALS.pattern.replace(r"|<[a-z/]", ""), re.I)
+ABOUT_THE_CALLER = re.compile(r"^\W*(?:the|this) caller\b", re.I)
+
+
+def channel_guard(sentence: str) -> bool:
+    """The only filter on speech inside <say>...</say>. The older blocklist (`unspeakable`) still runs beside it, in shadow."""
+    s = sentence.strip()
+    return bool(CHANNEL_INTERNALS.search(s) or ABOUT_THE_CALLER.match(s))
+
+
 def unspeakable(sentence: str) -> bool:
     """Thinking out loud or naming internals: dropped before the caller hears it."""
     s = sentence.strip()

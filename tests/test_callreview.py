@@ -1,4 +1,5 @@
 import unittest
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import callreview as cr, live, outbound, outbound_live as ol
 
 T_LAUGH = "Caller: Hello.\nAgent: Hi, is this the owner?\nCaller: Yes.\nAgent: When did you last miss a call?\nCaller: Last week, they didn't leave a message.\nAgent: Ha, so they just vanished!"

@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest import mock
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import spend_report
 from receptionist.config import load_config
 

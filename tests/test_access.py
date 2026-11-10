@@ -10,6 +10,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import access, config, onboarding
 from receptionist.config import load_config
 from receptionist.server import create_app

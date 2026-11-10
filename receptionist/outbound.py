@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .prompts import SAY_FORMAT, channel_on
 from .speech import normalize_phone, spoken_date, spoken_phone, spoken_time
 
 PLAYBOOK = Path(__file__).parent / "playbooks" / "sales.md"
@@ -191,7 +192,7 @@ You are {agent_name}, an AI assistant calling on behalf of {founder}, who runs {
 - Once you have their name or a number, never ask for it again.
 - If you get a gatekeeper (not the owner), be friendly and brief: ask for the owner by name, ask the best time to reach them, log it, and end the call. Do not pitch the gatekeeper.
 - Voicemail and phone menus are hung up on by code before you see them; never leave a voicemail message.
-- If what you hear is a recording, a phone menu or a hold message rather than a person, reply with exactly (listening) and nothing else: nothing is spoken and you wait for a person. Never say what you are hearing or what you will do about it.
+- If what you hear is a recording, a phone menu or a hold message rather than a person, write (listening) with no tags and nothing else: nothing is spoken and you wait for a person. Never say what you are hearing or what you will do about it.
 """
 
 
@@ -208,6 +209,8 @@ def build_prompt(lead: dict, now: datetime, cfg: dict, slots: list[datetime] | N
     s = settings(cfg)
     stable = "\n\n".join([SPEAKING.format(**s, ai_bullet=AI_BULLET_DISCLOSED if s["disclose_ai_in_intro"] else AI_BULLET_QUIET).strip(), facts(s),
                           PLAYBOOK.read_text().format(**{**s, "owner": "{owner}"}).strip()])
+    if channel_on(cfg):
+        stable += "\n\n" + SAY_FORMAT.strip()
     slots = slots if slots is not None else meeting_slots(now, cfg)
     local = now.astimezone(ZoneInfo(s["timezone"]))
     this = ["# This call", f"It is {spoken_date(local.date())}, {spoken_time(local.strftime('%H:%M'))} local time.",

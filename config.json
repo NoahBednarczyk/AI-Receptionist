@@ -21,6 +21,7 @@
     "max_tool_rounds": 6,
     "long_reply_words": 40,
     "reply_word_budget": 40,
+    "speech_channel": true,
     "cache_ttl": "1h"
   },
   "prices_per_mtok": {

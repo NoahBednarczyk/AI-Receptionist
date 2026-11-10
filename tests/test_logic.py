@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import platforms, prompts, schedule
 from receptionist.agent import REFUSAL_LINE, CallSession, transcript_text
 from receptionist.config import business_for_number, load_business, load_config

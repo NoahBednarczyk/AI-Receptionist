@@ -483,6 +483,7 @@ class OutboundSession(CallSession):
         s = outbound.settings(cfg)
         self.client, self.store = client, store
         self.cfg = session_cfg(cfg)
+        self.channel = outbound.channel_on(self.cfg)
         self.biz = {"id": "outbound", "vertical": "outbound", "name": s["company"], "spoken_name": s["company"],
                     "agent_name": s["agent_name"], "timezone": s["timezone"]}
         self.lead, self.state, self.started = lead, state, now
@@ -528,7 +529,7 @@ class OutboundSession(CallSession):
             self._opened = True
             if on_text:
                 on_text(self.hook_text)
-            messages = [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.opener}]
+            messages = [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.tag(self.opener)}]
             self._save(messages, caller_text, {"role": "agent", "text": self.opener, "tools": [], "steps": [{"say": self.opener}]}, None, final=False)
             return Turn(self.opener, [], 0.0, 0.0, False)
         if not self._intro_checked and not self.ctx.ended and affirmed(caller_text):
@@ -572,7 +573,7 @@ class OutboundSession(CallSession):
             on_text(self.intro_text)
             on_text(" " + question)
         line = f"{self.intro_text} {question}"
-        messages = [*self.messages, {"role": "user", "content": caller_text}, {"role": "assistant", "content": line}]
+        messages = [*self.messages, {"role": "user", "content": caller_text}, {"role": "assistant", "content": self.tag(line)}]
         self._save(messages, caller_text, {"role": "agent", "text": line, "tools": [], "steps": [{"say": self.intro_text}, {"say": question}]}, None, final=False)
         return Turn(line, [], 0.0, 0.0, False)
 
@@ -627,7 +628,7 @@ class OutboundSession(CallSession):
                            ("end_call", {"reason": "asked to stop"})):
             result, err = tools.run_tool(self.ctx, name, args)
             used.append({"name": name, "args": args, "result": result, "error": err})
-        messages = [*self.messages, {"role": "user", "content": caller_text}, {"role": "assistant", "content": line}]
+        messages = [*self.messages, {"role": "user", "content": caller_text}, {"role": "assistant", "content": self.tag(line)}]
         self._save(messages, caller_text, {"role": "agent", "text": line, "tools": used,
                                            "steps": [{"say": line}, *({"tool": c} for c in used)]}, None, final=True)
         return Turn(line, used, 0.0, 0.0, True)

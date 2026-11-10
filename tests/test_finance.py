@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest import mock
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import finance, spend_report as sr
 
 NOW = datetime(2026, 11, 1, 20, 0, tzinfo=timezone.utc)

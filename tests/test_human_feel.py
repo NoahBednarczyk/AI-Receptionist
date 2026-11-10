@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import live, prompts, schedule, tools
 from receptionist.agent import (REPEAT_VARIANTS, CallSession, cache_control, cache_write_mult, prewarm, usage_cost)
 from receptionist.config import all_businesses, load_business, load_config

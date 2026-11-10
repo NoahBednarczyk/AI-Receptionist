@@ -8,6 +8,7 @@ from unittest import mock
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import calendar_busy, dashboard, gcal, onboarding, schedule, tools
 from receptionist.config import load_business, load_config
 from receptionist.store import Store

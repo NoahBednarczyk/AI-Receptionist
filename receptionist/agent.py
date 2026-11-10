@@ -6,6 +6,7 @@ so a scenario that passes here is testing the production agent's brain.
 from __future__ import annotations
 
 import json
+import logging
 import random
 import re
 import threading
@@ -18,7 +19,7 @@ from datetime import datetime
 import anthropic
 
 from . import prompts, safety, tools
-from .speech import looks_spanish, redact_card, short_phone_numbers, unspeakable
+from .speech import channel_guard, looks_spanish, redact_card, short_phone_numbers, unspeakable
 from .store import Store
 
 # Tools whose effects stay after the call (or end it): a turn that has run one is kept, never dropped or reverted.
@@ -45,10 +46,79 @@ ACK = re.compile(r"^(?P<ack>al(?:l ?|)right|okay|ok|sure thing|sure|perfect|soun
                  r"wonderful|fair enough|thanks|thank you|mm-?hmm|mm|ah|huh)(?:[,.!;]+|$)\s*(?P<rest>.*)$", re.I | re.S)
 RECENT_ACKS = 3   # an acknowledgement can't come back until three others have been used
 
+log = logging.getLogger("receptionist")
 SILENT = re.compile(r"^\W*\(?\s*listening\s*\)?\W*$", re.I)
 # Sent once when everything the model said this turn was held back, so the caller isn't left with silence.
 NUDGE = ("(System note: the caller heard nothing from you this turn. Reply to them now in one or two short "
          "sentences, without explaining what you're doing or why.)")
+NUDGE_SAY = ("(System note: the caller heard nothing from you this turn. Reply to them now in one or two short "
+             "sentences, without explaining what you're doing or why. Reply now inside <say>...</say>.)")
+SAY_TAG = re.compile(r"<say>(.*?)(?:</say>|\Z)", re.S)
+
+
+def say_text(raw: str) -> str:
+    """What a reply written in the <say> format actually says (for the one-shot calls that do not stream)."""
+    return " ".join(m.strip() for m in SAY_TAG.findall(raw or "") if m.strip())
+
+
+class SayChannel:
+    """Splits the model's streamed text into what is said (inside <say>...</say>) and what is private (everything else).
+    Only the said part reaches `Sentences`; the private part is thrown away. Tags may arrive split across deltas, so a
+    buffer tail that could be the start of the tag being looked for is held back. An unclosed <say> ends with the block."""
+    OPEN, CLOSE = "<say>", "</say>"
+
+    def __init__(self, words: "Sentences"):
+        self.words, self.privates = words, []
+        self._reset()
+
+    def _reset(self) -> None:
+        self.inside, self.buf, self.private, self.spoke = False, "", "", False
+
+    @property
+    def dirty(self) -> bool:
+        return bool(self.inside or self.buf or self.private)
+
+    def _out(self, text: str) -> None:
+        if not text:
+            return
+        if self.inside:
+            self.spoke = self.spoke or bool(text.strip())
+            self.words.add(text)
+        else:
+            self.private += text
+
+    def feed(self, text: str) -> None:
+        self.buf += text
+        while True:
+            tag = self.CLOSE if self.inside else self.OPEN
+            i = self.buf.find(tag)
+            if i >= 0:
+                self._out(self.buf[:i])
+                self.buf = self.buf[i + len(tag):]
+                if self.inside:
+                    self.words.add("\n")   # the end of a <say> is the end of its last sentence
+                self.inside = not self.inside
+                continue
+            keep = next((k for k in range(min(len(tag) - 1, len(self.buf)), 0, -1) if tag.startswith(self.buf[-k:])), 0)
+            self._out(self.buf[:len(self.buf) - keep])
+            self.buf = self.buf[len(self.buf) - keep:]
+            return
+
+    def close(self) -> str:
+        """End of a text block: flush, note the private part, and return what was said of the block."""
+        self._out(self.buf)
+        self.buf = ""
+        note = self.private.strip()
+        if note:
+            if not self.spoke and SILENT.match(note):
+                self.words.silent = True
+            else:
+                self.privates.append(note)
+                log.info("private (not spoken): %s", note)
+        spoke = self.spoke
+        self._reset()
+        said = self.words.close()
+        return said if spoke else ""
 
 
 class Sentences:
@@ -70,6 +140,8 @@ class Sentences:
         self.tainted = False  # a sentence of this text block was thinking out loud: the rest of the block is dropped too
         self.budget, self.used, self.cut = budget, 0, False
         self.said_once = set(said_once or ())
+        self.channel = False   # speech is inside <say>: only speech.channel_guard drops a sentence (see SayChannel)
+        self.shadow: list[str] = []   # channel mode: sentences the old blocklist would have dropped but were spoken
 
     def new_reply(self) -> None:
         """A tool call starts a new reply: the caller hears a pause in between."""
@@ -127,7 +199,13 @@ class Sentences:
         repeat = bool(ANYTHING_ELSE.search(sentence)) and "anything_else" in self.said_once
         if self.budget and self.used and self.used + words > self.budget:
             self.cut = True
-        caught = unspeakable(sentence)
+        if self.channel:
+            caught = channel_guard(sentence)
+            if not caught and unspeakable(sentence) and not self.cut and not repeat:
+                self.shadow.append(sentence)
+                log.warning("shadow: blocklist would drop %r", sentence)
+        else:
+            caught = unspeakable(sentence)
         if caught:
             self.tainted = True
         if self.cut or repeat or caught:
@@ -183,13 +261,14 @@ class CallSession:
                  caller: str | None = None, call_id: str | None = None, platform: str = "text",
                  transfer_outcome: str = "connected", dialed: str | None = None, real_transfers: bool = False):
         self.client, self.cfg, self.biz, self.store = client, cfg, biz, store
+        self.channel = prompts.channel_on(cfg)   # the model's speech goes inside <say> tags
         self.greeting = prompts.pick_greeting(biz, now)   # varies from call to call when the business lists several
         self.call_id = call_id or f"{platform}-{uuid.uuid4().hex[:10]}"
         customer = store.get_customer(biz["id"], caller)
         upcoming = store.upcoming_appointments(biz["id"], caller, now) if customer else []
         # Stable layers first with the cache breakpoint; the per-call state comes after it.
         self.system = [
-            {"type": "text", "text": prompts.stable_prompt(biz), "cache_control": cache_control(cfg)},
+            {"type": "text", "text": prompts.stable_prompt(biz, self.channel), "cache_control": cache_control(cfg)},
             {"type": "text", "text": prompts.call_state(biz, now, caller, customer, upcoming, dialed,
                                                          self.greeting)},
         ]
@@ -209,6 +288,11 @@ class CallSession:
     @property
     def ended(self) -> bool:
         return self.ctx.ended
+
+    def tag(self, text: str) -> str:
+        """Lines our own code speaks and saves as the agent's turns are saved in the same <say> form the model writes, so
+        the model never sees an untagged example of itself."""
+        return f"<say>{text}</say>" if self.channel else text
 
     def last_reply(self) -> str:
         """What the agent said in its last turn (the greeting before the caller first speaks)."""
@@ -275,7 +359,7 @@ class CallSession:
             emit(line, True)
             result, is_error = tools.run_tool(self.ctx, "end_call", {"reason": "safety"})
             call = {"name": "end_call", "args": {"reason": "safety"}, "result": result, "error": is_error}
-            messages += [{"role": "user", "content": caller_text}, {"role": "assistant", "content": line}]
+            messages += [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.tag(line)}]
             self._save(messages, caller_text, {"role": "agent", "text": line, "tools": [call],
                                                "steps": [{"say": line}, {"tool": call}]}, emergency, final=True)
             return Turn(line, [call], 0.0, 0.0, True)
@@ -290,6 +374,8 @@ class CallSession:
             emit(sentence, True)
 
         words = Sentences(speak, a.get("reply_word_budget"), self._said_once, self._recent_acks)
+        words.channel = self.channel
+        chan = SayChannel(words) if self.channel else None
         if emergency:
             first = 0.0
             emit(emergency[1], True)
@@ -322,14 +408,17 @@ class CallSession:
                             self._filler_line = tools.pick_filler(self.ctx, ev.content_block.name)
                             emit(self._filler_line, True)
                     elif ev.type == "content_block_delta" and ev.delta.type == "text_delta":
-                        words.add(ev.delta.text)
+                        if chan:
+                            chan.feed(ev.delta.text)
+                        else:
+                            words.add(ev.delta.text)
                     elif ev.type == "content_block_stop" and ev.content_block.type == "text":
-                        said_in[ev.index] = words.close()
+                        said_in[ev.index] = (chan or words).close()
                 go_on()
                 msg = stream.get_final_message()
             self._count(msg.usage)
-            if words.buf.strip():   # cut off mid-block
-                said_in[max((i for i, b in enumerate(msg.content) if b.type == "text"), default=0)] = words.close()
+            if words.buf.strip() or (chan and chan.dirty):   # cut off mid-block
+                said_in[max((i for i, b in enumerate(msg.content) if b.type == "text"), default=0)] = (chan or words).close()
             text = " ".join(t for t in said_in.values() if t)
 
             if msg.stop_reason in ("refusal", "max_tokens"):
@@ -337,14 +426,14 @@ class CallSession:
                 line = REFUSAL_LINE if msg.stop_reason == "refusal" else (text or random.choice(REPEAT_VARIANTS))
                 if line != text:
                     emit(line, True)
-                messages.append({"role": "assistant", "content": line})
+                messages.append({"role": "assistant", "content": self.tag(line)})
                 spoken.append(line)
                 steps.append({"say": line})
                 break
 
             content = msg.content
-            if len(words.dropped) > dropped_before:   # history holds only what the caller heard
-                content = [{"type": "text", "text": said_in[i]} if b.type == "text" else b
+            if chan or len(words.dropped) > dropped_before:   # history holds only what the caller heard
+                content = [{"type": "text", "text": self.tag(said_in[i])} if b.type == "text" else b
                            for i, b in enumerate(msg.content) if b.type != "text" or said_in.get(i)]
             if content:
                 messages.append({"role": "assistant", "content": content})
@@ -378,12 +467,13 @@ class CallSession:
                 # Everything it said was held back (thinking out loud, a repeat): ask once for words to say.
                 nudged = True
                 last = messages[-1]
+                nudge = NUDGE_SAY if chan else NUDGE
                 if last["role"] == "user":   # nothing kept of the reply: add the note to the last user message
                     body = last["content"]
-                    messages[-1] = {"role": "user", "content": (body + "\n\n" + NUDGE if isinstance(body, str)
-                                                                else [*body, {"type": "text", "text": NUDGE}])}
+                    messages[-1] = {"role": "user", "content": (body + "\n\n" + nudge if isinstance(body, str)
+                                                                else [*body, {"type": "text", "text": nudge}])}
                 else:
-                    messages.append({"role": "user", "content": NUDGE})
+                    messages.append({"role": "user", "content": nudge})
                 continue
             messages.append({"role": "user", "content": results})
             words.new_reply()
@@ -397,10 +487,14 @@ class CallSession:
             emit(reply, True)
             steps.append({"say": reply})
         if messages[-1]["role"] == "user":   # keep the history alternating, ending on what was said
-            messages.append({"role": "assistant", "content": reply or (LISTENING if silent else REPEAT_LINE)})
+            messages.append({"role": "assistant", "content": self.tag(reply) if reply else (LISTENING if silent else self.tag(REPEAT_LINE))})
         entry = {"role": "agent", "text": reply, "tools": used, "steps": steps}
         if words.dropped:
             entry["dropped"] = words.dropped   # for tests and reports; never spoken
+        if chan and chan.privates:
+            entry["private"] = chan.privates   # what the model wrote outside <say>; never spoken, kept for the report
+        if words.shadow:
+            entry["shadow"] = words.shadow
         final = any(c["name"] in IRREVERSIBLE for c in used)
         go_on(irreversible=True)
         self._save(messages, caller_text, entry, emergency, final)
@@ -426,7 +520,8 @@ class CallSession:
         ask = (f"{caller_text}\n\n(System note: the caller has been talking for a while and is still going. Cut in "
                "politely with ONE short spoken line of under 20 words, in your own words: show you caught the gist in a "
                "few words, then either answer what they clearly asked from the business facts or ask the single next "
-               "thing you need. Don't use tools, don't book, don't promise anything, and don't mention this note.)")
+               "thing you need. Don't use tools, don't book, don't promise anything, and don't mention this note."
+               + (" Put the line inside <say>...</say>." if self.channel else "") + ")")
         try:
             resp = self.client.messages.create(
                 model=m["agent"], max_tokens=120, system=self.system, tools=self.tools,
@@ -437,6 +532,8 @@ class CallSession:
             return None
         self._count(resp.usage)
         said = " ".join(b.text for b in resp.content if b.type == "text").strip()
+        if self.channel:
+            said = say_text(said)
         if not said or unspeakable(said) or len(said.split()) > 30:
             return None
         return said
@@ -492,7 +589,7 @@ def prewarm(client: anthropic.Anthropic, cfg: dict, biz: dict) -> dict:
     extra = thinking_param(m)
     resp = client.messages.create(
         model=m["agent"], max_tokens=0, output_config={"effort": m["agent_effort"]},
-        system=[{"type": "text", "text": prompts.stable_prompt(biz), "cache_control": cache_control(cfg)}],
+        system=[{"type": "text", "text": prompts.stable_prompt(biz, prompts.channel_on(cfg)), "cache_control": cache_control(cfg)}],
         tools=[{**t, "strict": True} for t in tools.schemas(biz)],
         messages=[{"role": "user", "content": "warmup"}], **extra,
     )

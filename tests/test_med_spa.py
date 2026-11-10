@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
+import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import prompts, safety, schedule
 from receptionist.agent import CallSession
 from receptionist.config import load_business, load_config
