@@ -257,6 +257,17 @@ def run_scenario(client: anthropic.Anthropic, cfg: dict, biz: dict, sc: dict) ->
     }
 
 
+def say_channel_summary(ran: list[dict]) -> str:
+    """One line on the <say> channel for a run: how many text blocks opened with the tag, and the private notes."""
+    began = [b for r in ran for turn in r.get("began_with_say", []) for b in turn]   # per scenario: a list of blocks per turn
+    notes = [n for r in ran for turn in r.get("private", []) for n in turn]
+    if not began:
+        return ""
+    return (f"Say channel: {sum(began)}/{len(began)} text blocks began with <say> ({100 * sum(began) / len(began):.0f}%); "
+            f"{len(notes)} private notes, longest {max((len(n.split()) for n in notes), default=0)} words; "
+            f"{sum(len(r.get('shadow', [])) for r in ran)} shadow sentences.")
+
+
 def _pct(values: list[float], q: float) -> float | None:
     if not values:
         return None
@@ -328,12 +339,9 @@ def run_all(cfg: dict, biz: dict, client: anthropic.Anthropic, ids: list[str] | 
     ran = [r for r in results if not r.get("skipped") and not r.get("error")]
     firsts = [x for r in ran for x in r["first_words_s"]]
     passed = sum(r["passed"] for r in ran)
-    began = [b for r in ran for b in r.get("began_with_say", [])]
-    notes = [n for r in ran for turn in r.get("private", []) for n in turn]
-    if began:
-        print(f"\nSay channel: {sum(began)}/{len(began)} text blocks began with <say> ({100 * sum(began) / len(began):.0f}%); "
-              f"{len(notes)} private notes, longest {max((len(n.split()) for n in notes), default=0)} words; "
-              f"{sum(len(r.get('shadow', [])) for r in ran)} shadow sentences.")
+    line = say_channel_summary(ran)
+    if line:
+        print("\n" + line)
     print(f"\n{passed}/{len(ran)} passed" + (f" ({len(results) - len(ran)} skipped or errored)." if len(ran) < len(results) else "."), end=" ")
     if firsts:
         print(f"First words: median {statistics.median(firsts):.2f}s, 95th percentile {_pct(firsts, 0.95):.2f}s.", end="")

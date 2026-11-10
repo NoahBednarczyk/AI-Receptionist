@@ -187,3 +187,15 @@ class SayTextTests(unittest.TestCase):
         self.assertEqual(say_text("note <say>Hi there.</say> more <say>Bye</say>"), "Hi there. Bye")
         self.assertEqual(say_text("no tags at all"), "")
         self.assertEqual(say_text("<say>open ended"), "open ended")
+
+
+class SummaryTests(unittest.TestCase):
+    def test_the_report_line_handles_per_turn_lists(self):
+        from receptionist.simulate import say_channel_summary
+        ran = [{"began_with_say": [[True], [True, False]], "private": [[], ["note to self"]], "shadow": ["x"]},
+               {"began_with_say": [[True]], "private": [[]], "shadow": []}]
+        line = say_channel_summary(ran)
+        self.assertIn("3/4 text blocks began with <say> (75%)", line)
+        self.assertIn("1 private notes, longest 3 words", line)
+        self.assertIn("1 shadow", line)
+        self.assertEqual(say_channel_summary([{"first_words_s": []}]), "")
