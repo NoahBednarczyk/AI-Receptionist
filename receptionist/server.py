@@ -499,6 +499,13 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         call_id = f"retell-{call.get('call_id')}"
         log.info("Retell %s for %s: status %s, reason %s", body.get("event"), call.get("call_id"),
                  call.get("call_status"), call.get("disconnection_reason"))
+        if body.get("event") == "call_ended" and call.get("call_id"):
+            # A dial that nobody answered never opened our socket: leave a result row so the queue sees it.
+            try:
+                outbound_live.webhook_result(outbound_live.State(Path(cfg["data_dir"]) / "outbound.json"), cfg, call,
+                                             datetime.datetime.now(datetime.timezone.utc))
+            except Exception:
+                log.exception("could not record the unanswered outbound call %s", call.get("call_id"))
         stored = store.get_call(call_id)
         if body.get("event") == "call_ended" and biz and not (stored and stored.get("transcript")):
             # Live custom-LLM calls already stored our own, richer transcript when the socket closed.

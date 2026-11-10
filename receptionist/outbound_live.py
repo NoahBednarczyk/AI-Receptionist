@@ -187,51 +187,91 @@ def save_leads(cfg: dict, leads: list[dict]) -> None:
 
 # ---------------------------------------------------------------- state file
 
+_path_locks: dict[str, threading.RLock] = {}
+_path_locks_guard = threading.Lock()
+
+
+def _lock_for(path: Path) -> threading.RLock:
+    """One lock per state file for the whole process, so every State object on that file takes turns."""
+    key = str(Path(path).resolve())
+    with _path_locks_guard:
+        return _path_locks.setdefault(key, threading.RLock())
+
+
 class State:
-    """data/outbound.json: the do-not-call list, call attempts, bookings and finished calls. One file, written whole."""
+    """data/outbound.json: the do-not-call list, call attempts, dials, bookings and finished calls. One file.
+    Every change reloads the file under a per-file lock, applies itself, then saves, so a call that opened its State
+    long ago cannot write back a stale copy over a do-not-call entry or slots written meanwhile."""
 
     def __init__(self, path):
         self.path = Path(path)
-        self.lock = threading.Lock()
-        self.data = {"dnc": [], "attempts": {}, "bookings": [], "calls": [], "lead_updates": {}}
+        self.lock = _lock_for(self.path)
+        self.data = self._fresh()
+        self._load()
+
+    @staticmethod
+    def _fresh() -> dict:
+        return {"dnc": [], "attempts": {}, "bookings": [], "calls": [], "lead_updates": {}, "dials": {}}
+
+    def _load(self) -> None:
+        data = self._fresh()
         if self.path.exists():
-            self.data.update(json.loads(self.path.read_text()))
+            data.update(json.loads(self.path.read_text()))
+        self.data = data
 
     def save(self) -> None:
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.data, indent=1))
         tmp.replace(self.path)
 
+    def _change(self, fn) -> None:
+        with self.lock:
+            self._load()
+            fn(self.data)
+            self.save()
+
     def dnc(self) -> set[str]:
         return set(self.data["dnc"])
 
     def add_dnc(self, phone: str) -> None:
-        with self.lock:
-            if phone and phone not in self.data["dnc"]:
-                self.data["dnc"].append(phone)
-            self.save()
+        def go(d):
+            if phone and phone not in d["dnc"]:
+                d["dnc"].append(phone)
+        self._change(go)
 
     def attempts(self, phone: str) -> list[datetime]:
         return [datetime.fromisoformat(t) for t in self.data["attempts"].get(phone, [])]
 
     def add_attempt(self, phone: str, when: datetime) -> None:
+        self._change(lambda d: d["attempts"].setdefault(phone, []).append(when.isoformat()))
+
+    def add_dial(self, call_id: str, info: dict) -> None:
+        """Every call placed, keyed by Retell's call id, so an unanswered call still leaves a record."""
+        self._change(lambda d: d["dials"].__setitem__(call_id, info))
+
+    def dial(self, call_id: str) -> dict | None:
         with self.lock:
-            self.data["attempts"].setdefault(phone, []).append(when.isoformat())
-            self.save()
+            self._load()
+            return self.data["dials"].get(call_id)
+
+    def has_result(self, call_id: str) -> bool:
+        with self.lock:
+            self._load()
+            return any(r.get("callId") == call_id for r in self.data["calls"])
+
+    def results_for(self, phone: str) -> list[dict]:
+        """Finished-call rows for this phone number, oldest first."""
+        return [r for r in self.data["calls"] if (normalize_phone(r.get("phone") or "") or "") == phone]
 
     def booked_times(self) -> list[datetime]:
         return [datetime.fromisoformat(b["start"]) for b in self.data["bookings"]]
 
     def add_booking(self, booking: dict) -> None:
-        with self.lock:
-            self.data["bookings"].append(booking)
-            self.save()
+        self._change(lambda d: d["bookings"].append(booking))
 
     def set_slots(self, slots: list[str], now: datetime) -> None:
         """Open meeting starts from the manager agent (ISO times). They replace the default windows while fresh."""
-        with self.lock:
-            self.data["slots"] = {"updated": now.isoformat(), "list": sorted(slots)}
-            self.save()
+        self._change(lambda d: d.__setitem__("slots", {"updated": now.isoformat(), "list": sorted(slots)}))
 
     def manager_slots(self, now: datetime, max_age_h: int = 36) -> list[datetime] | None:
         got = self.data.get("slots")
@@ -240,14 +280,59 @@ class State:
         return [datetime.fromisoformat(t) for t in got["list"]]
 
     def next_call_number(self) -> int:
-        return len(self.data["calls"]) + 1
+        with self.lock:
+            self._load()
+            return len(self.data["calls"]) + 1
 
     def add_result(self, row: dict, lead_id: str | None, update: dict) -> None:
-        with self.lock:
-            self.data["calls"].append(row)
+        def go(d):
+            same = next((i for i, r in enumerate(d["calls"]) if row.get("callId") and r.get("callId") == row["callId"]), None)
+            if same is None:
+                d["calls"].append(row)
+            else:   # the call's own result replaces the thin row the webhook wrote for it
+                row["n"] = d["calls"][same].get("n", row.get("n"))
+                d["calls"][same] = row
             if lead_id:
-                self.data["lead_updates"][lead_id] = update
-            self.save()
+                d["lead_updates"][lead_id] = update
+        self._change(go)
+
+    def add_result_once(self, row: dict, lead_id: str | None, update: dict) -> bool:
+        """Adds the row unless one for the same callId is there already. True when it was added."""
+        with self.lock:
+            self._load()
+            if row.get("callId") and any(r.get("callId") == row["callId"] for r in self.data["calls"]):
+                return False
+            row["n"] = len(self.data["calls"]) + 1
+            self.add_result(row, lead_id, update)
+            return True
+
+
+MACHINE_REASONS = {"voicemail_reached", "ivr_reached"}   # Retell's disconnection_reason values for a machine
+
+
+def webhook_result(state: State, cfg: dict, call: dict, now: datetime) -> dict | None:
+    """Retell's call_ended webhook for a call we dialed. If nothing wrote a result row for it (nobody answered, so our
+    socket never ran), writes one: "Voicemail" when Retell says a machine answered, otherwise "No answer". Reasons and the
+    duration come from Retell's call object (disconnection_reason, duration_ms, start_timestamp). Once per call id."""
+    call_id = call.get("call_id") or ""
+    dial = state.dial(call_id)
+    if not dial or state.has_result(call_id):
+        return None
+    reason = call.get("disconnection_reason") or ""
+    outcome = "Voicemail" if reason in MACHINE_REASONS else "No answer"
+    log = {"outcome": outcome, "objection": "None",
+           "summary": f"Dialed; no conversation ({reason or 'reason not given'})."}
+    started = (datetime.fromtimestamp(call["start_timestamp"] / 1000, timezone.utc) if call.get("start_timestamp")
+               else datetime.fromisoformat(dial["at"]))
+    minutes = (call.get("duration_ms") or 0) / 60000
+    lead = {"id": dial.get("leadId"), "name": dial.get("name", ""), "phone": dial.get("phone", ""),
+            "type": dial.get("type", ""), "contact": dial.get("contact", "")}
+    row = outbound.call_row(lead, log, started, minutes, state.next_call_number(), cfg, "")
+    row["estCost"] = outbound.est_cost(minutes, outbound.settings(cfg))
+    row["callId"] = call_id
+    if not state.add_result_once(row, lead["id"], outbound.lead_update(lead, log, f"{row['date']} {row['time']}")):
+        return None
+    return row
 
 
 # ---------------------------------------------------------------- tools
@@ -515,11 +600,14 @@ class OutboundSession(CallSession):
     def finish(self, now: datetime, minutes: float, reason: str | None = None) -> dict:
         """Called when the line closes: records the attempt, the result row and the lead update."""
         phone = self.ctx.caller or ""
-        self.state.add_attempt(phone, self.started)
+        raw_id = self.call_id.removeprefix("retell-")
+        if not self.state.dial(raw_id):   # a call placed outside place_call() has no attempt on record yet
+            self.state.add_attempt(phone, self.started)
         log = self.ctx.extra.get("log") or callreview.fallback_log(self.transcript, self.lead, reason)
         row = outbound.call_row(self.lead, log, self.started, minutes, self.state.next_call_number(), self.cfg,
                                 transcript_text(self.transcript, with_tools=False))
         row["estCost"] = outbound.est_cost(minutes, outbound.settings(self.cfg))
+        row["callId"] = raw_id
         if self.first_word_times:
             row["latency"] = {"median_s": round(statistics.median(self.first_word_times), 2),
                               "max_s": round(max(self.first_word_times), 2), "replies": len(self.first_word_times)}
@@ -594,7 +682,8 @@ def call_next(cfg: dict, leads: list[dict], state: State, call_fn, now: datetime
     spent = outbound.spent_today(state.data["calls"], state.data["attempts"], now, s)
     if spent + s["budget_reserve_usd"] > s["daily_budget_usd"]:
         return {"called": None, "reason": f"daily budget: about ${spent:.2f} of ${s['daily_budget_usd']:.2f} spent today"}
-    rows = outbound.plan_queue(leads, now, cfg, history, state.dnc())
+    results = {phone: state.results_for(phone) for phone in history}
+    rows = outbound.plan_queue(leads, now, cfg, history, state.dnc(), results)
     candidates = [r for r in rows if r["would_call"]]
     if not candidates:
         return {"called": None, "reason": rows[0]["why"] if rows else "no leads on the list"}
@@ -700,18 +789,26 @@ def place_call(cfg: dict, lead: dict, now: datetime, state: State, call_fn, env=
         raise RuntimeError("outbound.mode is dry-run: nothing is dialed.")
     if env.get("OUTBOUND_LIVE") != "1":
         raise RuntimeError("Set OUTBOUND_LIVE=1 to allow live outbound calls.")
-    ok, why = outbound.can_call(lead, now, cfg, state.attempts(normalize_phone(lead.get("phone") or "") or ""), state.dnc())
+    phone = normalize_phone(lead.get("phone") or "") or ""
+    ok, why = outbound.can_call(lead, now, cfg, state.attempts(phone), state.dnc(), state.results_for(phone))
     if not ok:
         raise RuntimeError(f"Not calling {lead.get('name')}: {why}")
     rec = json.loads((Path(cfg["data_dir"]) / "retell_outbound.json").read_text())
     if not rec.get("number"):
         raise RuntimeError("No outbound number yet: run `outbound-number --number +1...` once you have one from Retell.")
     warm_in_background(warm_fn)   # the ringing time pays for the prompt prefill
-    return call_fn("POST", "/v2/create-phone-call", {
+    result = call_fn("POST", "/v2/create-phone-call", {
         "from_number": rec["number"], "to_number": normalize_phone(lead["phone"]), "override_agent_id": rec["agent_id"],
         "idempotency_key": f"{lead.get('id') or 'lead'}-{int(now.timestamp())}",   # a retry within an hour cannot dial twice
         "honor_internal_dnc": True,
         "metadata": {"lead": {k: lead.get(k, "") for k in ("id", "name", "phone", "type", "contact", "notes", "consent")}}})
+    # Every dial leaves a record, even one nobody answers: the attempt counts toward the limits and the dial lets the
+    # webhook write a "No answer" row later.
+    state.add_attempt(phone, now)
+    state.add_dial((result or {}).get("call_id") or f"dial-{int(now.timestamp())}",
+                   {"leadId": lead.get("id"), "name": lead.get("name", ""), "phone": lead.get("phone", ""), "type": lead.get("type", ""),
+                    "contact": lead.get("contact", ""), "at": now.isoformat()})
+    return result
 
 
 # ---------------------------------------------------------------- the dashboard hand-off

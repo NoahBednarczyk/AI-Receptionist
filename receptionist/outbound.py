@@ -7,8 +7,7 @@ What is here (none of it places a call or spends anything):
   schemas()       the tools the caller may use (book_meeting, log_call, mark_do_not_call, end_call...)
   call_row()      a finished call as a Cold Call Desk row, ready to be written into the dashboard
 
-Live calling needs a Retell outbound agent and a number (an account change Noah approves) and the legal check in
-docs/outbound-plan.md. Until then the mode is "dry-run".
+Live calling needs a Retell outbound agent and a number (an account change Noah approves). Until then the mode is "dry-run".
 """
 from __future__ import annotations
 
@@ -34,6 +33,7 @@ DEFAULTS = {
     "timezone": "America/Los_Angeles",
     "call_hours": ["08:00", "18:00"],            # the shop's local time; enforced here, not in the prompt
     "max_attempts_per_week": 2,
+    "max_attempts_total": 4,                     # dials in all, answered or not, before the lead is left alone
     "max_attempts_per_day": 1,                   # never dial the same number twice in one day
     # Spend cap for real outbound calls (Retell voice + model), per local day. Costs are estimated from call minutes;
     # a new call is placed only if today's estimate plus a reserve for that call stays under the cap.
@@ -41,7 +41,7 @@ DEFAULTS = {
     "est_cost_per_min_usd": 0.17,
     "est_cost_per_call_usd": 0.03,
     "budget_reserve_usd": 0.45,
-    "cold_enabled": False,                       # stays false until the legal check is done
+    "cold_enabled": False,                       # the switch for cold mode
     # Server-side runner: when enabled, the scheduled trigger starts a block of up to `calls` calls, one at a time,
     # instead of one call. Off by default; turn it on only after any other runner (the Mac scripts) is retired.
     "block_runner": {"enabled": False, "calls": 5, "pause_s": 120, "max_call_wait_s": 900},
@@ -69,8 +69,11 @@ def settings(cfg: dict) -> dict:
 
 # ---------------------------------------------------------------- eligibility
 
+FINAL_OUTCOMES = {"Not interested", "Demo booked", "Pilot signed"}   # a lead with one of these is done being called
+
+
 def can_call(lead: dict, now: datetime, cfg: dict, attempts: list[datetime] | None = None,
-             dnc: set[str] | None = None) -> tuple[bool, str]:
+             dnc: set[str] | None = None, results: list[dict] | None = None) -> tuple[bool, str]:
     """(ok, reason). `now` is timezone-aware. Every refusal names its reason, so the dry run shows it."""
     s = settings(cfg)
     phone = (normalize_phone(lead.get("phone") or "") or "")
@@ -83,10 +86,17 @@ def can_call(lead: dict, now: datetime, cfg: dict, attempts: list[datetime] | No
     elif s["mode"] == "warm-only" and lead.get("consent") != "yes":
         return False, "no consent on record (warm-only mode)"
     elif s["mode"] == "cold" and not s["cold_enabled"]:
-        return False, "cold calling is switched off (legal check not done)"
+        return False, "cold calling is switched off"
     if lead.get("test"):   # a test call to Noah's own phone: his number, his timing
         return True, "ok (test call to the owner's own phone)"
     local = now.astimezone(ZoneInfo(lead.get("timezone") or s["timezone"]))
+    last = (results or [None])[-1]   # what happened on the last finished call to this number
+    if last and last.get("outcome") in FINAL_OUTCOMES:
+        return False, f"already has an outcome: {last['outcome']}"
+    if last and last.get("outcome") == "Callback requested" and (last.get("followDate") or "") > local.strftime("%Y-%m-%d"):
+        return False, f"callback requested for {last['followDate']}"
+    if len(attempts or []) >= s["max_attempts_total"]:
+        return False, f"already tried {len(attempts)} times in all"
     if local.weekday() > 4:
         return False, "weekend"
     start, end = (datetime.strptime(t, "%H:%M").time() for t in s["call_hours"])
@@ -104,13 +114,14 @@ def can_call(lead: dict, now: datetime, cfg: dict, attempts: list[datetime] | No
 
 
 def plan_queue(leads: list[dict], now: datetime, cfg: dict, history: dict[str, list[datetime]] | None = None,
-               dnc: set[str] | None = None) -> list[dict]:
+               dnc: set[str] | None = None, results: dict[str, list[dict]] | None = None) -> list[dict]:
     """Every lead on the list stage with the decision for it. Callable leads first, warmest first."""
     rows = []
     for lead in leads:
         if lead.get("stage", "leads") != "leads":
             continue
-        ok, why = can_call(lead, now, cfg, (history or {}).get((normalize_phone(lead.get("phone") or "") or "")), dnc)
+        phone = normalize_phone(lead.get("phone") or "") or ""
+        ok, why = can_call(lead, now, cfg, (history or {}).get(phone), dnc, (results or {}).get(phone))
         rows.append({"lead": lead, "ok": ok and settings(cfg)["mode"] != "dry-run", "would_call": ok, "why": why})
     rows.sort(key=lambda r: (not r["would_call"], lead_rank(r["lead"])))
     return rows
