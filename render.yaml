@@ -14,6 +14,8 @@ services:
         value: 3.13.5
       - key: RECEPTIONIST_DATA_DIR
         value: /var/data
+      - key: PUBLIC_BASE_URL          # the links in owner emails point here
+        value: https://receptionist-575z.onrender.com
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: RETELL_API_KEY
@@ -25,6 +27,26 @@ services:
       - key: TOKEN_SECRET
         sync: false
       - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      # Owner and admin email (Gmail with an app password works with no domain; leave blank to send nothing).
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      # Off-box backups (any S3-compatible bucket); leave blank to rely on Render's disk snapshots.
+      - key: BACKUP_S3_BUCKET
+        sync: false
+      - key: BACKUP_S3_KEY_ID
+        sync: false
+      - key: BACKUP_S3_SECRET
+        sync: false
+      - key: BACKUP_S3_REGION
+        sync: false
+      - key: BACKUP_S3_ENDPOINT
         sync: false
     disk:
       name: receptionist-data

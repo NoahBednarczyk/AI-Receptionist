@@ -1,290 +1,89 @@
-# Receptionist: Phase 0
+# Receptionist
 
-An AI phone receptionist for one demo home-services business, Acme Plumbing & Heating. It answers, books real arrival windows, reschedules and cancels existing ones, handles emergencies, transfers, takes messages, shares approved tips, speaks Spanish and texts confirmations. Phase 0 proves the agent on scripted test calls before any customer hears it.
+An AI phone receptionist for small trades shops, sold as a monthly subscription. When nobody at a shop picks up (or the
+line is busy) the shop's carrier forwards the call to us: the agent answers in the shop's name, books the job inside
+the shop's hours, takes a message, and for an emergency speaks the safety line and tries the owner's cell. The owner
+gets every call by email and on a phone dashboard, a daily digest, and a weekly report.
 
-```
-caller -> voice platform (Retell or Vapi) -> Claude Sonnet 5.5 agent -> our tools (schedule, bookings, leads, messages)
-                                                        \-> after hang-up: Claude Sonnet 5.5 summary and quality flags
-```
+- **Pilot vertical:** emergency home trades (heating, cooling, plumbing), North Idaho. Demo shop `businesses/hvac.json`
+  ("Peak Heating & Plumbing (demo)"). Lawn care and snow removal (`businesses/lawn_care.json`) is a second demo shop and
+  currently runs the live number. `acme` (business hours) is a test fixture. The med spa is archived at git tag `med-spa-archive`.
+- **Design doc** (product, pricing, go-to-market): https://claude.ai/artifact/GtSqWJL89vevGzkp3oeMUN
+- `CLAUDE.md` is the working notes (rules, architecture, current state); `docs/HISTORY.md` is the dated changelog.
 
-The prompt, tools and business data live here; the voice platform only carries the audio. The same `CallSession` runs text chats and simulated calls, so a passing scenario tests the agent the phone line uses.
+## How a call runs
+Retell (voice, phone line) opens a websocket to `receptionist/live.py`; every turn is answered by our own agent loop
+(`agent.py`, Claude Sonnet 5.5) with its guards: `safety.py` speaks emergency lines from code, `agent.Sentences` and the
+`<say>` channel decide what is spoken, `degraded.py` takes over if the model fails. Tools (`tools.py`) book, look up,
+reschedule, take messages, create leads and transfer. After the call `postcall.py` summarizes it and `notify.py` emails
+the owner. Platform-hosted agents (Vapi, Retell-hosted LLM) were removed: they bypass the guards.
 
-## Setup (once)
+Prompt layers: `prompts.py` (rules) + `playbooks/<vertical>.md` + the shop's facts (`businesses/<id>.json`). Real clients'
+files live in `data/clients/` on the server, never in git.
 
-1. `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
-2. `export ANTHROPIC_API_KEY=...` with credit on the account (Plans & Billing in the Claude Console).
-3. `python -m unittest discover tests` should pass without a key.
-
-## Try it
-
+## Setup
 ```bash
-python -m receptionist chat                                    # a call right now, as a new caller
-python -m receptionist chat --caller +13125550142              # Pat Rivera, a returning customer
-python -m receptionist chat --at "2026-10-31T23:40"            # Saturday night: after-hours rules apply
-python -m receptionist prompt --at "2026-10-27T10:15"          # the exact system prompt the agent gets
-python -m receptionist availability                            # open arrival windows
-python -m receptionist log                                     # bookings, leads, messages, queued texts, calls
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+export ANTHROPIC_API_KEY=...        # needed for chat and simulate only; the unit tests need no key
+.venv/bin/python -m unittest discover tests          # about 13 s
+.venv/bin/python -m receptionist chat --business hvac   # talk to it as a caller
 ```
-
-`chat` prints each tool call, the time to the agent's first words, and the post-call summary. A pretend `--at` time uses a throwaway database, so fake dates never reach `data/receptionist.sqlite`.
-
-## Scripted test calls
-
-```bash
-python -m receptionist simulate --list
-python -m receptionist simulate                       # all 20 scenarios, 4 at a time
-python -m receptionist simulate gas_smell_inside -v   # one scenario with its transcript
-```
-
-A Claude Haiku 5.5 caller plays each persona in `scenarios/home_services.json` against the real agent, on an in-memory copy of the demo data at the scenario's local time. Each call is then checked two ways. `expect` (booked, transferred, lead, message, how it ended) is read from the database, along with a length check that fails any reply over 45 words. `rubric` items plus two standard ones are graded by Claude Sonnet 5.5 from the transcript, with the agent's full instructions and call details in front of it. The run prints pass/fail, median and 95th-percentile time to first words, and agent cost per call, and writes a full report with transcripts to `data/runs/`. `--effort low|medium|high` overrides the agent's effort for one run.
-
-**Phase 0 gate (from the design doc):** 9 of 10 scripted calls handled correctly. Results vary by about two calls in 15 from run to run, so judge a change on two runs, not one.
 
 ## Testing budget: $1 a day
+`python -m receptionist budget` shows today's spend. `simulate --business hvac --quick` (6 scenarios, about $0.40) while
+iterating; the full suite (`simulate --business hvac`, 16 scenarios, about $1.05) only to confirm. The gate for a change
+to the agent is 9/10 across two full runs with no failure on safety lines, invented prices or AI disclosure. Run reports
+with full transcripts land in `data/runs/`. Raise the day's limit only on the owner's word (`budget --raise-today N`).
 
-```bash
-python -m receptionist budget              # today's spend, and what --quick and a full run cost
-python -m receptionist simulate --quick    # 6 core scenarios, for iterating
-```
-
-- Every simulated call and every `chat` writes its cost to `data/spend.json`. A run that wouldn't fit in what's left of `simulate.budget_per_day` refuses to start, and each scenario reserves its estimated cost before it starts, so parallel scenarios can't overshoot together. `chat` refuses once the day's budget is gone.
-- Estimates use the larger of `simulate.estimated_cost_per_scenario` ($0.015) and the last run's measured average, so they err high: about $0.09 for `--quick` and $0.22 for all 15. Costs come from token counts and the prices in `config.json`, so check the Console's usage page now and then.
-- What cut the cost, against about $0.30 per full run before: the caller is Claude Haiku 5.5 instead of Sonnet (about 20 times cheaper per token); the grader's copy of the agent's instructions is cached, so it's sent at a tenth of the price after the first scenario; the grader runs at low effort with one- or two-sentence evidence; and a call that already failed a deterministic check skips grading.
-- Each run prints its cost split three ways (agent, caller, grader). The grader is now most of it.
-- **Measured (2026-10-23):** a quick run costs $0.053–0.065, about $0.009 per call (down from $0.02): agent $0.011, caller $0.003, grader $0.04–0.05. The Haiku caller improvises a little more than Sonnet did, for example pressing on safety questions, which makes calls slightly harder but still realistic.
-
-## What the agent can do
-
-- **Existing appointments:** finds them by the caller's number, tells them the window on file, and reschedules or cancels with `reschedule_appointment` and `cancel_appointment`. Changes need the caller ID, or a number the caller gives, to match the appointment, so a neighbor with a confirmation number can't cancel someone else's visit or hear its details.
-- **Advice, within limits:** shares the business's `approved_tips` (shut the valve behind a running toilet, no drain chemicals before a visit) and simple, safe steps of its own (a towel under a drip). It never advises on gas, electrical work beyond the approved tips, opening appliances, tools or chemicals, never diagnoses a cause, and keeps emergencies to the playbook's safety lines. The tips in `acme.json` are demo tips: each real business has to approve its own.
-- **Spanish:** switches when the caller speaks Spanish (`speech.looks_spanish`). The fixed "one moment" lines, spoken dates and the caller's texts switch too; the owner's texts stay in English. On Retell and Vapi the fixed lines are static text, so they're still English there.
-- **Conversation:** keeps track of what the caller already said, answers side questions before carrying on, handles several requests, and books two different services on one call (a second call for the same service updates the first booking).
-- **AI disclosure:** the greeting no longer announces it ("this is Sam"), but whenever a caller asks, the agent says plainly that it's the business's virtual assistant, and it never claims to be human. Several states regulate AI disclosure in customer calls; check the rules where each customer operates before launch.
-
-## Latest results (2026-10-23)
-
-| Measure | Result |
+## Commands (all in `python -m receptionist ...`)
+| Command | What it does |
 |---|---|
-| Original 15 scenarios | 27 of 30 calls (90%) across two full runs: met the Phase 0 gate |
-| Harder 28-scenario suite (speech-like caller, corrections, garbled numbers, Spanish, appointments) | 64–68% per pair of full runs; the last full run passed 16 of 28, and its gas, robocall and angry-caller failures were fixed and re-checked afterwards |
-| Time to the agent's first words (model only) | median 1.1–1.7 s per run; 95th percentile about 2.8 s |
-| Agent cost per call | about $0.02 to $0.04 on Claude Sonnet 5.5 (was $0.002 on Haiku, which was too slow with thinking on) |
-| Effort | low scored 13/15 and medium 11/15 at similar speed, so the agent stays at low |
+| `serve` | the live server (Retell websocket and webhooks, dashboard, landing page at `/`, admin routes) |
+| `new-client [--from intake.yaml] [--template hvac\|lawn_care]` | writes a shop's file and a printable owner checklist (`.checklist.html`) |
+| `client-upload`, `owner-links` | put a shop's file on the server; print its private dashboard and calendar links |
+| `retell-tune` | push voice settings to the Retell agent (needs the owner's yes: it changes the live line) |
+| `simulate`, `budget`, `chat`, `record` | testing |
+| `backup`, `restore --dry-run`, `purge` | data safety and deletion |
+| `latency-report`, `finance-sync`, `spend-report` | where the time and money go (read-only) |
+| `calendar-sync --business ID` | check a shop's Google Calendar access (`--push` re-sends bookings) |
+| `voice-test lines|blind` | blind voice comparison kit (`docs/voice-comparison.md`) |
 
-Every outcome-level problem found was fixed in code: wrong-year dates, silent transfers, silent hang-ups (a safety hang-up now always speaks the safety line), guessed phone digits, double bookings, and booking a tenant only after landlord approval. The remaining failures are wording: replies over 45 words, small promises ("I can get a technician out"), a stacked question, and the odd extra sentence of advice.
+Outbound discovery caller (`outbound*.py`, `playbooks/sales.md`, cron `outbound-caller-trigger`): sells to lawn and snow
+shops; leave it alone unless the owner says otherwise.
 
-## Speed work (2026-10-23)
+## Server settings (environment on Render)
+Required: `ANTHROPIC_API_KEY`, `RETELL_API_KEY`, `RETELL_WS_SECRET`, `DASHBOARD_TOKEN` (admin key), `TOKEN_SECRET`.
+Email: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Gmail with an app password works with no domain), `ADMIN_EMAIL`; later
+`EMAIL_API_URL`, `EMAIL_API_KEY`, `EMAIL_FROM` for an HTTP provider. Backups: `BACKUP_S3_*`. Calendar: `GOOGLE_SERVICE_ACCOUNT_JSON`.
+A shop gets email with `"notify": {"email": [...]}` in its file (`new-client` asks). Texting is off (`texting_enabled`)
+until Twilio registration is done; see `docs/10dlc-registration.md`.
 
-Time to first words, model only, under full test load (`simulate --thinking adaptive|disabled`):
+Admin routes (admin key): `/admin/notifications` (emails sent and failed), `/admin/costs` (cost per minute per shop),
+`/admin/latency`. Open to anyone: `/health`, `/health/deep` (point an uptime monitor here), `/`.
 
-| Setup | Passed | Median | 90th percentile | Turns over 2 s |
-|---|---|---|---|---|
-| Thinking on | 26/30 | 1.31 s | 2.67 s | 25% |
-| Thinking off | 22/30 | 1.29 s | 1.80 s | 5% |
-| Thinking on, fixed line on every tool call (current) | 15/17* | 1.16 s | 2.01 s | 13% |
+## When something fails
+- **Model fails or stalls:** the call becomes a code-driven message taker (name, 10-digit callback, one sentence, saved as urgent).
+- **Server unreachable:** Retell (docs checked 2026-11-12) gives the caller nothing: it retries the websocket three times,
+  then ends the call. `fallback_number` only covers Retell's own outage or full concurrency (`inbound_fallback_number`
+  in the shop file). The shop's carrier forwarding on "no answer / busy" is the safety net; watch `/health/deep`.
+- **Backups:** Render snapshots the disk every 24 h for 7 days; `backup.py` also uploads a tar.gz twice a day to an
+  S3-compatible bucket and keeps 30 days (off until `BACKUP_S3_*` is set).
+- **Prompt cache:** `keepwarm.py` refreshes each live shop's cache every 50 minutes by day. Measured 2026-11-12 on the
+  hvac/lawn prefix (14.9k tokens): a second identical request read all of it and wrote nothing, so a refresh costs a read
+  (about $0.003), not a write.
 
-\*The API account ran out of credit partway through, so 13 of these 30 calls didn't run.
+## Rules that do not change
+- The agent says plainly that it is the shop's virtual assistant when asked and never claims to be human.
+- Real clients' greetings always carry the recording notice and the AI disclosure (`new-client` refuses otherwise).
+- Advice is limited to approved tips and simple, safe steps; never gas, electrical work beyond tips, opening equipment or
+  chemicals; no diagnosis; emergencies stay on the safety lines in `safety.py`.
+- Card numbers are removed before the model sees them; a record is shown only to the caller ID's owner.
 
-- **Update 2026-10-25: thinking is now off, on Sonnet 5.5.** Live Retell calls measured 3.8 s end to end with Haiku thinking on (3.5 s of it the model). Code now says the safety lines (`safety.py`) and holds back any sentence of thinking out loud (`agent.Sentences`), which removed the reasons thinking had to stay on. Haiku with thinking off still narrated and stacked questions (3/10); Sonnet 5.5 with thinking off passed 7/10 at a median 1.5 s, 95th percentile 1.8 s. The remaining failures are single replies over 45 words.
-- **Thinking stays on.** Off is faster in a quiet one-turn benchmark (about 0.9 s against 1.7 s), but under load the median barely moves. It costs pass rate, and it makes the agent narrate its instructions aloud ("Burst pipe, so I'll give the safety line first"); no prompt wording fully stopped that.
-- **The slowest turns were tool calls the agent made without speaking.** The caller waited through two model calls, a median 2.5 s. Now a fixed line ("One moment while I check the schedule.") plays the moment a tool call starts. `tools.FILLERS` holds the lines; the Retell export plays them as static text during execution and the Vapi export as tool start messages. The prompt tells the agent not to announce those tools itself, so callers don't hear it twice.
-- **On the phone platforms, the platform runs the model**, probably with thinking off for speed. The prompt now tells the agent never to narrate or speak tool names, and `simulate` fails any call where it does. Before going live, check the platform's thinking setting and re-run these scenarios with `--thinking disabled`.
-
-The quality test for the final setup is incomplete (17 of 30 calls) because the credit ran out.
-
-## Live phone line (Retell, custom LLM)
-
-Retell runs the phone line, speech recognition and the voice; every reply comes from our agent over a websocket (`receptionist/live.py`), so all the guards in `agent.py` apply on real calls. Texting is off for now (`texting_enabled: false` in the business JSON), so the agent never promises a text; the owner sees calls, summaries, bookings and messages on the dashboard instead.
-
-Once, in Terminal (the secrets go in `~/.zshrc`, never in the project):
-
-```bash
-echo 'export RETELL_API_KEY=paste-your-retell-key' >> ~/.zshrc
-echo "export RETELL_WS_SECRET=$(openssl rand -hex 16)" >> ~/.zshrc
-echo "export DASHBOARD_TOKEN=$(openssl rand -hex 12)" >> ~/.zshrc
-source ~/.zshrc
-```
-
-Then, with ngrok installed and your free static domain claimed:
-
-```bash
-ngrok http --url=your-domain.ngrok-free.app 8000                     # terminal 1
-python -m receptionist serve --port 8000                             # terminal 2
-python -m receptionist retell-voices                                 # pick a voice_id
-python -m receptionist retell-setup --base-url https://your-domain.ngrok-free.app --number +1XXXXXXXXXX --voice <voice_id>
-```
-
-`retell-setup` creates the Retell agent pointed at your server, assigns your number to it, and adds the number to `businesses/acme.json`. Call the number to talk to Sam. The owner's page is at `https://your-domain.ngrok-free.app/dashboard?token=<DASHBOARD_TOKEN>`.
-
-The line works only while the Mac is awake and both terminals are running; move `serve` to a host such as Railway for an always-on line. The platform-hosted Retell and Vapi paths (`export retell|vapi`, `/retell/tool/*`, `/vapi/webhook`) still work, but they skip our agent loop and its guards.
-
-## How the design is enforced
-
-| Rule (design doc) | Where |
-|---|---|
-| Recording notice on every call; honest about being AI whenever asked | `greeting` in `businesses/acme.json`; platform rules in `prompts.py`; `ai_question_faq` scenario |
-| Answer only from the business's facts | Facts compiled into the cached prompt (`prompts.business_facts`); graded on every test call |
-| Offer only real availability | `check_availability` → `schedule.open_windows` (hours, 2-hour lead time, 2 technicians per window) |
-| Book only after a read-back | Prompt rule; `book_appointment` rejects stale windows, towns outside the area and partial phone numbers |
-| Emergencies get the safety line, then a person | `playbooks/home_services.md`; `transfer_call` allows the office only in business hours and on-call only after hours |
-| Transfers fail over to an urgent message | `transfer_call` returns `no_answer`; `take_message` promises the callback time |
-| Never take card numbers | Prompt rule; `card_payment` scenario |
-| Only safe advice | `approved_tips` plus the prompt's limits; `advice_tips` scenario; graded on every call |
-| Only the customer can change an appointment | `tools._callers_appointment`; `cancel_wrong_number` scenario |
-| Callers can't change the agent | Tools scoped to the dialed number's business; `prompt_injection` scenario |
-| Fast replies | Claude Sonnet 5.5 at low effort with thinking off, streamed a sentence at a time, the whole conversation cached, safety lines spoken by code; about 1.5 s to first words |
-| Summary and quality flags after every call | `postcall.summarize` on Claude Sonnet 5.5, run by `chat` and by the server after each call |
-
-Two changes from the design doc's tool list: business knowledge sits in the cached prompt instead of a `search_knowledge` tool, which saves a round trip per question while a business's facts stay small; and confirmation texts are sent by `book_appointment` itself rather than a separate `send_sms` tool.
-
-## Cost per client (estimate, 2026-10-23)
-
-Assumes 3-minute calls on Retell: $0.055 platform + $0.015 telephony + the voice + about $0.01 of Claude Sonnet 5.5 per minute ([Retell pricing](https://www.retellai.com/pricing)). The voice is $0.08 a minute for ElevenLabs v4 Turbo (the current one, chosen 2026-10-26 to sound more human), $0.04 for ElevenLabs Flash, or $0.015 for Cartesia, OpenAI and Retell's own voices. Each call also gets a post-call summary (about $0.008 on Claude Sonnet 5.5, cached) and, once texting is on, about 1.4 texts at about $0.013 each ([Twilio SMS](https://www.twilio.com/en-us/sms/pricing/us)). Fixed costs per client: $2 number, about $2 a month for the texting campaign ([Twilio 10DLC fees](https://support.twilio.com/hc/en-us/articles/1260803965530)), and about $1 of shared hosting.
-
-| Plan | Price | Minutes | Cost with ElevenLabs v4 Turbo | Margin | Cost with a $0.015 voice | Margin |
-|---|---|---|---|---|---|---|
-| Starter | $99 | 200 | $39 | 61% | $26 | 74% |
-| Pro | $249 | 800 | $140 | 44% | $88 | 65% |
-| Team | $499 | 2,000 | $342 | 31% | $212 | 57% |
-
-The voice platform and the voice are about 90% of the cost; Claude is under 10%. Options: keep ElevenLabs for the most human sound and price plans higher, offer it as a premium tier, or move to a self-hosted voice pipeline (LiveKit or Pipecat, about $0.04 a minute plus the voice). One-time per client: texting registration, $4.50 (sole proprietor or low volume) or $46 (standard brand), plus $15 per campaign.
-
-## Hosting on Render
-
-`render.yaml` describes the service: an always-on web service in Oregon (close to Retell), a 1 GB disk at `/var/data` for the database, and the start command `python -m receptionist serve --host 0.0.0.0 --port $PORT`. The free plan sleeps when idle, so use a paid plan.
-
-1. Put the project in a private GitHub repository (`.gitignore` already leaves out `data/`, `.venv/` and caches; no secrets are in the project):
-   `git init && git add . && git commit -m "Receptionist" && git branch -M main`, then create an empty private repo on GitHub and `git remote add origin <url> && git push -u origin main`.
-2. In Render: New > Blueprint, connect the repo, and enter the four secrets it asks for (`ANTHROPIC_API_KEY`, `RETELL_API_KEY`, `RETELL_WS_SECRET`, `DASHBOARD_TOKEN`; use the same `RETELL_WS_SECRET` as in `~/.zshrc`).
-3. When it is live, `https://<name>.onrender.com/health` should answer. Then point Retell at it from your Mac: `python -m receptionist retell-tune --base-url https://<name>.onrender.com`.
-4. Call the number, then stop ngrok and the local server. The dashboard is at `https://<name>.onrender.com/dashboard?token=<DASHBOARD_TOKEN>`.
-
-The first deploy seeds the demo data. Calls, bookings and messages live on the disk, so they survive deploys. Set `PYTHON_VERSION` in `render.yaml` if a build complains about the Python version.
-
-## Lawn care and snow pilots (overflow mode)
-
-The product is pitched to owner-operated lawn care, landscaping and snow removal businesses in North Idaho (the earlier heating and plumbing demo shop has been removed). A shop forwards its calls to us when nobody picks up (no answer or busy); the agent books the job, takes a message, or tries the owner's cell, and the owner reads every call on a phone-friendly dashboard. The demo shop is **Peak Heating & Plumbing (demo)**, `businesses/hvac.json`, which is also the default business and holds the live number. `acme` (plumbing, business hours) and `glow` (med spa) stay in the repo.
-
-- **Overflow mode:** `"mode": "overflow"` in the business JSON. Greetings say the crew is out on a job and never ask a question. The owner's cell is the `owner` transfer target (`available: always`); the agent takes the caller's message first, then tries the cell, and a 555-01xx placeholder never rings.
-- **Safety lines:** `safety.py` (`LAWN_CARE`): downed power lines, injuries, fallen trees and a flooding sprinkler line are spoken by code; the playbook is `playbooks/lawn_care.md`.
-- **Sign up a shop:** `python -m receptionist new-client` (asks questions) or `--from intake.yaml` (see `.internal/intake.example.yaml`). It writes `businesses/<id>.json` with only that shop's own facts, checks that it loads, and prints (and saves beside the file) a one-page checklist for the owner: call-forwarding codes, a test, how to turn it off. Under 30 minutes for the owner; our side is assigning the shop its own number in Retell and adding it to `phone_numbers`.
-- **Owner view:** `/dashboard?token=...` shows every call as a card (caller, why they called, outcome, booked window, follow-up, full transcript), then bookings, messages and leads. Phone width tested in HTML only. `python -m receptionist calendar-url ...` gives a private calendar feed of bookings.
-- **No email digest.** Sending email needs an email account or API key, which this project doesn't have. The dashboard is the owner's end-of-day view.
-
-### Pilot day: what to check
-Before the first forwarded call:
-- [ ] The shop's own number is assigned in Retell, in `phone_numbers`, and `retell-tune --business <id>` has run. Call it yourself once.
-- [ ] The owner's cell in the JSON is a real number (the new-client command warns if it is a 555-01xx placeholder).
-- [ ] The owner has done the forwarding test on the checklist and knows the turn-off code.
-During the day, open the dashboard after each call and look for:
-- [ ] A call that ended without a booking, a message, a lead or a transfer (nothing should be lost).
-- [ ] The wrong town, name or number in a booking or message; a price that isn't in the shop's list; any advice beyond an approved tip.
-- [ ] Narration ("the number matches, so I'll...") or the same question asked twice.
-- [ ] Any no-heat or frozen-pipe call: was the line spoken, and was an emergency visit or the owner offered?
-- [ ] The owner's cell: did the transfer ring? (The agent can't tell if the owner answered; see below.)
-At the end of the day: read every transcript, count booked / message / lead / transferred, compare against the shop's own missed-call list, write down every misheard name or town, and check the spend with `budget`. **Turn forwarding off** the same day if a safety line was missed, a price was invented, or a caller was misled.
-
-### What is not verified
-- **Unit tests and simulated calls only** for the overflow flow on a new shop. The live line runs whatever was last pushed to GitHub (see CLAUDE.md for what is and isn't pushed).
-- **Owner-cell transfers:** Retell hands the call over and our agent is gone, so it cannot detect "nobody answered". The fallback is the message taken *before* the transfer, not an automatic return to the agent.
-- **Forwarding codes:** the AT&T/T-Mobile (`**61*`, `##004#`) and Verizon (`*71`, `*73`) codes are the common ones and have not been tried on a phone. Business phone systems differ.
-- **Dashboard on a phone, the calendar feed in Google Calendar, `new-client` with a real shop, and the checklist:** not tried on a device or with a real owner.
-- **Open items I did not touch:** the recording notice and the legal review below are unchanged, and the AI-disclosure rule is intact.
-
-## When something fails (reliability, 2026-11-12)
-
-- **The model fails or stalls** (Anthropic outage, timeout; the client gives up after 20 s with one retry, and a live call stops waiting after 12 s of silence, `live.model_timeout_s`): the call becomes a code-driven message taker (`degraded.py`): name, a 10-digit callback number read back, one sentence, saved as an **urgent** message, goodbye. Safety lines still come first. The owner sees it on the dashboard like any urgent message; its text says it came from the fallback line.
-- **Our server is unreachable (Render down, deploy gone wrong):** Retell's docs (checked 2026-11-12) describe no fallback for a custom-LLM websocket that will not open: Retell retries 3 times (7 s each) and ends the call with `error_llm_websocket_open`, so the caller hears nothing. `fallback_number` on the phone number only applies when Retell's concurrency is full or Retell itself is in outage mode. `retell_setup.number_settings` sets it when a shop's JSON has `inbound_fallback_number` (the owner's cell); applying it is a `retell-tune` run. For the rest, in overflow mode the shop's carrier forwarding is the safety net: tell owners to forward on "no answer / busy" so a dead line is the exception, and keep an uptime monitor on `/health/deep` (below) so we hear about an outage before a customer does.
-- **Uptime alert:** `GET /health/deep` answers 200 when the database accepts a write and the model API answered in the last 10 minutes (`health.model_max_age_s`), 503 with the failing part otherwise. Point a free external monitor at `https://<server>/health/deep` (UptimeRobot's free plan: HTTP monitor, 5-minute interval, email alert; Better Stack's free tier also works) and have it email the owner of the line. Creating the account is Noah's step; nothing in the code needs it. Render's own health check can stay on `/health`, which does not touch the database, so a model outage never restarts the server.
-- **Backups:** Render snapshots the disk every 24 hours and keeps them 7 days (restore replaces the whole disk, from the Disk page; docs.render.com/disks). On top of that, `receptionist/backup.py` makes one `receptionist-YYYYmmdd-HHMMSS.tar.gz` (a consistent copy of the database via SQLite's backup API, `clients/`, the do-not-call list and outbound state) twice a day and uploads it to any S3-compatible bucket, keeping 30 days. It is off until these are set on the server: `BACKUP_S3_BUCKET`, `BACKUP_S3_KEY_ID`, `BACKUP_S3_SECRET`, `BACKUP_S3_REGION`, and `BACKUP_S3_ENDPOINT` unless it is AWS (Backblaze B2 and Cloudflare R2 both have a free tier; use a private bucket and a key limited to it; the archive holds callers' names and numbers). `python -m receptionist backup` runs it by hand; `python -m receptionist restore --from FILE --dry-run` shows what is inside (integrity check, row counts, which files would be replaced) and changes nothing; `--yes` restores with the server stopped, keeping the old files as `*.before-restore`. The last run is in `data/backup_status.json`. Tested against a fake bucket and Amazon's published signing example; never against a real bucket.
-
-## Spend report
-
-`python -m receptionist spend-report [--since YYYY-MM-DD] [--json] [--out FILE]` adds up what the paid services have cost this month. Read-only (GET and list queries only), costs nothing, and prints no keys.
-
-| Service | Source | Needs |
-|---|---|---|
-| Retell (platform, telephony, voice) | v3 list-calls, `combined_cost` per call (cents) | `RETELL_API_KEY` (already used) |
-| Anthropic API | Admin cost report, whole organization | `ANTHROPIC_ADMIN_KEY` (an Admin key from the Console; the normal key cannot read costs) |
-| ElevenLabs | plan and next invoice (not counted in the total) | `ELEVENLABS_API_KEY`, only if the voice is in your own account |
-| Render, Retell number | `spend_report.fixed_monthly_estimates` in `config.json` | nothing; these are estimates from list prices, so check them against the billing pages |
-
-A service without a key is listed as skipped and the total is then labelled a floor. The Anthropic figure is not limited to this project if the organization has other uses. Retell uses the v3 list-calls endpoint (the v2 one was removed in June 2026; cents and paging are per Retell's docs). The Anthropic cost report and its cents unit have not been run live yet, so compare the first report with the billing pages.
-
-## Going live: what's left
-
-| Step | Status |
-|---|---|
-| Agent, tools, scenarios, budget guard | Built and tested in text (`simulate`) |
-| Voice platform (Retell) and a phone number | Live-call websocket, setup command and dashboard are built and tested against a simulated Retell; **needs your Retell account** for the first real call |
-| Public hosting for `serve`, always on, with https | **Needs a host** (Render, Railway, Fly.io or a small VPS); ngrok works for a demo |
-| Sending texts | **Pinned** (`texting_enabled: false`): needs a Twilio sender and A2P 10DLC approval (days to weeks) |
-| Owner sees bookings | Dashboard at `/dashboard?token=...`; calendar sync later |
-| Run our agent on real calls | **Recommended:** use the platform's custom-LLM option (Retell Custom LLM websocket, Vapi custom-llm) so `agent.py` runs every turn, with thinking on, language-aware fixed lines, the short-number note and the silent-hang-up guard. With the platform-hosted model, none of those apply; re-run `simulate --thinking disabled` to see how that model does |
-| A real client's config | Hours, services, prices, approved tips and transfer numbers in a `businesses/<id>.json` |
-| Legal review | Recording notice, AI disclosure by state, consent for texts, terms of service |
-| Monitoring and backups | Alerts on errors and call-volume drops; database backups |
-| Billing | Stripe, or invoice the first pilots by hand |
-
-Accounts and keys needed: Anthropic API key (have), a Retell or Vapi account and API key, a Twilio account (API key, a number, 10DLC registration), a hosting account, a Google Cloud project for the Calendar API (free), and Stripe when billing starts.
-
-## Tests
-
-`python -m unittest discover tests` covers phone and time formatting, scheduling, tool guardrails, the prompt layers, the agent loop against a scripted fake client, both platform adapters (including Retell signature checks) and the webhook server. Set `RECEPTIONIST_CONFIG=/path/to/other.json` to run against a separate config and data folder.
-
-
-## Access keys and client files (2026-10-28)
-
-- **Keys:** `DASHBOARD_TOKEN` is the admin key (opens any dashboard, never a calendar feed). `TOKEN_SECRET` (new Render env var, never shown) derives each shop's own dashboard and calendar keys, bound to the shop id and its `token_version`. `python -m receptionist owner-links --base-url URL --business ID | pbcopy` prints one shop's links (set `TOKEN_SECRET` in the shell first; do not paste links in chat). Raise `token_version` in a shop's file to revoke only that shop's links. **Old calendar-feed links stop working; regenerate them.**
-- **Dashboard:** the key in the link becomes an HttpOnly cookie and the address is redirected to one without it. Responses send `no-store`, `no-referrer` and `noindex`; the access log masks `token=`; 10 failed tries a minute per address are refused, and every failure is the same 404.
-- **Client files:** `new-client` writes to `<data dir>/clients/<id>.json` (on Render, the disk), never `businesses/`, which holds demo shops only. Ids and phone numbers must be unique across both folders. Put a file on the server with `python -m receptionist client-upload --business ID --base-url URL` (needs `DASHBOARD_TOKEN`; it PUTs to `/admin/clients`). It is live at once, no deploy. The `clients/` folder is on the disk with the database, so back up the disk.
-- Git history of `businesses/` holds only 555 placeholder numbers (checked 2026-10-28).
-- Not built yet: recording notice and AI-disclosure flags, retention and purge (C), calendar read and block button (D). They wait on Noah's decisions in the spec.
-
-### Hardening, notice, retention and calendars (2026-10-28, local, not pushed)
-
-- **Fail closed:** the Vapi and Retell routes refuse every request when `VAPI_SERVER_TOKEN` / `RETELL_API_KEY` is unset (set `ALLOW_UNVERIFIED_WEBHOOKS=1` for local development only). `DASHBOARD_TOKEN` and `TOKEN_SECRET` under 24 characters are ignored (`openssl rand -hex 32`). `/docs`, `/redoc` and `/openapi.json` are off; `/health` names no shops; bodies over 1 MB get 413. Every response sends `nosniff` and `X-Frame-Options: DENY`; the dashboard has a Content-Security-Policy that allows only its own refresh script.
-- **Greeting:** `recording_notice` (text; empty = off) and `ai_disclosure_in_greeting` are appended to every greeting variant by `prompts.announce`. New shops get both on. The three demo shops keep both off so the live line is unchanged on deploy. `new-client` and `/admin/clients` refuse a file with both off unless `--allow-no-notice` (stored as `notice_waived`).
-- **Retention:** `retention_days` (default 90) deletes calls (transcript, summary, tool log) twice a day from the server; bookings, customers, leads and messages stay. `python -m receptionist purge --business ID [--phone N]` shows what it would delete; add `--yes` to do it (run it in the Render shell, where the database is). Recordings live at Retell, not here: delete them there on request. Retell's own data-storage setting has not been checked.
-- **Calendars:** `calendars: [{"type": "ical", "url": ..., "label": ...}]` in a shop's file (intake key `calendar_url`). Events overlapping a window use one technician each; `busy_keywords` all-day events count. Fetches are https only, to public addresses only, 5 s timeout, 3 MB cap, cached 5 minutes; unreadable for 30 minutes means windows come from our bookings and the dashboard and the agent say so. The dashboard has a Block time form (whole shop). Not tried against a real Google or Outlook link.
-
-
-### Google Calendar sync (2026-11-01, local, not pushed)
-
-Real-time, two-way, through a Google **service account** (no sign-in screen, no Google app review). Code: `receptionist/gcal.py`; tests: `tests/test_gcal.py` (fake Google, real RSA signing check; 296 pass).
-- **Reads:** events on the shop's calendar block booking windows within a minute (60 s cache). Timed events use one technician each; all-day events count only when titled "off", "vacation" or "closed" (`busy_keywords`); "free" and cancelled events are ignored; events we created are marked and skipped so a booking is never counted twice. Unreadable for 30 minutes means windows come from our bookings and the dashboard and agent say so (same as iCal).
-- **Writes:** every booking, move and cancellation is pushed to the calendar in a background thread (the caller never waits, and a Google failure never touches the call). Event id comes from the confirmation number, so repeats update rather than duplicate. A failure is recorded and shown on the dashboard ("N booking(s) did not reach ...").
-- **Shop file:** `"calendars": [{"type": "google", "calendar_id": "owner@gmail.com", "label": "Shop calendar", "write": true}]` (`write: false` = read only). Intake key `google_calendar_id`. iCal links still work beside it.
-- **One-time setup (Noah):** (1) Google Cloud console: new project, enable "Google Calendar API", create a service account, add a JSON key. (2) Render: set `GOOGLE_SERVICE_ACCOUNT_JSON` to the whole key file (never commit it). (3) Each shop: Google Calendar > Settings > share the calendar with the service account's email, permission "Make changes to events". (4) `python -m receptionist calendar-sync --business ID` checks access and names the email to share with; add `--push` to (re)send bookings.
-- **Not verified:** nothing has run against real Google. The request shapes follow the Calendar v3 docs but could differ in a detail (check `calendar-sync` first). Shops on Google Workspace may need their admin to allow sharing with outside accounts. Events are only written to calendars in the shop's file; the service account sees nothing else.
-
-### Lawn care and snow demo (2026-10-28)
-
-`businesses/lawn_care.json` is a fictional "Cedar Ridge Lawn & Snow (demo)" for a lawn care, landscaping and snow removal pitch (agent Riley, overflow mode, vertical `lawn_care`). It uses no real shop's data. Playbook `receptionist/playbooks/lawn_care.md` (estimate-first booking, season awareness, snow, chemicals), 12 scenarios in `scenarios/lawn_care.json`, urgent lines in `safety.VERTICALS["lawn_care"]` (power line down, someone hurt, fallen tree, broken sprinkler line; no gas or electrical lines), `seasonal_hours` support in `schedule.py` (winter office hours Nov 15 to Mar 31). Hand-written, not made by `new-client` (its template is the HVAC shop). It has no phone number, so nothing live changed: `default_business` is still `hvac` and the live number still runs Peak. To put it on the live number, move `+12084286760` from `hvac.json` to `lawn_care.json`, push, then `retell-tune --business lawn_care`. Greeting carries the AI disclosure and recording notice (flip `recording_notice` / `ai_disclosure_in_greeting` in the file). Simulation 2026-10-28: quick 4/6, then the 2 failures fixed and rerun 2/2; the other 6 scenarios have not been run. Every price, policy, tip (including keep kids and pets off treated grass until dry) and the owner number (555 placeholder) is demo content.
-
-### Sounding human (2026-11-01)
-Changes from the user's test-call feedback; all behaviour is in `prompts.py`, `live.py`, `agent.py` and the shop files.
-- **No script.** The speaking rules say every instruction and example shows an idea, not wording (only the safety lines are fixed), replies follow the caller's pace, and each shop's `about` list (company story, how a visit works, what the crews do) is rendered into the prompt as things the agent "knows from working here". `new-client` asks for it.
-- **Greetings never say the crew is out or nobody answered** (lawn_care has 14). If a caller asks where everyone is, the agent says so plainly. Every line the code speaks on its own (didn't catch that, still there, goodbye, technical problem) is now a pool that never repeats back to back; the safety and spam lines stay fixed.
-- **"Are you an AI?"** The plain answer comes first, in the first sentence; then one light joke about being software, then back to the job. The original disclosure sentence is unchanged and tested.
-- **Rising tone.** The model writes most lines as soft questions so the voice lifts. It reads the caller's tone from speech recognition's punctuation: a question mark is a question or a check, a period is an answer. When the caller says back a few of our own words, `live.echo_note` tells the model which it was. The server only receives text from Retell, never the pitch of the voice, so this is as close as it gets.
-- **Interrupting both ways.** A caller who cuts in gets a short, polite human reaction first (the agent is told what they heard). A caller who talks for 60+ words without a pause gets one polite cut-in from the agent (`live.maybe_interject`, Retell's `update_only` and `agent_interrupt`): the gist, then the one thing we need; tools are off. At most 2 per call, 30 s apart, never in an emergency; `live.interject` in `config.json` (`enabled: false` turns it off).
-- **Faster.** The stable prompt is cached for an hour (`agent.cache_ttl`, default `1h`; `5m` to undo), so a call after a quiet stretch no longer pays the 3 to 4 s cold read. Verified against the real API (16,334-token prompt written once, then read at a tenth of the price). An hour of cache costs 2x the input rate to write, about $0.07 per write on this prompt.
-- **Not built, on purpose:** starting the reply before the caller finishes (speculative answers) and answering a caller's predicted sentence. They need the model to run on partial speech, and a wrong guess could act on words the caller never said; nothing is safe to build blind against a live Retell line.
-- **Unverified on a real call:** the cut-in (tested only against a simulated Retell), the rising tone as heard, the polite reaction to being cut off, the echo notes, and how the new greetings sound.
-
-### Respond, don't interview (2026-11-01, afternoon)
-Test-call feedback: it asked for the address right away, steered the whole call, and never cut in on a long ramble.
-- **Why it asked for the address first:** a rule in `call_state` told the agent to confirm the address on file in its first reply whenever the caller ID matched a customer. That is gone; a recognized caller is greeted normally and nothing is asked up front.
-- **The intake list is a checklist, not a script.** Every playbook now says it's what a booking needs, not the order of the conversation. The speaking rules say: respond, ask a question only where one is wanted (often none), let the caller lead, never open by asking for details, steer only once everything has been said and dealt with, then collect what's needed one detail at a time. Replies may run to about 36 words so they can sound like a person. A new "be human in the small ways" rule covers reactions, noticing a detail, referring back, matching mood, an occasional restart or filler, and not announcing what it's doing.
-- **Trade-off:** a caller who hangs up before booking leaves no name or address, only the caller ID, the transcript and the call summary on the dashboard.
-- **Cut-in trigger fixed:** the real call's 28-second ramble was 59 words, one under the old 60-word trigger. Now 25+ words over 12+ seconds, or 45+ words at any speed (`live.interject` in `config.json`). Each call logs `Retell sent N live transcript updates; longest caller turn seen live: W words`: if N is 0 on a long call, Retell does not send mid-speech updates and the cut-in cannot work.
-- **Not simulated:** the day's $1 was spent, so none of these prompt changes has been through `simulate`. Run `simulate --business lawn_care --quick` first thing next day.
-
-### Cost reporting and where the money goes (2026-11-01)
-- `python -m receptionist spend-report [--csv data/reports/spend-2026-11]` now reads Anthropic costs with the Admin key (`ANTHROPIC_ADMIN_KEY`, kept in `~/.zshrc` only, never in the project or on Render; the report only makes read-only GET requests). Finished UTC days come from the cost report, today from the usage report priced with `prices_per_mtok`. The CSVs hold costs only (no keys, no call content, no customer data): `<name>.csv` (every service) and `<name>-anthropic.csv` (by day and by model).
-- **What the data showed (one day):** nearly all of the day's Anthropic spend was cache writes of the 16,000-token prompt during development, not calls. Fixed: simulations and chat use the 5-minute cache (2x to write the one-hour cache was only worth it on the live server), and the server's startup warm-up covers only `live_businesses` (config.json) instead of every shop with a number.
-- **Retell (about 16 cents a minute):** voice is 78% of it (ElevenLabs 7.2 + Retell engine 5.5), the phone line 1.5, noise cancellation 0.3. Retell's own AI summary after each call cost about 2 cents a call and duplicated ours; `agent_settings` now sets `post_call_analysis_model` to null (applies on the next `retell-tune`). Cheaper voices (Cartesia, Minimax, Inworld, OpenAI, Retell) are 1.5 cents a minute; the custom ElevenLabs voice can't move.
-
-### Server-side block runner (2026-11-09)
-`outbound.block_runner` in config.json (`enabled` false by default, `calls` 5, `pause_s` 120, `max_call_wait_s` 900). When enabled, the cron's `POST /admin/outbound/call-next` starts a background block (HTTP 202) instead of placing one call: dial the next eligible lead, poll Retell `GET /v2/get-call/<id>` until `call_status` is ended/error/not_connected (field names unverified), pause, repeat. It stops at the daily budget, outside call hours, when no lead is eligible, when a call can't be confirmed finished, or on `POST /admin/outbound/block/stop`. A number is never dialed twice within a block. One block at a time (409 if running). Status: `GET /admin/outbound/block`. Turn it on only after the Mac runners are retired, or both will dial.
+## Go-live checklist for a new shop
+1. `new-client --from intake.yaml`; print `<id>.checklist.html` for the owner. It needs the owner's cell and email.
+2. Assign the shop its own Retell number and add it to `phone_numbers` in the file; `client-upload --business ID --base-url <server>`; `retell-tune --business ID`.
+3. Call the number yourself, including an emergency line; check the email arrives and the call shows on the dashboard.
+4. Send the owner their dashboard link (`owner-links`, never in chat) and have them do the forwarding test.
+5. Day one: read every transcript; turn forwarding off the same day if a safety line was missed, a price invented or a caller misled.
+6. Have a lawyer read `docs/pilot-agreement-template.md` before anyone signs it (draft; price and terms are placeholders).
+7. Optional: Google Calendar sharing (`calendar-sync --business ID` to verify; not yet run against a real calendar).
