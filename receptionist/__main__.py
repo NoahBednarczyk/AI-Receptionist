@@ -139,6 +139,18 @@ def cmd_budget(cfg, a):
           f"({len(cfg['simulate']['quick'])} scenarios), ${per * total:.2f} for a full run ({total}).")
 
 
+def cmd_voice_test(cfg, a):
+    from . import voicetest
+    if a.step == "lines":
+        if not a.report or not a.scenarios:
+            raise SystemExit("lines needs --report FILE and one or more scenario ids")
+        for p in voicetest.write_lines(a.report, a.scenarios, a.out):
+            print(f"Wrote {p}")
+    else:
+        key = voicetest.blind(a.dir, str(Path(a.out) / "blind"))
+        print(f"Shuffled {len(key)} scenario(s) into {Path(a.out) / 'blind'}. Listen first; the key is key.json next to them.")
+
+
 def cmd_record(cfg, a):
     from .recording import record
     out = record(a.report, a.scenario, str(Path(cfg["data_dir"]) / "recordings"))
@@ -559,6 +571,14 @@ def main():
     sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=8000)
     sp.set_defaults(fn=cmd_serve)
+
+    sp = sub.add_parser("voice-test", help="prepare a blind comparison of voices (no accounts, no spend)")
+    sp.add_argument("step", choices=["lines", "blind"])
+    sp.add_argument("scenarios", nargs="*", help="lines: scenario ids from the report")
+    sp.add_argument("--report", help="lines: a data/runs report")
+    sp.add_argument("--dir", default="data/voice-test/audio", help="blind: audio/<voice>/<scenario>.mp3")
+    sp.add_argument("--out", default="data/voice-test", help="where lines and the shuffled samples go")
+    sp.set_defaults(fn=cmd_voice_test)
 
     a = p.parse_args()
     a.fn(cfg, a)
