@@ -36,7 +36,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket,
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, platforms, postcall, prompts, schedule
-from . import keepwarm, latency as latency_mod, notify
+from . import backup, keepwarm, latency as latency_mod, notify
 from .agent import CallSession, make_client, prewarm, transcript_text
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
@@ -124,6 +124,8 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     app.state.apply_retention = apply_retention
     stop = threading.Event()
     threading.Thread(target=retention_loop, daemon=True, name="retention").start()
+    if warm_cache:   # real servers only: tests and one-off commands never back up or upload
+        threading.Thread(target=backup.backup_loop, args=(cfg["data_dir"], stop), daemon=True, name="backup").start()
     if warm_cache:
         threading.Thread(target=keep_warm, daemon=True, name="keep-warm").start()
     if not vapi_token:

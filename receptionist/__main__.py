@@ -229,6 +229,28 @@ def cmd_purge(cfg, a):
         print("Recordings are kept by Retell, not here: delete them in the Retell dashboard if the shop asks.")
 
 
+def cmd_backup(cfg, a):
+    from . import backup
+    bucket = None if a.local_only else backup.Bucket.from_env()
+    out = Path(a.out) if a.local_only or bucket is None else None
+    s = backup.run_backup(cfg["data_dir"], bucket, keep_days=int(os.environ.get("BACKUP_KEEP_DAYS", "30")),
+                          local_dir=out or (Path("data/backups") if bucket is None else None))
+    print(json.dumps(s, indent=2))
+    if bucket is None and not a.local_only:
+        print("No bucket is configured (BACKUP_S3_*), so this made a local archive only. See the top of receptionist/backup.py.")
+    raise SystemExit(0 if s["ok"] else 1)
+
+
+def cmd_restore(cfg, a):
+    from . import backup
+    if not a.dry_run and not a.yes:
+        raise SystemExit("Add --dry-run to look inside the archive, or --yes to restore it over the current data "
+                         "(stop the server first; the current files are kept as *.before-restore).")
+    rep = backup.restore(a.src, a.to or cfg["data_dir"], apply=not a.dry_run)
+    print(json.dumps(rep, indent=2))
+    print("Nothing was changed (dry run)." if a.dry_run else "Restored. Start the server again.")
+
+
 def cmd_new_client(cfg, a):
     from . import onboarding
     intake = None
@@ -468,6 +490,18 @@ def main():
     sp.add_argument("--force", action="store_true", help="overwrite an existing business file")
     sp.add_argument("--allow-no-notice", action="store_true", help="allow a greeting with neither the recording notice nor the AI disclosure")
     sp.set_defaults(fn=cmd_new_client)
+
+    sp = sub.add_parser("backup", help="archive the database and shop files now (uploads when BACKUP_S3_* is set)")
+    sp.add_argument("--local-only", action="store_true", help="write to --out and skip the bucket")
+    sp.add_argument("--out", default="data/backups", help="folder for a local archive")
+    sp.set_defaults(fn=cmd_backup)
+
+    sp = sub.add_parser("restore", help="look inside a backup archive (--dry-run) or restore it (--yes)")
+    sp.add_argument("--from", dest="src", required=True, metavar="FILE", help="a receptionist-*.tar.gz archive")
+    sp.add_argument("--to", help="restore into this folder instead of the configured data folder")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.add_argument("--yes", action="store_true")
+    sp.set_defaults(fn=cmd_restore)
 
     sp = sub.add_parser("purge", help="delete a shop's stored data, or one caller's (shows what it would delete unless --yes)")
     sp.add_argument("--business", required=True)
