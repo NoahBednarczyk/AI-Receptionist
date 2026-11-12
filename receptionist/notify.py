@@ -180,6 +180,7 @@ class Notifier:
         self.drain_sms(biz)      # texts queued during the call (only when the shop has texting_enabled)
         try:
             facts = self._facts(biz, call_id, summary, reason)
+            self.missed_outcome_alarm(biz, facts)
             for to in (biz.get("notify") or {}).get("email", []):
                 subject, body = call_email(biz, facts, self.link(biz, call_id))
                 self._send_email(biz["id"], call_id, "urgent" if facts["urgent"] else "call", to, subject, body,
@@ -243,6 +244,33 @@ class Notifier:
             self.store._write("DELETE FROM sms_optout WHERE number=?", (n,))
             return START_REPLY
         return None
+
+    # -- W2.4: a call that ended with nothing to show goes to Noah, not the shop --
+    @staticmethod
+    def had_outcome(f: dict) -> bool:
+        s = f["summary"]
+        return bool(f["appointments"] or f["messages"] or f["leads"]
+                    or s.get("outcome") in ("booked", "transferred", "lead", "message", "spam")
+                    or s.get("intent") == "spam" or f["reason"] in ("transferred", "spam"))
+
+    def missed_outcome_alarm(self, biz: dict, f: dict) -> bool:
+        """Email the admin when a call ended with no booking, message, lead, transfer or spam verdict. Never raises."""
+        try:
+            if self.had_outcome(f) or not self.admin_email:
+                return False
+            call = self.store.get_call(f["call_id"]) or {}
+            lines = [f"{biz['name']} ({biz['id']}): call {f['call_id']} from {f.get('caller') or 'unknown'} ended with nothing saved.",
+                     f"Ended because: {f['reason'] or 'unknown'}.", f"Summary: {f['summary'].get('summary') or '(none)'}", ""]
+            try:
+                turns = json.loads(call.get("transcript") or "[]")
+            except ValueError:
+                turns = []
+            lines += [f"{t.get('role')}: {t.get('text')}" for t in turns[-12:]]
+            return self._send_email(biz["id"], f["call_id"], "missed_outcome", self.admin_email,
+                                    f"MISSED OUTCOME: {biz['name']} call {f['call_id']}", "\n".join(lines))
+        except Exception:
+            log.exception("missed-outcome alarm failed for %s", f.get("call_id"))
+            return False
 
     # -- W2.3: the daily digest --
     def digest_due(self, biz: dict, now: datetime) -> bool:

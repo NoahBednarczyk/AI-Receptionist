@@ -284,6 +284,46 @@ class Digest(unittest.TestCase):
         self.assertFalse(self.n.digest_due(biz, self.at))
 
 
+class MissedOutcome(unittest.TestCase):
+    def setUp(self):
+        self.n, self.store = notifier(admin_email="noah@example.test")
+        start(self.store)
+        self.store.end_call("c1", [{"role": "agent", "text": "Hi"}, {"role": "caller", "text": "Is Dave there?"}], "caller hung up", NOW)
+        self.empty = {**SUMMARY, "outcome": "abandoned", "intent": "other"}
+
+    def to_admin(self):
+        return [m for m in self.n.email.sent if m[0] == "noah@example.test"]
+
+    def test_a_call_with_nothing_saved_goes_to_the_admin_not_the_shop(self):
+        self.n.call_finished(SHOP, "c1", self.empty, "caller hung up")
+        admin = self.to_admin()
+        self.assertEqual(len(admin), 1)
+        self.assertIn("MISSED OUTCOME", admin[0][1])
+        self.assertIn("Is Dave there?", admin[0][2])
+        self.assertEqual(len(self.n.email.sent), 2)      # the shop still gets its ordinary call email
+
+    def test_each_kind_of_outcome_is_enough_to_stay_quiet(self):
+        for outcome in ("booked", "transferred", "lead", "message", "spam"):
+            self.n.call_finished(SHOP, "c1", {**self.empty, "outcome": outcome}, "caller hung up")
+        self.n.call_finished(SHOP, "c1", self.empty, "transferred")
+        self.n.call_finished(SHOP, "c1", self.empty, "spam")
+        self.assertEqual(self.to_admin(), [])
+
+    def test_a_saved_message_or_lead_is_an_outcome_even_if_the_summary_says_otherwise(self):
+        self.store.add_lead(SHOP["id"], "c1", "Pat", "2085550142", "1 Main", "leak", "flexible", "out of area", NOW)
+        self.n.call_finished(SHOP, "c1", self.empty, "caller hung up")
+        self.assertEqual(self.to_admin(), [])
+
+    def test_a_failed_summary_with_nothing_saved_still_alarms(self):
+        self.n.call_finished(SHOP, "c1", None, "caller hung up")
+        self.assertEqual(len(self.to_admin()), 1)
+
+    def test_no_admin_address_means_no_alarm_and_no_error(self):
+        n, store = notifier()
+        start(store)
+        self.assertFalse(n.missed_outcome_alarm(SHOP, n._facts(SHOP, "c1", self.empty, "caller hung up")))
+
+
 class Through_the_server(unittest.TestCase):
     """A call ended through the Retell webhook emails the owner and shows on the admin view."""
 
