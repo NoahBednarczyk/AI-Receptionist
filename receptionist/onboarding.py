@@ -63,6 +63,7 @@ DEFAULT_HOURS = {"mon": "07:00-17:00", "tue": "07:00-17:00", "wed": "07:00-17:00
 QUESTIONS = [
     ("shop_name", "Shop name (as it appears on the truck)", None, None),
     ("owner_cell", "Owner's cell number (the agent can try it for emergencies)", None, None),
+    ("owner_email", "Owner's email (each call is emailed here)", None, None),
     ("our_number", "The number the shop will forward to (the line we assign), or blank if not assigned yet", "", None),
     ("towns", "Towns you serve, comma separated", None, None),
     ("hours", "Hours, like 'weekdays 7-5, sat 8-12', or press Enter for Mon-Fri 7-5 and Sat 8-12", "", None),
@@ -205,6 +206,14 @@ def build(intake: dict, template: dict) -> dict:
         raise IntakeError("A real shop's greeting always says it is the shop's virtual assistant; it cannot be turned off.")
     biz["recording_notice"] = str(intake.get("recording_notice") or prompts.DEFAULT_NOTICE).strip()
     biz["ai_disclosure_in_greeting"] = True
+    emails = [e.strip() for e in (intake["owner_email"].split(",") if isinstance(intake.get("owner_email"), str)
+                                  else intake.get("owner_email") or []) if str(e).strip()]
+    if not emails:
+        raise IntakeError("The owner needs an email address: every call is emailed there.")
+    bad = [e for e in emails if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", e)]
+    if bad:
+        raise IntakeError(f"'{bad[0]}' doesn't look like an email address.")
+    biz["notify"] = {"email": emails}
     biz["retention_days"] = int(intake.get("retention_days") or 90)
     biz["token_version"] = 1
     biz["calendars"] = []
@@ -287,12 +296,16 @@ def checklist(biz: dict, our_number: str | None) -> str:
 {biz['name']}: call-forwarding checklist
 ==============================================================
 What this does: when nobody at the shop picks up (or the line is busy), the call goes to {biz['agent_name']}, our virtual assistant.
-{biz['agent_name']} books the job, takes a message, or tries your cell for an emergency. You see every call on your dashboard.
+{biz['agent_name']} books the job, takes a message, or tries your cell for an emergency. You see every call on your dashboard and in your email, and once a week you get a short report.
 You can turn this off in ten seconds, any time, with the code at the bottom.
 
 BEFORE YOU START (2 minutes)
   [ ] Our number for your shop: {ours}. This is the number your calls forward to.
   [ ] Your carrier: _______________ (AT&T, T-Mobile, Verizon, or a business phone system)
+
+YOUR DASHBOARD
+  [ ] We send you your dashboard link separately. Open it on your phone and save it to your home screen.
+      Keep the link private: anyone who has it can read your calls.
 
 TURN IT ON (5 minutes). Do this from the shop phone that customers call.
   AT&T and T-Mobile (standard codes; type them on the keypad and press call):
@@ -311,8 +324,16 @@ TEST IT (5 minutes)
   [ ] {prof['test_lines'][1].replace('{agent}', biz['agent_name'])}
 
 WHAT TO TELL US (3 minutes)
-  [ ] Your cell number on file for emergencies: {biz['transfer_targets']['owner']['number'][2:]}  (correct?)
+  [ ] Your cell number on file for emergencies: {spoken_phone(biz['transfer_targets']['owner']['number'])}  (correct?)
+  [ ] Where we email every call: {', '.join(biz.get('notify', {}).get('email', [])) or '(none yet)'}  (correct? an urgent call says URGENT in the subject)
   [ ] Anything {biz['agent_name']} says that is wrong or you wouldn't say. Send it the same day; fixes take minutes.
+
+YOUR CALENDAR (optional, 2 minutes)
+  Without this, {biz['agent_name']} books inside your hours and your dashboard lists the jobs.
+  With it, jobs appear on your calendar and your own appointments block the booking windows.
+  [ ] Google Calendar: open the calendar's settings, "Share with specific people", add the address we send you,
+      and choose "Make changes to events". Then send us the calendar's ID (Settings, "Integrate calendar").
+  [ ] Any other calendar app: send us its private iCal link (read-only is fine; it only blocks times).
 
 TURN IT OFF (10 seconds), any time
   AT&T and T-Mobile: dial  ##004#   and press call.   (cancels all forwarding when you don't answer)
@@ -321,10 +342,24 @@ TURN IT OFF (10 seconds), any time
   Then test by calling the shop and letting it ring: you should hear your own voicemail again.
 
 THE RULES OF THE PILOT
-  - {biz['agent_name']} tells callers it is the shop's virtual assistant whenever they ask. It never pretends to be a person.
+  - Callers are told up front that the call is recorded and that {biz['agent_name']} is the shop's virtual assistant, and it
+    says so again whenever they ask. It never pretends to be a person.
+  - It can make mistakes. Check your dashboard and email, and tell us about anything wrong the same day.
+  - You own your shop's facts (prices, hours, areas, what you will and won't do). We change them only when you tell us.
   - {prof['rules'].replace('{agent}', biz['agent_name'])}
   - You can stop at any time by turning forwarding off with the code above.
 """
+
+
+def checklist_html(text: str, title: str) -> str:
+    """The same checklist as a page that prints cleanly on one or two sheets: real boxes to tick, no colours."""
+    import html
+    body = html.escape(text).replace("[ ]", "&#9744;")
+    return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            f"<title>{html.escape(title)}</title><style>"
+            "body{margin:24px auto;max-width:760px;padding:0 16px;font:16px/1.5 -apple-system,Segoe UI,sans-serif;color:#111;background:#fff}"
+            "pre{white-space:pre-wrap;font:inherit}@media print{body{margin:0;max-width:none;font-size:11pt}pre{page-break-inside:auto}}"
+            f"</style></head><body><pre>{body}</pre></body></html>")
 
 
 def write(biz: dict, clients_dir: Path, force: bool = False) -> Path:
@@ -350,6 +385,7 @@ def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print,
     sheet = checklist(biz, biz["phone_numbers"][0] if biz["phone_numbers"] else None)
     sheet_path = path.with_suffix(".checklist.txt")
     sheet_path.write_text(sheet)
+    sheet_path.with_suffix(".html").write_text(checklist_html(sheet, f"{biz['name']}: checklist"))
     out(f"\nWrote {path}\nChecked it: the prompt, tools, safety lines and booking windows all load.")
     if fictional_phone(biz["transfer_targets"]["owner"]["number"]):
         out("Heads up: that owner cell is a 555-01xx placeholder, so live calls will never ring it.")
