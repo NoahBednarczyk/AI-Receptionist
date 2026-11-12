@@ -223,7 +223,9 @@ class Dashboard(Env, unittest.TestCase):
         return (client or self.client).post(path, data=data, follow_redirects=False, **kw)
 
     def test_the_owner_can_block_and_remove_time(self):
-        r = self.post("/dashboard/block", {"business": "north", "date": "2026-11-05", "start": "13:00", "end": "15:00", "note": "<b>dentist</b>"})
+        # The page lists only blocks that have not ended, so the date is always a few days ahead (a fixed date went stale).
+        day = (schedule.local_now(SHOP) + timedelta(days=3)).date().isoformat()
+        r = self.post("/dashboard/block", {"business": "north", "date": day, "start": "13:00", "end": "15:00", "note": "<b>dentist</b>"})
         self.assertEqual(r.status_code, 303)
         page = self.client.get("/dashboard?business=north").text
         self.assertIn("&lt;b&gt;dentist&lt;/b&gt;", page)          # escaped

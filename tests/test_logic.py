@@ -933,6 +933,15 @@ class LiveCallTests(FillerAssertions, unittest.TestCase):
 
     def test_a_live_call_end_to_end(self):
         greeting = BIZ["greeting"]
+        summarized = threading.Event()
+        make_summary = self.fake.create
+
+        def create(**kw):
+            try:
+                return make_summary(**kw)
+            finally:
+                summarized.set()
+        self.fake.create = create
         with self.client.websocket_connect("/llm-websocket/s3cret/call123") as ws:
             self.assertEqual(ws.receive_json()["response_type"], "config")
             ws.send_json({"interaction_type": "call_details", "call": {
@@ -953,9 +962,17 @@ class LiveCallTests(FillerAssertions, unittest.TestCase):
             self.assertFiller(said, "transfer_call", "Nobody picked up. Can I take a message?")
             self.assertNotIn("transfer_number", final)
             self.assertIn("no_answer", self.fake.requests[-1]["messages"][-1]["content"][0]["content"])
+            # Hang up and let the server finish the call before the test client tears its event loop down (leaving the
+            # block cancels the handler, and under load that could stop the call from being stored: a harness race).
+            ws.close()
+            self.assertTrue(summarized.wait(10))
         # The agent saw exactly what the caller said, and the call was stored with its summary.
         self.assertEqual(self.fake.requests[0]["messages"][-1], {"role": "user", "content": "My sink is leaking."})
-        page = self.client.get("/dashboard", params={"token": "dash-admin-key-" + "x" * 16, "business": "acme"}).text   # follows the redirect, keeping the cookie
+        for _ in range(100):   # the call is stored and summarized just after the socket closes, in the server's own thread
+            page = self.client.get("/dashboard", params={"token": "dash-admin-key-" + "x" * 16, "business": "acme"}).text   # follows the redirect, keeping the cookie
+            if "Booked a leak repair." in page:
+                break
+            time.sleep(0.05)
         self.assertIn("Booked a leak repair.", page)
         self.assertEqual(self.client.get("/dashboard", params={"token": "nope"}).status_code, 404)
 
@@ -994,17 +1011,21 @@ class LiveCallTests(FillerAssertions, unittest.TestCase):
         self.assertEqual(len(self.fake.requests), 1)   # no model call after the hang-up
 
     def test_a_reply_the_caller_talked_over_is_dropped(self):
-        gate = threading.Event()
+        gate, started = threading.Event(), threading.Event()
         first_stream = self.fake.stream
 
         def stream(**kw):   # the first turn hangs until released, like a slow model
             s = first_stream(**kw)
-            return _Gated(s, gate) if len(self.fake.requests) == 1 else s
+            if len(self.fake.requests) == 1:
+                started.set()
+                return _Gated(s, gate)
+            return s
         self.fake.stream = stream
         self.fake.script[:] = [reply("end_turn", text("Is it leaking now?")), reply("end_turn", text("Got it, a roof leak."))]
         with self.client.websocket_connect("/llm-websocket/s3cret/call8") as ws:
             self.open_call(ws, "call8")
             self.ask(ws, 1, "Leaking room.")
+            self.assertTrue(started.wait(5))   # the first turn is in the model before the correction arrives
             self.ask(ws, 2, "Leaking roof.")   # the transcript was corrected before the first reply played
             said, _ = self.until_complete(ws, 2)
             gate.set()
@@ -1025,12 +1046,15 @@ class LiveCallTests(FillerAssertions, unittest.TestCase):
 
 
     def test_a_dropped_turn_loses_neither_the_caller_s_words_nor_the_last_heard_reply(self):
-        gate = threading.Event()
+        gate, started = threading.Event(), threading.Event()
         first_stream = self.fake.stream
 
         def stream(**kw):   # the second model call hangs until released: the caller talks over it
             s = first_stream(**kw)
-            return _Gated(s, gate) if len(self.fake.requests) == 2 else s
+            if len(self.fake.requests) == 2:
+                started.set()
+                return _Gated(s, gate)
+            return s
         self.fake.stream = stream
         self.fake.script[:] = [reply("end_turn", text("What's going on with the sink?")),
                                reply("end_turn", text("Dropped.")), reply("end_turn", text("Oh no, how bad?"))]
@@ -1043,7 +1067,7 @@ class LiveCallTests(FillerAssertions, unittest.TestCase):
             self.until_complete(ws, 1)
             ws.send_json({"interaction_type": "response_required", "response_id": 2, "transcript": heard + [
                 {"role": "user", "content": "It's leaking."}]})
-            time.sleep(0.4)
+            self.assertTrue(started.wait(5))   # the second turn is in the model; now the caller talks over it
             ws.send_json({"interaction_type": "response_required", "response_id": 3, "transcript": heard + [
                 {"role": "user", "content": "It's leaking."}, {"role": "user", "content": "Really bad."}]})
             said, _ = self.until_complete(ws, 3)
@@ -1068,17 +1092,21 @@ class LiveCallTests(FillerAssertions, unittest.TestCase):
         import time
         from receptionist import live
         original_stream, original_wait = self.fake.stream, live.SLOW_REPLY_S
+        gate = threading.Event()   # the model stays silent until the thinking sound has been heard: no race on timing
         def slow_stream(**kw):
-            time.sleep(0.6)
-            return original_stream(**kw)
-        self.fake.stream, live.SLOW_REPLY_S = slow_stream, 0.2
+            return _Gated(original_stream(**kw), gate)
+        self.fake.stream, live.SLOW_REPLY_S = slow_stream, 0.05
         try:
             with self.client.websocket_connect("/llm-websocket/s3cret/slow") as ws:
                 self.open_call(ws, "slow")
                 ws.send_json({"interaction_type": "response_required", "response_id": 1, "transcript": [
                     {"role": "agent", "content": "Hi"}, {"role": "user", "content": "My sink is leaking."}]})
-                said, _ = self.until_complete(ws, 1)
+                first = ws.receive_json()
+                gate.set()
+                rest, _ = self.until_complete(ws, 1)
+                said = first["content"] + rest
         finally:
+            gate.set()
             self.fake.stream, live.SLOW_REPLY_S = original_stream, original_wait
         still = next((x for x in live.STILL_WORKING["en"] if said.startswith(x + " ")), None)
         self.assertIsNotNone(still, said)                          # a thinking sound first, never "one sec"

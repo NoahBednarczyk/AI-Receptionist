@@ -1,0 +1,16 @@
+name: tests
+on: [push, pull_request]
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      # No API key and no network: the tests use scripted fake clients and a throwaway data folder.
+      - run: python -m unittest discover tests
+        env:
+          ANTHROPIC_API_KEY: ""
