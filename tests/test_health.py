@@ -47,3 +47,11 @@ class DeepHealth(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestsNeverTouchRealData(unittest.TestCase):
+    def test_the_loaded_config_points_at_a_throwaway_folder(self):
+        from pathlib import Path
+        from receptionist.config import ROOT
+        self.assertNotEqual(Path(CFG["data_dir"]).resolve(), (ROOT / "data").resolve())
+        self.assertNotEqual(Path(CFG["clients_dir"]).resolve(), (ROOT / "data" / "clients").resolve())
