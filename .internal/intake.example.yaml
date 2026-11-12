@@ -1,4 +1,5 @@
 # Example intake for `python -m receptionist new-client --from intake.yaml`
+template: lawn_care                  # which demo shop to start from: hvac or lawn_care
 shop_name: Example Lawn & Snow
 owner_cell: "208-555-0100"          # the shop owner's cell; the agent can try it for emergencies
 our_number: ""                       # the number the shop forwards to; fill in once assigned

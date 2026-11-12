@@ -258,7 +258,7 @@ def cmd_new_client(cfg, a):
         import yaml
         intake = yaml.safe_load(Path(a.intake).read_text()) or {}
     try:
-        onboarding.run(cfg, intake, force=a.force, allow_no_notice=a.allow_no_notice)
+        onboarding.run(cfg, intake, force=a.force, allow_no_notice=a.allow_no_notice, template_id=a.template)
     except onboarding.IntakeError as e:
         raise SystemExit(f"Can't sign this shop up yet: {e}")
 
@@ -488,6 +488,7 @@ def main():
     sp = sub.add_parser("new-client", help="sign up a shop: writes <data>/clients/<id>.json and prints the owner's checklist")
     sp.add_argument("--from", dest="intake", metavar="INTAKE.YAML", help="read the answers from a YAML file instead of asking")
     sp.add_argument("--force", action="store_true", help="overwrite an existing business file")
+    sp.add_argument("--template", choices=["hvac", "lawn_care"], help="the demo shop to start from (default: the intake's template: line, else hvac)")
     sp.add_argument("--allow-no-notice", action="store_true", help="allow a greeting with neither the recording notice nor the AI disclosure")
     sp.set_defaults(fn=cmd_new_client)
 

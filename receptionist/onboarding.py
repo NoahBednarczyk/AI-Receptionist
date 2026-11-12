@@ -3,8 +3,9 @@
     python -m receptionist new-client                 # asks the questions, with defaults in [brackets]
     python -m receptionist new-client --from intake.yaml
 
-The shop starts from the Cedar Ridge Lawn & Snow demo (businesses/lawn_care.json): same agent, playbook, safety lines and
-overflow mode; only the shop's own facts change. Nothing here calls the API, so it costs nothing and a new client's
+The shop starts from a demo shop of its trade: Peak Heating & Plumbing (businesses/hvac.json, the default and the pilot
+vertical) or Cedar Ridge Lawn & Snow (businesses/lawn_care.json); choose with `--template hvac|lawn_care` or a
+`template:` line in the intake. Same agent, playbook, safety lines and overflow mode; only the shop's own facts change. Nothing here calls the API, so it costs nothing and a new client's
 file can be written, checked and corrected in a few minutes.
 
 Real shops are written to the clients folder (`cfg["clients_dir"]`, under the data directory and so never in git),
@@ -19,7 +20,40 @@ from pathlib import Path
 from . import prompts, safety, schedule, tools
 from .speech import fictional_phone, normalize_phone
 
-TEMPLATE_ID = "lawn_care"
+DEFAULT_TEMPLATE = "hvac"   # the pilot vertical is emergency home trades (decided 2026-11-11)
+TEMPLATE_ID = DEFAULT_TEMPLATE
+
+# What differs between the trades: wording that must fit the shop's own work, and what is kept from the demo shop.
+PROFILES = {
+    "hvac": dict(
+        agent_name="Sam",
+        no_quote="We don't quote repair or replacement prices over the phone. The technician gives a firm price on site "
+                 "before any work starts.",
+        tip_example="a furnace that won't start: check the thermostat is set to heat",
+        safety_probe="my furnace is out and it is freezing",
+        keep_faqs=("stove", "no heat", "text confirmation", "is this call recorded"),
+        brand_words=2,
+        test_lines=("Ask {agent} for a furnace repair; give any name. Then open your dashboard and find the call.",
+                    'Call again, and this time say "my furnace is out and it\'s 5 degrees". {agent} should treat it as urgent.'),
+        rules="{agent} never gives advice about gas, electrical work, stoves or fireplaces, and never quotes a repair price.",
+        ),
+    "lawn_care": dict(
+        agent_name="Riley",
+        no_quote="We don't quote a price over the phone for a specific property. The crew lead gives a firm price on site "
+                 "before any work starts.",
+        tip_example="a sprinkler system that won't shut off: turn off the water at the main shutoff valve",
+        safety_probe="a tree fell on the power line",
+        keep_faqs=("text confirmation", "is this call recorded"),
+        brand_words=2,
+        test_lines=("Ask {agent} to book a lawn estimate; give any name. Then open your dashboard and find the call.",
+                    'Call again, and this time say "a tree just fell across my driveway". {agent} should treat it as urgent.'),
+        rules="{agent} never gives advice about chemicals, electrical work or equipment, and never quotes a price for a specific property.",
+        ),
+}
+
+
+def profile_for(biz: dict) -> dict:
+    return PROFILES.get(biz.get("vertical"), PROFILES[DEFAULT_TEMPLATE])
 DAYS = schedule.DAYS
 DAY_NAMES = dict(zip(DAYS, ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]))
 DEFAULT_HOURS = {"mon": "07:00-17:00", "tue": "07:00-17:00", "wed": "07:00-17:00", "thu": "07:00-17:00",
@@ -129,8 +163,9 @@ def build(intake: dict, template: dict) -> dict:
         raise IntakeError("The forwarding number must be a full 10-digit number, or left blank.")
 
     biz = json.loads(json.dumps(template))   # a private copy
+    prof = profile_for(template)
     spoken = intake.get("spoken_name") or name
-    biz.update(id=slug(name), name=name, spoken_name=spoken, agent_name=intake.get("agent_name") or "Sam",
+    biz.update(id=slug(name), name=name, spoken_name=spoken, agent_name=intake.get("agent_name") or prof["agent_name"],
                timezone=intake.get("timezone") or template["timezone"], phone_numbers=[ours] if ours else [],
                hours=parse_hours(intake.get("hours")), owner_sms=owner, texting_enabled=False)
     for k in ("demo_seed", "simulate_quick"):
@@ -148,17 +183,16 @@ def build(intake: dict, template: dict) -> dict:
             biz["services"].append(next(s for s in template["services"] if s.get("emergency")))
     # Only the shop's own facts: the demo shop's prices, warranty and so on must never reach a real shop's callers.
     biz["pricing"] = _lines(intake.get("prices")) + [
-        "We don't quote a price over the phone for a specific property. The crew lead gives a firm price on site "
-        "before any work starts."]
+        prof["no_quote"]]
     tips = []
     for line in _lines(intake.get("approved_tips")):
         problem, sep, tip = line.partition(":")
         if not sep or not tip.strip():
-            raise IntakeError(f"Tip '{line}' should look like 'a sprinkler system that won't shut off: turn off the water at the main shutoff valve'.")
+            raise IntakeError(f"Tip '{line}' should look like '{prof['tip_example']}'.")
         tips.append({"when": problem.strip(), "tip": tip.strip()})
     biz["approved_tips"] = tips
     biz["about"] = _lines(intake.get("about"))   # the demo shop's own story must never reach a real shop
-    brand = " ".join(template["spoken_name"].split()[:2]).lower()   # the demo shop's own name never reaches a real shop
+    brand = " ".join(template["spoken_name"].split()[:prof["brand_words"]]).lower()   # the demo shop's own name never reaches a real shop
     biz["speech_keywords"] = [w for w in template["speech_keywords"] if w.lower() != brand] + [spoken]
     biz["transfer_targets"]["owner"]["number"] = owner
     biz["greetings"] = [g.replace(template["spoken_name"], spoken) for g in biz["greetings"]]
@@ -183,7 +217,7 @@ def build(intake: dict, template: dict) -> dict:
     for k in ("notice_waived", "demo"):   # a real shop is never a demo and never inherits the demo's waived notice
         biz.pop(k, None)
     # Keep only the answers that describe how the agent itself works; everything else comes from the shop.
-    keep = ("text confirmation", "is this call recorded")
+    keep = prof["keep_faqs"]
     biz["faqs"] = [f for f in template["faqs"] if any(k in f["q"].lower() for k in keep)]
     for line in _lines(intake.get("faqs")):
         q, sep, a = line.partition(":")
@@ -201,7 +235,7 @@ def check(biz: dict) -> None:
                           "if the shop's lawyer has cleared a greeting without them.")
     prompts.stable_prompt(biz)
     tools.schemas(biz)
-    safety.match(biz["vertical"], "a tree fell on the power line")
+    safety.match(biz["vertical"], profile_for(biz)["safety_probe"])
     schedule.spoken_hours(biz)
     assert schedule.open_windows(biz, schedule.local_now(biz), {}), "no booking windows fit inside the shop's hours"
 
@@ -241,13 +275,14 @@ def ask_interactively(input_fn=input, out=print) -> dict:
 
 def checklist(biz: dict, our_number: str | None) -> str:
     from .speech import spoken_phone
+    prof = profile_for(biz)
     ours = spoken_phone(our_number) if our_number else "<the number we assign you>"
     raw = re.sub(r"\D", "", our_number or "")[-10:] or "NUMBER"
     return f"""\
 {biz['name']}: call-forwarding checklist
 ==============================================================
-What this does: when nobody at the shop picks up (or the line is busy), the call goes to Sam, our virtual assistant.
-Sam books the job, takes a message, or tries your cell for an emergency. You see every call on your dashboard.
+What this does: when nobody at the shop picks up (or the line is busy), the call goes to {biz['agent_name']}, our virtual assistant.
+{biz['agent_name']} books the job, takes a message, or tries your cell for an emergency. You see every call on your dashboard.
 You can turn this off in ten seconds, any time, with the code at the bottom.
 
 BEFORE YOU START (2 minutes)
@@ -266,13 +301,13 @@ TURN IT ON (5 minutes). Do this from the shop phone that customers call.
   If a code doesn't work, tell us your carrier and we'll find the right one. Don't guess.
 
 TEST IT (5 minutes)
-  [ ] From a different phone, call the shop. Don't answer. After about 20 seconds you should hear Sam.
-  [ ] Ask Sam to book a lawn estimate; give any name. Then open your dashboard and find the call.
-  [ ] Call again, and this time say "a tree just fell across my driveway". Sam should treat it as urgent.
+  [ ] From a different phone, call the shop. Don't answer. After about 20 seconds you should hear {biz['agent_name']}.
+  [ ] {prof['test_lines'][0].replace('{agent}', biz['agent_name'])}
+  [ ] {prof['test_lines'][1].replace('{agent}', biz['agent_name'])}
 
 WHAT TO TELL US (3 minutes)
   [ ] Your cell number on file for emergencies: {biz['transfer_targets']['owner']['number'][2:]}  (correct?)
-  [ ] Anything Sam says that is wrong or you wouldn't say. Send it the same day; fixes take minutes.
+  [ ] Anything {biz['agent_name']} says that is wrong or you wouldn't say. Send it the same day; fixes take minutes.
 
 TURN IT OFF (10 seconds), any time
   AT&T and T-Mobile: dial  ##004#   and press call.   (cancels all forwarding when you don't answer)
@@ -281,8 +316,8 @@ TURN IT OFF (10 seconds), any time
   Then test by calling the shop and letting it ring: you should hear your own voicemail again.
 
 THE RULES OF THE PILOT
-  - Sam tells callers it is the shop's virtual assistant whenever they ask. It never pretends to be a person.
-  - Sam never gives advice about chemicals, electrical work or equipment, and never quotes a price for a specific property.
+  - {biz['agent_name']} tells callers it is the shop's virtual assistant whenever they ask. It never pretends to be a person.
+  - {prof['rules'].replace('{agent}', biz['agent_name'])}
   - You can stop at any time by turning forwarding off with the code above.
 """
 
@@ -296,9 +331,13 @@ def write(biz: dict, clients_dir: Path, force: bool = False) -> Path:
     return path
 
 
-def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print, allow_no_notice: bool = False) -> Path:
-    template = json.loads((Path(cfg["businesses_dir"]) / f"{TEMPLATE_ID}.json").read_text())
+def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print, allow_no_notice: bool = False,
+        template_id: str | None = None) -> Path:
     intake = intake or ask_interactively()
+    template_id = template_id or intake.get("template") or DEFAULT_TEMPLATE
+    if template_id not in PROFILES:
+        raise IntakeError(f"Unknown template {template_id!r}. Choose from: {', '.join(PROFILES)}.")
+    template = json.loads((Path(cfg["businesses_dir"]) / f"{template_id}.json").read_text())
     biz = build(intake, template)
     if allow_no_notice:
         biz["notice_waived"] = True
