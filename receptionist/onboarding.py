@@ -64,6 +64,7 @@ QUESTIONS = [
     ("shop_name", "Shop name (as it appears on the truck)", None, None),
     ("owner_cell", "Owner's cell number (the agent can try it for emergencies)", None, None),
     ("owner_email", "Owner's email (each call is emailed here)", None, None),
+    ("avg_job_value", "Your average job is worth about how many dollars? (it makes the weekly report show what the booked jobs are worth; Enter to skip)", "", None),
     ("our_number", "The number the shop will forward to (the line we assign), or blank if not assigned yet", "", None),
     ("towns", "Towns you serve, comma separated", None, None),
     ("hours", "Hours, like 'weekdays 7-5, sat 8-12', or press Enter for Mon-Fri 7-5 and Sat 8-12", "", None),
@@ -214,6 +215,13 @@ def build(intake: dict, template: dict) -> dict:
     if bad:
         raise IntakeError(f"'{bad[0]}' doesn't look like an email address.")
     biz["notify"] = {"email": emails}
+    if str(intake.get("avg_job_value") or "").strip():
+        try:
+            biz["avg_job_value"] = float(str(intake["avg_job_value"]).replace("$", "").replace(",", ""))
+        except ValueError:
+            raise IntakeError("The average job value should be a number of dollars, like 450.") from None
+    else:
+        biz.pop("avg_job_value", None)   # the demo shop's own figure never reaches a real shop
     biz["retention_days"] = int(intake.get("retention_days") or 90)
     biz["token_version"] = 1
     biz["calendars"] = []

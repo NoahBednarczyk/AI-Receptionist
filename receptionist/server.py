@@ -32,7 +32,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket,
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, postcall, prompts, schedule
-from . import retell_hooks, backup, finance as finance_mod, keepwarm, latency as latency_mod, notify
+from . import retell_hooks, weekly, backup, finance as finance_mod, keepwarm, latency as latency_mod, notify
 from .agent import CallSession, cache_write_mult, make_client, prewarm, transcript_text, usage_cost
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
@@ -144,6 +144,8 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     app.state.notifier = notifier
     threading.Thread(target=notify.digest_loop, args=(notifier, lambda: all_businesses(cfg), stop), daemon=True,
                      name="digest").start()
+    threading.Thread(target=weekly.weekly_loop, args=(notifier, lambda: all_businesses(cfg), stop), daemon=True,
+                     name="weekly").start()
 
     def _save_cost(call_id: str, agent_usage: dict | None, post_usage: dict) -> None:
         """Records what the model calls for this call cost, for the admin cost view. Never raises into the call path."""

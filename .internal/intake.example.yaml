@@ -3,6 +3,7 @@ template: lawn_care                  # which demo shop to start from: hvac or la
 shop_name: Example Lawn & Snow
 owner_cell: "208-555-0100"          # the shop owner's cell; the agent can try it for emergencies
 owner_email: "owner@example.test"   # every call is emailed here (several: a comma-separated list)
+avg_job_value: 450                   # dollars; the weekly report multiplies it by jobs booked (an estimate)
 our_number: ""                       # the number the shop forwards to; fill in once assigned
 towns: [Sandpoint, Ponderay, Sagle, Dover, Kootenai]
 hours:                               # 24-hour times, or null for closed (or use "weekdays 7-5, sat 8-12")
