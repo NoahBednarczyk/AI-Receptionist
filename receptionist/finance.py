@@ -258,3 +258,58 @@ def render(snapshot: dict) -> str:
     for p in c["problems"] + c["notes"]:
         lines.append(f"  ! {p}")
     return "\n".join(lines)
+
+
+# ---- per shop, per call (admin only: never on a shop's dashboard) -----------------------------------------------
+
+def retell_call_costs(since: datetime, key: str) -> dict[str, dict]:
+    """{Retell call id: {usd, minutes}} for every Retell call since `since`."""
+    out, pagination_key = {}, None
+    for _ in range(sr.MAX_PAGES):
+        body = {"filter_criteria": {"start_timestamp": {"type": "number", "op": "ge", "value": int(since.timestamp() * 1000)}},
+                "limit": 1000, "sort_order": "descending"}
+        if pagination_key:
+            body["pagination_key"] = pagination_key
+        page = sr._http("POST", f"{sr.RETELL}/v3/list-calls", {"Authorization": f"Bearer {key}"}, body)
+        for c in page.get("items", []):
+            cost = c.get("call_cost") or {}
+            out[c.get("call_id")] = {
+                "usd": float(cost.get("combined_cost") or 0) / 100,
+                "minutes": float(cost.get("total_duration_seconds") or (c.get("duration_ms") or 0) / 1000) / 60}
+        pagination_key = page.get("pagination_key")
+        if not page.get("has_more") or not pagination_key:
+            return out
+    raise RuntimeError("Retell: stopped after too many pages; the table would be incomplete")
+
+
+def _minutes(row: dict) -> float:
+    try:
+        return max(0.0, (datetime.fromisoformat(row["ended_at"]) - datetime.fromisoformat(row["started_at"])).total_seconds() / 60)
+    except (TypeError, ValueError, KeyError):
+        return 0.0
+
+
+def cost_table(rows: list[dict], retell: dict[str, dict] | None) -> dict:
+    """Per shop and per call: Retell cost, Claude cost, minutes and cost per minute. `rows` come from Store.call_costs;
+    `retell` maps Retell call ids to their billing (None when the key is missing: Retell cost is then reported as
+    unknown, never as zero)."""
+    shops: dict[str, dict] = {}
+    for r in rows:
+        rid = (r["id"] or "").removeprefix("retell-")
+        billed = (retell or {}).get(rid) if r.get("platform") == "retell" else None
+        minutes = billed["minutes"] if billed else _minutes(r)
+        retell_usd = billed["usd"] if billed else None
+        claude = r.get("claude_usd")
+        known = retell_usd is not None and claude is not None
+        call = {"id": r["id"], "started_at": r["started_at"], "minutes": _r(minutes, 2), "retell_usd": None if retell_usd is None else _r(retell_usd),
+                "claude_usd": None if claude is None else _r(claude),
+                "total_usd": _r(retell_usd + claude) if known else None,
+                "per_minute_usd": _r((retell_usd + claude) / minutes, 3) if known and minutes > 0 else None}
+        shops.setdefault(r["business_id"], {"calls": []})["calls"].append(call)
+    for shop in shops.values():
+        full = [c for c in shop["calls"] if c["total_usd"] is not None and c["minutes"] > 0]
+        mins, usd = sum(c["minutes"] for c in full), sum(c["total_usd"] for c in full)
+        shop.update({"calls_counted": len(full), "calls_total": len(shop["calls"]), "minutes": _r(mins, 2),
+                     "retell_usd": _r(sum(c["retell_usd"] for c in full)), "claude_usd": _r(sum(c["claude_usd"] for c in full)),
+                     "total_usd": _r(usd), "per_minute_usd": _r(usd / mins, 3) if mins else None})
+    return {"shops": shops, "retell_known": retell is not None}

@@ -58,6 +58,12 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.lock = threading.Lock()
         self.db.executescript(SCHEMA)
+        for col, kind in (("claude_usd", "REAL"), ("claude_usage", "TEXT")):   # added after the first release
+            try:
+                self.db.execute(f"ALTER TABLE calls ADD COLUMN {col} {kind}")
+            except sqlite3.OperationalError:
+                pass   # already there
+        self.db.commit()
 
     def __del__(self):
         self.db.close()
@@ -121,6 +127,14 @@ class Store:
             "UPDATE calls SET ended_at=?, transcript=?, outcome=COALESCE(?, outcome) WHERE id=?",
             (now.isoformat(), json.dumps(transcript), outcome, call_id),
         )
+
+    def save_cost(self, call_id: str, usd: float, usage: dict) -> None:
+        """What the model calls for this call cost (agent plus post-call summary), priced from token counts."""
+        self._write("UPDATE calls SET claude_usd=?, claude_usage=? WHERE id=?", (round(usd, 5), json.dumps(usage), call_id))
+
+    def call_costs(self, since_iso: str) -> list[dict]:
+        return self._rows("SELECT id, business_id, platform, started_at, ended_at, claude_usd FROM calls WHERE started_at>=? "
+                          "ORDER BY started_at", (since_iso,))
 
     def save_summary(self, call_id: str, summary: dict) -> None:
         self._write("UPDATE calls SET summary=?, outcome=COALESCE(outcome, ?) WHERE id=?",

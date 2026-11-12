@@ -36,8 +36,8 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket,
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, platforms, postcall, prompts, schedule
-from . import backup, keepwarm, latency as latency_mod, notify
-from .agent import CallSession, make_client, prewarm, transcript_text
+from . import backup, finance as finance_mod, keepwarm, latency as latency_mod, notify
+from .agent import CallSession, cache_write_mult, make_client, prewarm, transcript_text, usage_cost
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
 from .store import Store
@@ -153,19 +153,34 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     threading.Thread(target=notify.digest_loop, args=(notifier, lambda: all_businesses(cfg), stop), daemon=True,
                      name="digest").start()
 
+    def _save_cost(call_id: str, agent_usage: dict | None, post_usage: dict) -> None:
+        """Records what the model calls for this call cost, for the admin cost view. Never raises into the call path."""
+        try:
+            m = cfg["models"]
+            mult = cache_write_mult(cfg)
+            usd = usage_cost(cfg, m["postcall"], post_usage, 1.25)
+            if agent_usage:
+                usd += usage_cost(cfg, m["agent"], agent_usage, mult)
+            store.save_cost(call_id, usd, {"agent": agent_usage or {}, "postcall": post_usage})
+        except Exception as e:
+            log.warning("could not record the cost of %s: %s", call_id, e)
+
     def finish_call(biz: dict, call_id: str, transcript: list[dict], reason: str | None,
-                    call_state: str | None = None) -> None:
+                    call_state: str | None = None, usage: dict | None = None) -> None:
         """Runs after the response is sent: store the transcript, then summarize and text the owner."""
         store.end_call(call_id, transcript, reason, schedule.local_now(biz))
         if len(transcript) < 2:
             return
+        post = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
         try:
-            summary = postcall.summarize(client, cfg, biz, transcript_text(transcript), call_state)
+            summary = postcall.summarize(client, cfg, biz, transcript_text(transcript), call_state, usage=post)
         except anthropic.APIError as e:
+            _save_cost(call_id, usage, post)
             log.error("post-call summary failed for %s: %s", call_id, e)
             notifier.call_finished(biz, call_id, None, reason)   # never raises
             return
         store.save_summary(call_id, summary)
+        _save_cost(call_id, usage, post)
         notifier.call_finished(biz, call_id, summary, reason)   # never raises
         if biz.get("texting_enabled"):   # otherwise the owner reads it on the dashboard
             store.queue_sms(biz["id"], call_id, biz["owner_sms"],
@@ -292,6 +307,20 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         """Recent emails and texts the server tried to send, with failures (admin key)."""
         _admin_only(request)
         return {"sent_today": notifier.sent_today(), "failed_today": notifier.failures_today(), "recent": notifier.recent()}
+
+    @app.get("/admin/costs")
+    async def admin_costs(request: Request, days: int = 30):
+        """Per shop and per call: Retell cost, Claude cost, minutes and cost per minute (admin key). Calls from before this
+        column existed have no Claude cost and are listed but not counted in the per-minute figure."""
+        _admin_only(request)
+        since = datetime.datetime.now(datetime.timezone.utc) - timedelta(days=max(1, min(days, 365)))
+        retell = None
+        if retell_key:
+            try:
+                retell = finance_mod.retell_call_costs(since, retell_key)
+            except RuntimeError as e:
+                log.warning("costs: %s", e)
+        return finance_mod.cost_table(store.call_costs(since.isoformat()), retell)
 
     @app.get("/admin/latency")
     async def latency(request: Request, last: int = 10):
@@ -452,7 +481,7 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
 
         def finish(session: CallSession) -> None:
             finish_call(session.biz, session.call_id, session.transcript, session.ctx.end_reason or "caller hung up",
-                        session.system[1]["text"])
+                        session.system[1]["text"], usage=dict(session.usage))
 
         try:
             await live.run_retell_call(websocket.receive_json, websocket.send_json, start_session, finish)
