@@ -1,0 +1,223 @@
+"""W2: telling the owner about calls. Nothing here talks to a real mail or text service: senders are fakes."""
+import json
+import logging
+import os
+import tempfile
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+from fastapi.testclient import TestClient
+
+import tests  # noqa: F401
+from receptionist import notify
+from receptionist.config import load_business, load_config
+from receptionist.server import create_app
+from receptionist.store import Store
+
+CFG = load_config()
+SHOP = {**load_business(CFG, "lawn_care"), "notify": {"email": ["owner@example.test"]}}
+NOW = datetime(2026, 11, 12, 18, 0, tzinfo=timezone.utc)
+SUMMARY = {"summary": "Pat's sprinkler line is leaking; booked Friday morning.", "caller_name": "Pat",
+           "callback_number": "2085550142", "intent": "new_job", "outcome": "booked", "urgency": "this_week",
+           "follow_up": "", "flags": []}
+
+
+class FakeEmail:
+    def __init__(self, fail=False):
+        self.sent, self.fail = [], fail
+
+    def send(self, to, subject, body):
+        if self.fail:
+            raise notify.SendError("boom")
+        self.sent.append((to, subject, body))
+
+
+def notifier(email=None, **kw):
+    store = Store(":memory:")
+    return notify.Notifier(store, email=email if email is not None else FakeEmail(), clock=lambda: NOW, **kw), store
+
+
+def start(store, call_id="c1", caller="+12085550142"):
+    store.start_call(call_id, SHOP["id"], "retell", caller, NOW)
+
+
+class CallEmail(unittest.TestCase):
+    def test_a_finished_call_emails_every_owner_address_with_the_facts(self):
+        n, store = notifier(base_url="https://x.test")
+        start(store)
+        store.add_appointment(SHOP["id"], "c1", "2026-11-13T08:00", "mowing", "Pat", "2085550142", "1 Main", "Sandpoint", "leak", None, NOW)
+        biz = {**SHOP, "notify": {"email": ["a@example.test", "b@example.test"]}}
+        n.call_finished(biz, "c1", SUMMARY, "completed")
+        self.assertEqual([m[0] for m in n.email.sent], ["a@example.test", "b@example.test"])
+        subject, body = n.email.sent[0][1:]
+        self.assertNotIn("URGENT", subject)
+        for fact in ("Pat", "booked", "2026-11-13T08:00", "https://x.test/dashboard?business=lawn_care"):
+            self.assertIn(fact, body + subject)
+        self.assertIn("208", body)
+
+    def test_the_link_carries_the_shops_key_when_there_is_one(self):
+        n, store = notifier(base_url="https://x.test", shop_key=lambda b: "KEY123")
+        self.assertIn("token=KEY123", n.link(SHOP))
+
+    def test_an_urgent_message_or_emergency_says_urgent_in_the_subject(self):
+        n, store = notifier()
+        start(store)
+        store.add_message(SHOP["id"], "c1", "Pat", "2085550142", "Basement is flooding", "owner", True, NOW)
+        n.call_finished(SHOP, "c1", {**SUMMARY, "outcome": "message"}, "completed")
+        self.assertTrue(n.email.sent[0][1].startswith("URGENT: "))
+        n2, s2 = notifier()
+        start(s2, "c2")
+        n2.call_finished(SHOP, "c2", {**SUMMARY, "urgency": "emergency"}, "safety")
+        self.assertTrue(n2.email.sent[0][1].startswith("URGENT: "))
+
+    def test_a_failed_summary_still_tells_the_owner(self):
+        n, store = notifier()
+        start(store)
+        n.call_finished(SHOP, "c1", None, "caller hung up")
+        self.assertIn("transcript", n.email.sent[0][2])
+
+    def test_a_shop_with_no_address_sends_nothing(self):
+        n, store = notifier()
+        start(store)
+        n.call_finished({**SHOP, "notify": {}}, "c1", SUMMARY, "completed")
+        self.assertEqual(n.email.sent, [])
+
+    def test_a_sender_that_fails_is_recorded_and_never_raised(self):
+        n, store = notifier(email=FakeEmail(fail=True))
+        start(store)
+        n.call_finished(SHOP, "c1", SUMMARY, "completed")   # no exception
+        row = n.recent()[0]
+        self.assertEqual((row["status"], row["error"]), ("failed", "boom"))
+        self.assertEqual(n.failures_today(), 1)
+
+    def test_no_sender_configured_is_recorded_as_skipped(self):
+        store = Store(":memory:")
+        n = notify.Notifier(store, email=None, clock=lambda: NOW)
+        start(store)
+        n.call_finished(SHOP, "c1", SUMMARY, "completed")
+        self.assertEqual(n.recent()[0]["status"], "skipped")
+
+
+class Limits(unittest.TestCase):
+    def test_past_a_shops_daily_share_mail_is_held_but_urgent_still_goes(self):
+        n, store = notifier()
+        biz = {**SHOP, "notify": {"email": ["o@example.test"], "max_per_day": 2}}
+        for i in range(4):
+            start(store, f"c{i}")
+            n.call_finished(biz, f"c{i}", SUMMARY, "completed")
+        self.assertEqual(len(n.email.sent), 2)
+        self.assertEqual([r["status"] for r in n.recent()][:2], ["held", "held"])
+        start(store, "u")
+        n.call_finished(biz, "u", {**SUMMARY, "urgency": "emergency"}, "safety")
+        self.assertEqual(len(n.email.sent), 3)
+
+    def test_near_the_providers_cap_only_urgent_mail_goes_and_at_half_a_warning_is_logged(self):
+        n, store = notifier(daily_cap=10)
+        with self.assertLogs("receptionist.notify", "WARNING") as logs:
+            for i in range(5):
+                n._send_email("s", f"c{i}", "call", "o@example.test", "s", "b")
+        self.assertTrue(any("5 of the 10" in m for m in logs.output))
+        for i in range(4):
+            n._send_email("s", f"d{i}", "call", "o@example.test", "s", "b")
+        self.assertEqual(len(n.email.sent), 9)     # the 10th would pass 90%: held
+        self.assertFalse(n._send_email("s", "x", "call", "o@example.test", "s", "b"))
+        self.assertTrue(n._send_email("s", "u", "urgent", "o@example.test", "s", "b", urgent=True))
+        self.assertFalse(n._send_email("s", "v", "urgent", "o@example.test", "s", "b", urgent=True))   # the cap itself
+
+
+class FakeSMTP:
+    log = []
+
+    def __init__(self, host, port, timeout=None):
+        self.log.append(("connect", host, port))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def starttls(self):
+        self.log.append(("tls",))
+
+    def login(self, user, password):
+        self.log.append(("login", user))
+
+    def send_message(self, msg):
+        self.log.append(("send", msg["To"], msg["Subject"], msg.get_content()))
+
+
+class Senders(unittest.TestCase):
+    def test_smtp_connects_with_tls_logs_in_and_sends(self):
+        FakeSMTP.log = []
+        notify.SmtpSender("smtp.example.test", "me@example.test", "pw", factory=FakeSMTP).send("o@example.test", "Hi", "Body")
+        self.assertEqual([e[0] for e in FakeSMTP.log], ["connect", "tls", "login", "send"])
+        self.assertEqual(FakeSMTP.log[-1][1:], ("o@example.test", "Hi", "Body\n"))
+
+    def test_an_smtp_error_becomes_a_send_error(self):
+        def refuse(*a, **k):
+            raise ConnectionRefusedError("no")
+        with self.assertRaises(notify.SendError):
+            notify.SmtpSender("h", "u", "p", factory=refuse).send("a", "b", "c")
+
+    def test_the_sender_comes_from_the_environment_and_is_absent_without_it(self):
+        self.assertIsNone(notify.email_sender_from_env({}))
+        s = notify.email_sender_from_env({"SMTP_HOST": "h", "SMTP_USER": "u", "SMTP_PASSWORD": "p"})
+        self.assertIsInstance(s, notify.SmtpSender)
+        h = notify.email_sender_from_env({"EMAIL_API_URL": "u", "EMAIL_API_KEY": "k", "EMAIL_FROM": "f@x"})
+        self.assertIsInstance(h, notify.HttpEmailSender)
+
+    def test_the_http_backend_posts_json_through_the_same_interface(self):
+        seen = []
+        notify.HttpEmailSender("https://api.test/send", "k", "from@x", post=lambda *a: seen.append(a)).send("o@x", "S", "B")
+        url, headers, payload = seen[0]
+        self.assertEqual((url, payload["to"], payload["subject"]), ("https://api.test/send", ["o@x"], "S"))
+        self.assertEqual(headers["Authorization"], "Bearer k")
+
+
+class Through_the_server(unittest.TestCase):
+    """A call ended through the Retell webhook emails the owner and shows on the admin view."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        clients = Path(self.tmp.name) / "clients"
+        clients.mkdir()
+        (clients / "north.json").write_text(json.dumps({**SHOP, "id": "north", "name": "North", "phone_numbers": ["+12085550100"],
+                                                         "demo": False}))
+        self.cfg = {**CFG, "data_dir": self.tmp.name, "clients_dir": str(clients), "live_businesses": []}
+        self.email = FakeEmail()
+        env = {"ALLOW_UNVERIFIED_WEBHOOKS": "1", "DASHBOARD_TOKEN": "a" * 32, "TOKEN_SECRET": "b" * 32,
+               "PUBLIC_BASE_URL": "https://x.test"}
+        self.p = [mock.patch.dict(os.environ, env), mock.patch.dict(os.environ, {"RETELL_API_KEY": ""}), mock.patch.object(notify, "email_sender_from_env", lambda: self.email)]
+        for p in self.p:
+            p.start()
+        client = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: SimpleNamespace(
+            stop_reason="end_turn", content=[SimpleNamespace(type="text", text=json.dumps(SUMMARY))],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1))))
+        self.http = TestClient(create_app(self.cfg, client=client, warm_cache=False))
+
+    def tearDown(self):
+        for p in self.p:
+            p.stop()
+        self.tmp.cleanup()
+
+    def end_call(self, call_id="abc"):
+        call = {"call_id": call_id, "to_number": "+12085550100", "from_number": "+12085550142",
+                "transcript_object": [{"role": "agent", "content": "Hi"}, {"role": "user", "content": "My sprinkler leaks"}],
+                "disconnection_reason": "user_hangup"}
+        self.assertEqual(self.http.post("/retell/webhook", json={"event": "call_ended", "call": call}).status_code, 200)
+
+    def test_the_owner_is_emailed_after_the_call_and_the_admin_sees_it(self):
+        self.end_call()
+        self.assertEqual(len(self.email.sent), 1)
+        self.assertIn("token=", self.email.sent[0][2])
+        r = self.http.get("/admin/notifications", headers={"Authorization": "Bearer " + "a" * 32})
+        self.assertEqual(r.json()["sent_today"], 1)
+        self.assertEqual(self.http.get("/admin/notifications").status_code, 404)
+
+
+if __name__ == "__main__":
+    unittest.main()

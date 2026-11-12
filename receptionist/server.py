@@ -35,7 +35,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket,
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, platforms, postcall, prompts, schedule
-from . import keepwarm, latency as latency_mod
+from . import keepwarm, latency as latency_mod, notify
 from .agent import CallSession, prewarm, transcript_text
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
@@ -136,6 +136,12 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         upcoming = store.upcoming_appointments(biz["id"], caller, now) if customer else []
         return prompts.call_state(biz, now, caller, customer, upcoming, dialed)
 
+    notifier = notify.Notifier(
+        store, email=notify.email_sender_from_env(), admin_email=os.environ.get("ADMIN_EMAIL"),
+        base_url=os.environ.get("PUBLIC_BASE_URL"),
+        shop_key=(lambda b: access.shop_key(token_secret, b, "dashboard")) if token_secret else None)
+    app.state.notifier = notifier
+
     def finish_call(biz: dict, call_id: str, transcript: list[dict], reason: str | None,
                     call_state: str | None = None) -> None:
         """Runs after the response is sent: store the transcript, then summarize and text the owner."""
@@ -146,8 +152,10 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
             summary = postcall.summarize(client, cfg, biz, transcript_text(transcript), call_state)
         except anthropic.APIError as e:
             log.error("post-call summary failed for %s: %s", call_id, e)
+            notifier.call_finished(biz, call_id, None, reason)   # never raises
             return
         store.save_summary(call_id, summary)
+        notifier.call_finished(biz, call_id, summary, reason)   # never raises
         if biz.get("texting_enabled"):   # otherwise the owner reads it on the dashboard
             store.queue_sms(biz["id"], call_id, biz["owner_sms"],
                             f"Call from {spoken_phone(summary.get('callback_number')) if summary.get('callback_number') else 'unknown'}: "
@@ -245,6 +253,12 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         if limiter.blocked(who) or not (dashboard_token and secrets.compare_digest(sent, dashboard_token)):
             limiter.record(who)
             raise HTTPException(404)
+
+    @app.get("/admin/notifications")
+    def admin_notifications(request: Request):
+        """Recent emails and texts the server tried to send, with failures (admin key)."""
+        _admin_only(request)
+        return {"sent_today": notifier.sent_today(), "failed_today": notifier.failures_today(), "recent": notifier.recent()}
 
     @app.get("/admin/latency")
     async def latency(request: Request, last: int = 10):
