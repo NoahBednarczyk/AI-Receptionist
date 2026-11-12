@@ -162,10 +162,10 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(prompts.channel_on(CHANNEL_CFG))
         self.assertFalse(prompts.channel_on({"agent": {}}))
 
-    def test_config_json_ships_the_channel_off_until_the_retest_passes(self):
+    def test_config_json_ships_the_channel_on_after_the_retest_passed(self):
         import json
         from pathlib import Path
-        self.assertIs(json.loads(Path("config.json").read_text())["agent"]["speech_channel"], False)
+        self.assertIs(json.loads(Path("config.json").read_text())["agent"]["speech_channel"], True)
 
     def test_both_prompts_agree_on_how_to_stay_silent(self):
         from receptionist import outbound
