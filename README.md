@@ -191,6 +191,11 @@ At the end of the day: read every transcript, count booked / message / lead / tr
 - **Dashboard on a phone, the calendar feed in Google Calendar, `new-client` with a real shop, and the checklist:** not tried on a device or with a real owner.
 - **Open items I did not touch:** the recording notice and the legal review below are unchanged, and the AI-disclosure rule is intact.
 
+## When something fails (reliability, 2026-11-12)
+
+- **The model fails or stalls** (Anthropic outage, timeout; the client gives up after 20 s with one retry, and a live call stops waiting after 12 s of silence, `live.model_timeout_s`): the call becomes a code-driven message taker (`degraded.py`): name, a 10-digit callback number read back, one sentence, saved as an **urgent** message, goodbye. Safety lines still come first. The owner sees it on the dashboard like any urgent message; its text says it came from the fallback line.
+- **Our server is unreachable (Render down, deploy gone wrong):** Retell's docs (checked 2026-11-12) describe no fallback for a custom-LLM websocket that will not open: Retell retries 3 times (7 s each) and ends the call with `error_llm_websocket_open`, so the caller hears nothing. `fallback_number` on the phone number only applies when Retell's concurrency is full or Retell itself is in outage mode. `retell_setup.number_settings` sets it when a shop's JSON has `inbound_fallback_number` (the owner's cell); applying it is a `retell-tune` run. For the rest, in overflow mode the shop's carrier forwarding is the safety net: tell owners to forward on "no answer / busy" so a dead line is the exception, and keep an uptime monitor on `/health/deep` (below) so we hear about an outage before a customer does.
+
 ## Spend report
 
 `python -m receptionist spend-report [--since YYYY-MM-DD] [--json] [--out FILE]` adds up what the paid services have cost this month. Read-only (GET and list queries only), costs nothing, and prints no keys.

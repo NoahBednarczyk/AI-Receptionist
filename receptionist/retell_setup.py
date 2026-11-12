@@ -51,6 +51,18 @@ def agent_settings(biz: dict) -> dict:
     return settings
 
 
+def number_settings(biz: dict) -> dict:
+    """Phone-number settings that keep a caller from hitting dead air. Retell's documented fallback_number is used only
+    when inbound concurrency is full or the workspace is in outage mode (docs.retellai.com, update-phone-number); it is
+    NOT used when our custom-LLM websocket cannot open. In that case Retell retries 3 times for about 30 seconds, then
+    ends the call (`error_llm_websocket_open`) with no spoken message and no other fallback exists in the API (checked
+    2026-11-12). So this covers busy lines and Retell outages only; our own outage is covered by /health/deep alerts and
+    the shop's carrier-side forwarding rules (README, "When the server is down"). Set `inbound_fallback_number` in the
+    shop's JSON (usually the owner's cell) to turn it on."""
+    number = normalize_phone(biz.get("inbound_fallback_number"))
+    return {"fallback_number": number, "inbound_fallback_enabled": True} if number else {}
+
+
 def tune(cfg: dict, biz: dict, base_url: str | None = None) -> dict:
     """Applies agent_settings(biz) to the live Retell agent: published versions are read-only, so this makes a new
     draft from the latest version, edits and publishes it, and points the phone number at it."""
@@ -74,7 +86,8 @@ def tune(cfg: dict, biz: dict, base_url: str | None = None) -> dict:
     _call("POST", f"/publish-agent-version/{agent_id}", {"version": agent["version"],
                                                           "version_title": "Voice and speech settings"})
     _call("PATCH", f"/update-phone-number/{rec['number']}",
-          {"inbound_agents": [{"agent_id": agent_id, "agent_version": agent["version"], "weight": 1}]})
+          {"inbound_agents": [{"agent_id": agent_id, "agent_version": agent["version"], "weight": 1}],
+           **number_settings(biz)})
     return agent
 
 

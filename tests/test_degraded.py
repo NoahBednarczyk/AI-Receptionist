@@ -159,3 +159,11 @@ class StalledModelOnALiveCall(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetellFallbackSettings(unittest.TestCase):
+    def test_a_fallback_number_is_set_only_when_the_shop_names_one(self):
+        from receptionist import retell_setup
+        self.assertEqual(retell_setup.number_settings(BIZ), {})
+        self.assertEqual(retell_setup.number_settings({**BIZ, "inbound_fallback_number": "(208) 555-0123"}),
+                         {"fallback_number": "+12085550123", "inbound_fallback_enabled": True})
