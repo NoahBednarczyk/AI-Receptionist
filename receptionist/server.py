@@ -24,6 +24,7 @@ import logging
 import os
 import secrets
 import threading
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 import datetime
@@ -77,6 +78,10 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     if not ws_secret:
         log.warning("RETELL_WS_SECRET is not set: live Retell calls are off")
 
+    # The last time the model API answered (the keep-warm lookup, every 3 minutes) for /health/deep.
+    model_check: dict = {"ok_at": None, "error": None, "started": time.monotonic()}
+    db_check: dict = {"at": 0.0, "ok": True}
+
     refresher = keepwarm.CacheRefresher(cfg, client, prewarm_targets, prewarm)
 
     def keep_warm() -> None:
@@ -94,8 +99,10 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
                     once = False
                 refresher.tick()   # every live shop, every 50 minutes in its day (live.cache_refresh)
                 client.models.retrieve(cfg["models"]["agent"])
+                model_check.update(ok_at=time.monotonic(), error=None)
             except anthropic.APIError as e:
                 log.warning("keep-warm request failed: %s", e)
+                model_check["error"] = f"{type(e).__name__}"
             stop.wait(180)
 
     def apply_retention() -> int:
@@ -166,6 +173,28 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     @app.get("/health")
     def health():
         return {"ok": True}   # no shop names: this one is open to anyone
+
+    @app.get("/health/deep")
+    def health_deep():
+        """For an external uptime monitor: 200 when the database takes a write and the model API answered recently,
+        503 otherwise. Says which check failed and nothing else (no shop names), so it can stay open. The write is
+        repeated at most every 30 seconds however often it is polled."""
+        now = time.monotonic()
+        if now - db_check["at"] >= 30:
+            try:
+                store.write_check(datetime.datetime.now(datetime.timezone.utc).isoformat())
+                db_check["ok"] = True
+            except Exception as e:
+                log.error("health: the database is not writable: %s", e)
+                db_check["ok"] = False
+            db_check["at"] = now
+        max_age = float(cfg.get("health", {}).get("model_max_age_s", 600))
+        if model_check["ok_at"] is not None:
+            model_ok = now - model_check["ok_at"] <= max_age
+        else:   # nothing checked yet: fine for a few minutes after a start, then it is a failure
+            model_ok = model_check["error"] is None and now - model_check["started"] <= max_age
+        body = {"ok": db_check["ok"] and model_ok, "database": db_check["ok"], "model": model_ok}
+        return JSONResponse(body, status_code=200 if body["ok"] else 503)
 
     def _shop(business: str | None, admin: bool) -> dict | None:
         """The shop named in the request. Only the admin key may fall back to the default shop."""

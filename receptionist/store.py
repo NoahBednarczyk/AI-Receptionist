@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS calendar_sync (
   business_id TEXT, confirmation TEXT, status TEXT, error TEXT, updated_at TEXT,
   PRIMARY KEY (business_id, confirmation)
 );
+CREATE TABLE IF NOT EXISTS health (id INTEGER PRIMARY KEY, checked_at TEXT);
 CREATE TABLE IF NOT EXISTS tool_events (
   id INTEGER PRIMARY KEY, call_id TEXT, name TEXT, args TEXT, result TEXT, created_at TEXT
 );
@@ -66,6 +67,10 @@ class Store:
             cur = self.db.execute(sql, params)
             self.db.commit()
             return cur.lastrowid
+
+    def write_check(self, now_iso: str) -> None:
+        """Proves the database accepts a write (full disk, read-only mount, a stuck lock all raise here)."""
+        self._write("INSERT OR REPLACE INTO health (id, checked_at) VALUES (1, ?)", (now_iso,))
 
     def _rows(self, sql: str, params: tuple = ()) -> list[dict]:
         with self.lock:
