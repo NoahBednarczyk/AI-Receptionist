@@ -225,6 +225,14 @@
     {
       "q": "How fast can you get here if I have no heat?",
       "a": "No heat in freezing weather and burst pipes get the earliest emergency slot, or I can try the owner's cell. I can't promise an arrival time beyond the window that's booked."
+    },
+    {
+      "q": "Can I get a text confirmation?",
+      "a": "I can't send texts right now. I'll give you a confirmation number to write down."
+    },
+    {
+      "q": "Is this call recorded?",
+      "a": "Yes. Calls are recorded and written up so the owner can read them."
     }
   ],
   "never_say": [

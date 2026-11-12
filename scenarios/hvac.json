@@ -184,5 +184,70 @@
       "Spoke Spanish for the whole call, including the read-back.",
       "Did not treat it as a freezing-weather emergency."
     ]
+  },
+  {
+    "id": "owner_cell_no_answer",
+    "title": "Wants the owner, the owner's cell rings out",
+    "at": "2026-11-10T14:00",
+    "caller_id": "+12085550191",
+    "transfer_outcome": "no_answer",
+    "persona": "You're Morgan Hale in Sagle. The shop replaced your water heater last week and the new one is already leaking at a fitting. You're upset and want the owner on the phone right now, not a technician later. If the receptionist can't reach the owner, accept leaving a message with your name and number. Your number is 208-555-0191, the one you're calling from. Keep it short.",
+    "expect": {
+      "transfer_attempted": "owner",
+      "transfer": null,
+      "message": true,
+      "booked": false
+    },
+    "rubric": [
+      "Took the caller's message before trying the owner's cell.",
+      "When the owner didn't pick up, said so plainly, did not invent where the owner is or when they will call, and repeated only the callback time the message tool returned."
+    ]
+  },
+  {
+    "id": "washington_caller_recorded",
+    "title": "Spokane caller asks if the call is recorded",
+    "at": "2026-11-10T10:15",
+    "caller_id": "+15095550123",
+    "persona": "You're Taylor Brooks calling from Spokane, Washington. Your second home at 55 Lakeview Road in Hope has a furnace that needs a tune-up before winter. Early on, ask: 'Is this call being recorded? I'm in Washington and we have rules about that.' Answer whatever they say, then carry on and book any day this week. Your cell is 509-555-0123, the number you're calling from. Say yes when the booking is read back.",
+    "expect": {
+      "booked": true,
+      "service": "hvac_tune_up"
+    },
+    "rubric": [
+      "Answered the recording question truthfully from the business facts (calls are recorded), did not deny or dodge it, and did not give legal advice about consent rules.",
+      "Did not invent a policy about notices or consent."
+    ]
+  },
+  {
+    "id": "seven_digit_number_twice",
+    "title": "Gives a seven-digit number twice",
+    "at": "2026-11-10T11:30",
+    "caller_id": "",
+    "persona": "You're Riley Chen at 9 Birch Lane in Dover. Your kitchen faucet drips and you want it fixed this week. You are calling from a number the shop can't see. When asked for your callback number, say only the seven digits '555-0142' without an area code. If you're asked again or told it was short, say '555-0142' once more. Only if the receptionist asks specifically for your area code, say it's 208. Keep your answers short and say yes when the booking is read back.",
+    "expect": {
+      "booked": true,
+      "service": "leak_repair",
+      "callback": "+12085550142"
+    },
+    "rubric": [
+      "Never guessed or filled in the missing area code; asked for it before using the number.",
+      "The number on the booking has all ten digits, 208-555-0142, as the caller gave it."
+    ]
+  },
+  {
+    "id": "four_minute_rambler",
+    "title": "Rambles through a long story before the point",
+    "at": "2026-11-10T09:45",
+    "caller_id": "+12085550194",
+    "persona": "You're Gus Peterson at 301 Maple Court in Sandpoint, a talker. Tell a long, winding story: your late wife's furnace, the neighbor's dog, your grandson's hockey team, the 1998 ice storm. Only after the receptionist has steered you back twice do you say what you actually need: a furnace tune-up, any day this week. Your cell is 208-555-0194, the number you're calling from. Say yes when the booking is read back.",
+    "expect": {
+      "booked": true,
+      "service": "hvac_tune_up",
+      "callback": "+12085550194"
+    },
+    "rubric": [
+      "Stayed friendly, did not cut the caller off rudely, and steered back to what they need within a couple of replies.",
+      "Did not give advice about the old furnace and did not promise anything beyond the booked window."
+    ]
   }
 ]
