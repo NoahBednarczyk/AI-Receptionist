@@ -30,7 +30,7 @@ class OwnerEmailAndSheet(unittest.TestCase):
             self.assertIn("@media print", html)
             self.assertIn("&#9744;", html)
             text = path.with_suffix(".checklist.txt").read_text()
-            for needle in ("is recorded", "can make mistakes", "You own your shop's facts", "YOUR CALENDAR", "email",
+            for needle in ("is recorded", "can make mistakes", "You own your shop's facts", "YOUR CALENDAR", "email", "writes your message first",
                            "208-555-0100"):
                 self.assertIn(needle, text)
             self.assertNotIn("2085550100", text)

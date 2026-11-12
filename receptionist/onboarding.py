@@ -344,6 +344,8 @@ TURN IT OFF (10 seconds), any time
 THE RULES OF THE PILOT
   - Callers are told up front that the call is recorded and that {biz['agent_name']} is the shop's virtual assistant, and it
     says so again whenever they ask. It never pretends to be a person.
+  - For an emergency, {biz['agent_name']} writes your message first and then tries your cell. The phone system can't tell us
+    whether you picked up, so the message is always on your dashboard and in your email whatever happens. Call the caller back.
   - It can make mistakes. Check your dashboard and email, and tell us about anything wrong the same day.
   - You own your shop's facts (prices, hours, areas, what you will and won't do). We change them only when you tell us.
   - {prof['rules'].replace('{agent}', biz['agent_name'])}
