@@ -177,6 +177,7 @@ class Notifier:
     def call_finished(self, biz: dict, call_id: str, summary: dict | None, reason: str | None = None,
                       call_row: dict | None = None) -> None:
         """Called once a call is over and summarized (summary None if the summary failed). Never raises."""
+        self.drain_sms(biz)      # texts queued during the call (only when the shop has texting_enabled)
         try:
             facts = self._facts(biz, call_id, summary, reason)
             for to in (biz.get("notify") or {}).get("email", []):
@@ -198,6 +199,51 @@ class Notifier:
         return {"call_id": call_id, "summary": s, "messages": msgs, "appointments": appts, "leads": leads, "urgent": urgent,
                 "reason": reason, "caller": call.get("caller")}
 
+    # -- W2.2: queued texts and inbound STOP --
+    def drain_sms(self, biz: dict) -> int:
+        """Send this shop's queued texts. Does nothing unless the shop has texting_enabled and a sender exists (queued
+        rows then wait). Owner alerts go only to the shop's own owner_sms number; any other recipient is a caller, who is
+        skipped if they replied STOP, and whose text always ends with the opt-out line. Never raises. Returns the count sent."""
+        if not biz.get("texting_enabled") or self.sms is None:
+            return 0
+        sent = 0
+        try:
+            rows = self.store._rows("SELECT * FROM sms_outbox WHERE business_id=? AND status='queued' ORDER BY id", (biz["id"],))
+            for r in rows:
+                owner = _digits(r["to_number"]) == _digits(biz.get("owner_sms"))
+                if not owner and self.store._rows("SELECT 1 FROM sms_optout WHERE number=?", (_digits(r["to_number"]),)):
+                    self.store._write("UPDATE sms_outbox SET status='blocked_optout' WHERE id=?", (r["id"],))
+                    self._log(biz["id"], r["call_id"], "sms", "sms", r["to_number"], "", "skipped", "recipient opted out")
+                    continue
+                body = r["body"] if owner or "STOP" in r["body"] else r["body"] + STOP_SUFFIX
+                try:
+                    self.sms.send(r["to_number"], body)
+                    self.store._write("UPDATE sms_outbox SET status='sent' WHERE id=?", (r["id"],))
+                    self._log(biz["id"], r["call_id"], "owner_sms" if owner else "caller_sms", "sms", r["to_number"], "", "sent")
+                    sent += 1
+                except SendError as e:
+                    self.store._write("UPDATE sms_outbox SET status='failed' WHERE id=?", (r["id"],))
+                    self._log(biz["id"], r["call_id"], "sms", "sms", r["to_number"], "", "failed", str(e)[:300])
+        except Exception:
+            log.exception("sending queued texts failed for %s", biz.get("id"))
+        return sent
+
+
+    def handle_inbound_sms(self, from_number: str, body: str) -> str | None:
+        """An inbound text from a caller: STOP-type words opt them out, START-type words back in. Returns the reply to
+        send (Twilio also answers STOP itself at the Messaging Service; this keeps our own queue honest), else None."""
+        word = (body or "").strip().lower()
+        n = _digits(from_number)
+        if not n:
+            return None
+        if word in STOP_WORDS:
+            self.store._write("INSERT OR REPLACE INTO sms_optout (number, at) VALUES (?, ?)", (n, self.clock().isoformat()))
+            return STOP_REPLY
+        if word in START_WORDS:
+            self.store._write("DELETE FROM sms_optout WHERE number=?", (n,))
+            return START_REPLY
+        return None
+
 
 def call_email(biz: dict, f: dict, link: str) -> tuple[str, str]:
     s = f["summary"]
@@ -216,3 +262,45 @@ def call_email(biz: dict, f: dict, link: str) -> tuple[str, str]:
     if link:
         lines += ["", f"Full call and transcript: {link}"]
     return subject, "\n".join(lines)
+
+
+# ---- W2.2: texts, behind texting_enabled -----------------------------------------------------------------------------
+STOP_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit"}
+START_WORDS = {"start", "yes", "unstop"}
+STOP_SUFFIX = " Reply STOP to opt out."
+STOP_REPLY = "You are unsubscribed and will get no more texts from us. Reply START to turn them back on."
+START_REPLY = "You are subscribed again. Reply STOP to opt out."
+
+
+class TwilioSender:
+    """Twilio Messages API through a Messaging Service (the service holds the registered 10DLC campaign). `post` is
+    injected in tests; it takes (url, auth_header, form dict) and returns the HTTP status."""
+
+    def __init__(self, account_sid: str, auth_token: str, messaging_service_sid: str, post=None):
+        self.sid, self.service = account_sid, messaging_service_sid
+        self.auth = "Basic " + base64.b64encode(f"{account_sid}:{auth_token}".encode()).decode()
+        self.post = post or self._post
+
+    def _post(self, url: str, auth: str, form: dict) -> int:
+        req = urllib.request.Request(url, urllib.parse.urlencode(form).encode(), {"Authorization": auth}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status
+
+    def send(self, to: str, body: str) -> None:
+        try:
+            status = self.post(f"https://api.twilio.com/2010-04-01/Accounts/{self.sid}/Messages.json", self.auth,
+                               {"To": to, "MessagingServiceSid": self.service, "Body": body})
+        except OSError as e:     # urllib's HTTPError is an OSError too
+            raise SendError(f"{type(e).__name__}: {e}") from e
+        if status >= 300:
+            raise SendError(f"Twilio answered {status}")
+
+
+def sms_sender_from_env(env=None) -> TwilioSender | None:
+    env = os.environ if env is None else env
+    keys = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_MESSAGING_SERVICE_SID")
+    return TwilioSender(*(env[k] for k in keys)) if all(env.get(k) for k in keys) else None
+
+
+def _digits(number: str | None) -> str:
+    return "".join(c for c in (number or "") if c.isdigit())[-10:]

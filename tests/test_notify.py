@@ -178,6 +178,75 @@ class Senders(unittest.TestCase):
         self.assertEqual(headers["Authorization"], "Bearer k")
 
 
+class FakeSms:
+    def __init__(self, fail=False):
+        self.sent, self.fail = [], fail
+
+    def send(self, to, body):
+        if self.fail:
+            raise notify.SendError("down")
+        self.sent.append((to, body))
+
+
+class Texts(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+        self.sms = FakeSms()
+        self.n = notify.Notifier(self.store, email=FakeEmail(), sms=self.sms, clock=lambda: NOW)
+        self.biz = {**SHOP, "texting_enabled": True, "owner_sms": "+12085550102"}
+
+    def queue(self, to, body):
+        self.store.queue_sms(self.biz["id"], "c1", to, body, NOW)
+
+    def test_nothing_is_sent_while_texting_is_off_and_the_rows_wait(self):
+        self.queue("+12085550102", "New booking")
+        self.assertEqual(self.n.drain_sms({**self.biz, "texting_enabled": False}), 0)
+        self.assertEqual(self.sms.sent, [])
+        self.assertEqual(self.store.recent("sms_outbox", self.biz["id"])[0]["status"], "queued")
+        self.assertEqual(self.n.drain_sms(self.biz), 1)      # the day it is switched on
+
+    def test_owner_alerts_go_to_the_owners_number_and_caller_texts_get_the_stop_line(self):
+        self.queue("+12085550102", "New booking A1001")
+        self.queue("+12085550142", "Your visit is Friday.")
+        self.assertEqual(self.n.drain_sms(self.biz), 2)
+        self.assertEqual(self.sms.sent[0], ("+12085550102", "New booking A1001"))
+        self.assertTrue(self.sms.sent[1][1].endswith("Reply STOP to opt out."))
+
+    def test_a_caller_who_texted_stop_gets_nothing_until_start(self):
+        self.assertEqual(self.n.handle_inbound_sms("+1 (208) 555-0142", "Stop"), notify.STOP_REPLY)
+        self.queue("+12085550142", "Reminder")
+        self.assertEqual(self.n.drain_sms(self.biz), 0)
+        self.assertEqual(self.store.recent("sms_outbox", self.biz["id"])[0]["status"], "blocked_optout")
+        self.assertEqual(self.n.handle_inbound_sms("2085550142", "START"), notify.START_REPLY)
+        self.queue("+12085550142", "Reminder 2")
+        self.assertEqual(self.n.drain_sms(self.biz), 1)
+
+    def test_other_inbound_text_is_left_alone(self):
+        self.assertIsNone(self.n.handle_inbound_sms("+12085550142", "thanks!"))
+
+    def test_a_failing_sender_marks_the_row_failed_and_does_not_raise(self):
+        self.n.sms = FakeSms(fail=True)
+        self.queue("+12085550102", "x")
+        self.assertEqual(self.n.drain_sms(self.biz), 0)
+        self.assertEqual(self.store.recent("sms_outbox", self.biz["id"])[0]["status"], "failed")
+        self.assertEqual(self.n.failures_today(), 1)
+
+    def test_twilio_posts_to_the_messages_api_through_the_messaging_service(self):
+        seen = []
+        notify.TwilioSender("AC1", "tok", "MG1", post=lambda *a: seen.append(a) or 201).send("+12085550142", "Hi")
+        url, auth, form = seen[0]
+        self.assertEqual(url, "https://api.twilio.com/2010-04-01/Accounts/AC1/Messages.json")
+        self.assertEqual(form, {"To": "+12085550142", "MessagingServiceSid": "MG1", "Body": "Hi"})
+        self.assertTrue(auth.startswith("Basic "))
+        with self.assertRaises(notify.SendError):
+            notify.TwilioSender("AC1", "tok", "MG1", post=lambda *a: 400).send("+1", "x")
+
+    def test_the_twilio_sender_needs_all_three_settings(self):
+        self.assertIsNone(notify.sms_sender_from_env({"TWILIO_ACCOUNT_SID": "AC"}))
+        self.assertIsNotNone(notify.sms_sender_from_env({"TWILIO_ACCOUNT_SID": "a", "TWILIO_AUTH_TOKEN": "b",
+                                                         "TWILIO_MESSAGING_SERVICE_SID": "c"}))
+
+
 class Through_the_server(unittest.TestCase):
     """A call ended through the Retell webhook emails the owner and shows on the admin view."""
 

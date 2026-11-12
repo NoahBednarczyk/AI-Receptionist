@@ -137,7 +137,7 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         return prompts.call_state(biz, now, caller, customer, upcoming, dialed)
 
     notifier = notify.Notifier(
-        store, email=notify.email_sender_from_env(), admin_email=os.environ.get("ADMIN_EMAIL"),
+        store, email=notify.email_sender_from_env(), sms=notify.sms_sender_from_env(), admin_email=os.environ.get("ADMIN_EMAIL"),
         base_url=os.environ.get("PUBLIC_BASE_URL"),
         shop_key=(lambda b: access.shop_key(token_secret, b, "dashboard")) if token_secret else None)
     app.state.notifier = notifier
