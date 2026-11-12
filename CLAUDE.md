@@ -41,13 +41,11 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   now `null` (see open items). `default_business` is `hvac` (the pilot vertical); moving the live number to it needs the user's word.
 - **Say channel is ON** (`agent.speech_channel: true`), decided on 2026-11-12 from the lawn quick run: 0 untagged blocks per
   call, longest private note 12 words, 48/56 text blocks tagged. On the hvac quick run the same day the longest private
-  note was 35 words and 68 to 87% of blocks were tagged; the stop rule (no private note over 12 words) was NOT met there.
+  note was 35 words (71 words, 77% tagged on the full run: failed again) and 68 to 87% of blocks were tagged; the stop rule (no private note over 12 words) was NOT met there.
   Re-measure on the next full run; if it keeps failing, delete the channel (`speech_channel: false` is the rollback). The
   old blocklist still runs in shadow; delete it after a clean week of real calls.
 - **Tests:** 485 pass in about 13 s with no API key; CI in `.github/workflows/tests.yml` (never run on GitHub).
-- **Simulation, hvac (the pilot), 2026-11-12:** quick 6: 3/6; after root-cause prompt fixes the 3 failures passed on
-  one rerun (3/3). The full 16-scenario suite has NOT been run twice; the gate (9/10 on two runs, zero failures on safety,
-  invented prices, AI disclosure) is therefore unproven. The day's $1 is spent; a full run costs about $1.05.
+- **Simulation, hvac (the pilot), 2026-11-12:** quick 6: 3/6, fixed, 3/3 on rerun. First FULL run (16, budget raised to $2): 10/16, gate NOT met (needs 9/10 twice). Failures: stacked name/address question on top of a time question (3 scenarios, plus the seven-digit one offered 3 windows), an invented recording opt-out (Washington), 'Uh, getting that down' narrating a tool call, emergency windows offered before the town was checked (outside_service_area), and the furnace filter tip graded as work on the furnace (grader noise: the tip is approved). Three prompt rules were then edited (time question ends the reply; exactly two times; never offer an opt-out or workaround for a stated policy). Those edits are UNTESTED: $0.19 of today's $2 is left and a full run costs about $0.95. Next: re-run the full suite (needs another raise), twice, before calling the gate met.
 
 ## Built under the 2026-11-11 market-readiness spec (`.internal/specs/2026-11-11-market-readiness-spec.md`)
 - **W1:** degraded mode, Anthropic client timeouts, `/health/deep`, `backup.py` + `restore --dry-run` (S3 upload tested
