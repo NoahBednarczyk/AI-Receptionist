@@ -17,9 +17,9 @@ def _store(cfg, pretend_time=None):
     return Store(":memory:" if pretend_time else str(Path(cfg["data_dir"]) / "receptionist.sqlite"))
 
 
-def _client():
-    import anthropic
-    return anthropic.Anthropic()
+def _client(cfg=None):
+    from .agent import make_client
+    return make_client(cfg)
 
 
 def cmd_chat(cfg, a):
@@ -32,7 +32,7 @@ def cmd_chat(cfg, a):
     store = _store(cfg, a.at)
     now = schedule.local_now(biz, a.at)
     store.seed_demo(biz, now)
-    client = _client()
+    client = _client(cfg)
     s = CallSession(client, cfg, biz, store, now, caller=a.caller, platform="text")
     note = " Pretend time, so nothing is saved." if a.at else ""
     print(f"{DIM}Call {s.call_id} at {now:%a %b %d %H:%M} ({biz['timezone']}).{note} Empty line or Ctrl-D hangs up.{RESET}\n")
@@ -122,7 +122,7 @@ def cmd_simulate(cfg, a):
         cfg["models"]["agent_thinking"] = a.thinking
     if a.model:
         cfg["models"]["agent"] = a.model
-    run_all(cfg, biz, _client(), a.ids, a.report, verbose=a.verbose, jobs=a.jobs)
+    run_all(cfg, biz, _client(cfg), a.ids, a.report, verbose=a.verbose, jobs=a.jobs)
 
 
 def cmd_budget(cfg, a):

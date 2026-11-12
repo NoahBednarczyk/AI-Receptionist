@@ -36,7 +36,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, platforms, postcall, prompts, schedule
 from . import keepwarm, latency as latency_mod, notify
-from .agent import CallSession, prewarm, transcript_text
+from .agent import CallSession, make_client, prewarm, transcript_text
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
 from .store import Store
@@ -56,7 +56,7 @@ def prewarm_targets(cfg: dict) -> list[dict]:
 
 def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache: bool = True) -> FastAPI:
     app = FastAPI(title="receptionist", docs_url=None, redoc_url=None, openapi_url=None)   # no route map for strangers
-    client = client or anthropic.Anthropic()
+    client = client or make_client(cfg)
     store = Store(str(Path(cfg["data_dir"]) / "receptionist.sqlite"))
     for biz in all_businesses(cfg):
         if biz.get("demo_seed"):

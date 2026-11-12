@@ -40,6 +40,7 @@ STILL_WORKING = {"en": ["Hmm.", "Mm, let's see.", "Uh...", "Okay, so.", "Mm, let
                  "es": ["A ver.", "Mm, déjeme ver.", "Veamos.", "Bueno, a ver."]}
 # The discovery caller's own pool: plain acknowledgements, never "thinking" sounds (they make a sales call sound slow).
 OUTBOUND_STILL_WORKING = {"en": ["Mm.", "Mm-hm.", "Okay."], "es": STILL_WORKING["es"]}
+MODEL_TIMEOUT_S = 12.0   # no progress from the model for this long: stop waiting and take a message in code (degraded.py)
 SLOW_REPLY_S = 3.0   # no words yet after this long: a short thinking sound, never the same one twice running
 GARBLED = re.compile(r"^([\s(\[]*(unintelligible|inaudible|no speech|silence)[^)\]]*[)\]]?|\s*[(\[][^)\]]*(noise|static|crosstalk|cross talk|music|muffled)[^)\]]*[)\]])[\s.]*$", re.I)
 TROUBLE = {"en": ["I'm sorry, we're having a technical problem. Please call back in a few minutes.",
@@ -290,11 +291,16 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
                                     heard_only, note)
         turn.add_done_callback(lambda f: f.cancelled() or f.exception())   # a dropped turn's error is expected
         started, spoke, first = loop.time(), False, None
+        last = started   # when the turn last made progress (a chunk of speech)
+        hard = float(session.cfg.get("live", {}).get("model_timeout_s", MODEL_TIMEOUT_S))
         newer_wait = asyncio.ensure_future(newer.wait())
         try:
             while True:
                 getter = asyncio.ensure_future(chunks.get())
-                wait = None if spoke else max(0.0, SLOW_REPLY_S - (loop.time() - started))
+                now = loop.time()
+                wait = None if spoke else max(0.0, SLOW_REPLY_S - (now - started))
+                until_hard = max(0.0, hard - (now - last))
+                wait = until_hard if wait is None else min(wait, until_hard)
                 done, _ = await asyncio.wait({getter, turn, newer_wait}, timeout=wait,
                                              return_when=asyncio.FIRST_COMPLETED)
                 if newer_wait in done and not turn.done():
@@ -306,6 +312,14 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
                     break
                 if not done:
                     getter.cancel()
+                    if loop.time() - last >= hard - 0.01 and can_take_over():   # the model has stalled
+                        if control.drop():
+                            log.error("call %s: the model made no progress for %.0fs; taking a message in code",
+                                      session.call_id, hard)
+                            await degrade_reply(rid, caller_text)
+                            return True
+                        await asyncio.wait({turn})   # it already did something irreversible: let it finish
+                        break
                     spoke = True
                     await say({"response_type": "response", "response_id": rid,
                                "content": still_working(session.ctx.language) + " ", "content_complete": False})
@@ -314,6 +328,7 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
                     if first is None:
                         first = loop.time() - started
                     spoke = True
+                    last = loop.time()
                     await say(part(getter.result()))
                     continue
                 getter.cancel()
@@ -334,14 +349,39 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
             return False
         except Exception:
             log.exception("turn failed on call %s", session.call_id)
+            if can_take_over():
+                await degrade_reply(rid, caller_text)
+                return True
             final.update(content=line(TROUBLE, session.ctx.language, "trouble"), end_call=True)
+        await say(with_outcome(final))
+        return True
+
+    def can_take_over() -> bool:
+        """Only the inbound receptionist falls back to the code-driven message taker, once per call."""
+        return bool(getattr(session, "can_degrade", False)) and getattr(session, "taker", None) is None
+
+    def with_outcome(final: dict) -> dict:
         ctx = session.ctx
         if ctx.transferred_to:
             final["transfer_number"] = ctx.biz["transfer_targets"][ctx.transferred_to]["number"]
         elif ctx.ended:
             final["end_call"] = True
-        await say(final)
-        return True
+        return final
+
+    async def degrade_reply(rid: int, caller_text: str) -> None:
+        """The model failed or stalled: the rest of the call is a code-driven message taker. Nothing here calls the model."""
+        session.degrade()
+        out: list[str] = []
+        try:
+            await loop.run_in_executor(None, session.respond, caller_text, out.append, None, None, None)
+        except Exception:
+            log.exception("the message taker failed on call %s", session.call_id)
+            await say({"response_type": "response", "response_id": rid, "end_call": True, "content_complete": True,
+                       "content": line(TROUBLE, session.ctx.language, "trouble")})
+            return
+        for chunk in out:
+            await say({"response_type": "response", "response_id": rid, "content": for_voice(chunk), "content_complete": False})
+        await say(with_outcome({"response_type": "response", "response_id": rid, "content": "", "content_complete": True}))
 
     await say({"response_type": "config", "config": {"auto_reconnect": True, "call_details": True}})
     tasks = [asyncio.create_task(reader()), asyncio.create_task(worker())]

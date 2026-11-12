@@ -16,6 +16,11 @@
     "outbound": "claude-sonnet-5-5",
     "outbound_effort": "low"
   },
+  "anthropic": {
+    "timeout_s": 20,
+    "connect_timeout_s": 5,
+    "max_retries": 1
+  },
   "agent": {
     "max_tokens": 2048,
     "max_tool_rounds": 6,

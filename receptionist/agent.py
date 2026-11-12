@@ -17,10 +17,18 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import anthropic
+import httpx
 
-from . import prompts, safety, tools
+from . import degraded, prompts, safety, tools
 from .speech import channel_guard, looks_spanish, redact_card, short_phone_numbers, unspeakable
 from .store import Store
+
+# What a failed or stalled model call looks like (the SDK wraps most of it as APIError; a dropped stream is raw httpx).
+try:
+    import httpx2   # newer SDKs bring their own HTTP layer
+    MODEL_FAILURES = (anthropic.APIError, httpx.HTTPError, httpx2.HTTPError)
+except ImportError:
+    MODEL_FAILURES = (anthropic.APIError, httpx.HTTPError)
 
 # Tools whose effects stay after the call (or end it): a turn that has run one is kept, never dropped or reverted.
 IRREVERSIBLE = {"book_appointment", "reschedule_appointment", "cancel_appointment", "create_lead", "take_message",
@@ -261,6 +269,8 @@ class Turn:
 
 
 class CallSession:
+    taker: degraded.MessageTaker | None = None   # set when the model fails: code takes messages (degraded.py)
+
     def __init__(self, client: anthropic.Anthropic, cfg: dict, biz: dict, store: Store, now: datetime,
                  caller: str | None = None, call_id: str | None = None, platform: str = "text",
                  transfer_outcome: str = "connected", dialed: str | None = None, real_transfers: bool = False):
@@ -292,6 +302,61 @@ class CallSession:
     @property
     def ended(self) -> bool:
         return self.ctx.ended
+
+    @property
+    def can_degrade(self) -> bool:
+        """Only the inbound receptionist falls back to taking a message; subclasses (the sales caller) keep their own
+        failure handling."""
+        return type(self) is CallSession
+
+    def degrade(self) -> None:
+        """The model can't be used for the rest of this call: code takes a message instead."""
+        if self.taker is None:
+            log.error("call %s: switching to the code-driven message taker", self.call_id)
+            self.taker = degraded.MessageTaker(self.ctx.language)
+
+    def _taker_step(self, caller_text: str, emergency, go_on) -> tuple[list[str], list[dict], bool]:
+        """What the message taker says to `caller_text`, plus the tool calls it made. The safety line, if the caller
+        just described an emergency, comes first."""
+        t = self.taker
+        t.lang = self.ctx.language
+        parts, calls = [], []
+        if emergency:
+            parts.append(emergency[1])
+        if emergency and t.state not in ("start",):
+            line, done = t.last, False   # the safety line interrupts; then the question they were on again
+        else:
+            line, done = t.step(caller_text)
+        parts.append(line)
+        if done:
+            go_on(irreversible=True)
+            number = t.number or self.ctx.caller
+            args = {"caller_name": t.name or "Unknown caller", "callback_number": number or "", "message": t.message(),
+                    "urgent": True}
+            if number:
+                result, err = tools.run_tool(self.ctx, "take_message", args)
+            else:   # no number at all: keep what we have, it still tells the office who rang and why
+                self.store.add_message(self.biz["id"], self.call_id, args["caller_name"], "no number given",
+                                       args["message"], "office", True, self.ctx.now)
+                result, err = {"status": "saved"}, False
+                self.store.log_tool(self.call_id, "take_message", args, result, self.ctx.now)
+            calls.append({"name": "take_message", "args": args, "result": result, "error": err})
+            result, err = tools.run_tool(self.ctx, "end_call", {"reason": "completed"})
+            calls.append({"name": "end_call", "args": {"reason": "completed"}, "result": result, "error": err})
+        return parts, calls, done
+
+    def _taker_turn(self, messages: list[dict], caller_text: str, emergency, emit, go_on) -> Turn:
+        parts, calls, done = self._taker_step(caller_text, emergency, go_on)
+        if not done:
+            go_on()
+        for p in parts:
+            emit(p, True)
+        line = " ".join(parts)
+        steps = [{"say": p} for p in parts] + [{"tool": c} for c in calls]
+        messages += [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.tag(line)}]
+        self._save(messages, caller_text, {"role": "agent", "text": line, "tools": calls, "steps": steps,
+                                           "degraded": True}, emergency, final=done)
+        return Turn(line, calls, 0.0, 0.0, self.ctx.ended)
 
     def tag(self, text: str) -> str:
         """Lines our own code speaks and saves as the agent's turns are saved in the same <say> form the model writes, so
@@ -367,6 +432,8 @@ class CallSession:
             self._save(messages, caller_text, {"role": "agent", "text": line, "tools": [call],
                                                "steps": [{"say": line}, {"tool": call}]}, emergency, final=True)
             return Turn(line, [call], 0.0, 0.0, True)
+        if self.taker:   # the model failed earlier in this call
+            return self._taker_turn(messages, caller_text, emergency, emit, go_on)
         messages.append({"role": "user", "content": content})
         spoken, used, steps = [], [], []   # steps keeps speech and tool calls in the order they happened
         start, first = time.monotonic(), None
@@ -387,39 +454,48 @@ class CallSession:
             steps.append({"say": emergency[1]})
         extra = thinking_param(m)
         nudged = False
+        failed = None   # the model error that ended this turn, if any
         for _ in range(a["max_tool_rounds"]):
             go_on()
-            with self.client.messages.stream(
-                model=m["agent"],
-                max_tokens=a["max_tokens"],
-                system=self.system,
-                tools=self.tools,
-                messages=messages,
-                output_config={"effort": m["agent_effort"]},
-                cache_control={"type": "ephemeral"},   # caches the call so far, so each turn reads only what's new
-                **extra,
-            ) as stream:
-                said_in = {}   # text block index -> the part of it the caller heard
-                dropped_before = len(words.dropped)
-                self._filler_line = None   # the stall line this round actually played, if any
-                for ev in stream:
-                    if control and control.dropped:
-                        break   # closing the stream stops generation; go_on() below raises
-                    if ev.type == "content_block_start" and ev.content_block.type == "tool_use":
-                        if ev.content_block.name in fillers and not said and not spoken:
-                            if first is None:
-                                first = time.monotonic() - start   # the filler line starts playing here
-                            self._filler_line = tools.pick_filler(self.ctx, ev.content_block.name)
-                            emit(self._filler_line, True)
-                    elif ev.type == "content_block_delta" and ev.delta.type == "text_delta":
-                        if chan:
-                            chan.feed(ev.delta.text)
-                        else:
-                            words.add(ev.delta.text)
-                    elif ev.type == "content_block_stop" and ev.content_block.type == "text":
-                        said_in[ev.index] = (chan or words).close()
-                go_on()
-                msg = stream.get_final_message()
+            try:
+                with self.client.messages.stream(
+                    model=m["agent"],
+                    max_tokens=a["max_tokens"],
+                    system=self.system,
+                    tools=self.tools,
+                    messages=messages,
+                    output_config={"effort": m["agent_effort"]},
+                    cache_control={"type": "ephemeral"},   # caches the call so far, so each turn reads only what's new
+                    **extra,
+                ) as stream:
+                    said_in = {}   # text block index -> the part of it the caller heard
+                    dropped_before = len(words.dropped)
+                    self._filler_line = None   # the stall line this round actually played, if any
+                    for ev in stream:
+                        if control and control.dropped:
+                            break   # closing the stream stops generation; go_on() below raises
+                        if ev.type == "content_block_start" and ev.content_block.type == "tool_use":
+                            if ev.content_block.name in fillers and not said and not spoken:
+                                if first is None:
+                                    first = time.monotonic() - start   # the filler line starts playing here
+                                self._filler_line = tools.pick_filler(self.ctx, ev.content_block.name)
+                                emit(self._filler_line, True)
+                        elif ev.type == "content_block_delta" and ev.delta.type == "text_delta":
+                            if chan:
+                                chan.feed(ev.delta.text)
+                            else:
+                                words.add(ev.delta.text)
+                        elif ev.type == "content_block_stop" and ev.content_block.type == "text":
+                            said_in[ev.index] = (chan or words).close()
+                    go_on()
+                    msg = stream.get_final_message()
+            except TurnDropped:
+                raise
+            except MODEL_FAILURES as e:   # the model is down or too slow: code takes the call from here (degraded.py)
+                if not self.can_degrade:
+                    raise
+                failed = e
+                break
             self._count(msg.usage)
             if words.buf.strip() or (chan and chan.dirty):   # cut off mid-block
                 said_in[max((i for i, b in enumerate(msg.content) if b.type == "text"), default=0)] = (chan or words).close()
@@ -484,6 +560,23 @@ class CallSession:
             if self.ctx.ended:
                 break
 
+        if failed is not None:
+            log.error("call %s: the model failed (%s: %s)", self.call_id, type(failed).__name__, failed)
+            if any(c["name"] in IRREVERSIBLE for c in used) and not self.ctx.ended and not self.ctx.transferred_to:
+                line = degraded.SAVED_ALREADY.get(self.ctx.language) or degraded.SAVED_ALREADY["en"]
+                result, err = tools.run_tool(self.ctx, "end_call", {"reason": "completed"})
+                used.append({"name": "end_call", "args": {"reason": "completed"}, "result": result, "error": err})
+                parts = [line]
+            elif self.ctx.ended or self.ctx.transferred_to:
+                parts = []
+            else:   # nothing irreversible happened: take a message
+                self.degrade()
+                parts, calls, _ = self._taker_step("", emergency if emergency and not spoken else None, go_on)
+                used += calls
+            for p in parts:
+                emit(p, True)
+                spoken.append(p)
+                steps.append({"say": p})
         reply = " ".join(spoken)
         silent = words.silent and not reply   # the caller wasn't talking to us: say nothing, not even a retry line
         if not reply and not self.ctx.ended and not silent:
@@ -566,6 +659,14 @@ class CallSession:
 
     def cost(self) -> float:
         return usage_cost(self.cfg, self.cfg["models"]["agent"], self.usage, cache_write_mult(self.cfg))
+
+
+def make_client(cfg: dict | None = None) -> anthropic.Anthropic:
+    """The Anthropic client with explicit limits: a model call that hangs must fail in seconds, not minutes, so a live
+    call can fall back to the message taker (degraded.py). One retry covers a blip; the live socket adds its own cap."""
+    c = (cfg or {}).get("anthropic", {})
+    return anthropic.Anthropic(timeout=anthropic.Timeout(float(c.get("timeout_s", 20)), connect=float(c.get("connect_timeout_s", 5))),
+                               max_retries=int(c.get("max_retries", 1)))
 
 
 def thinking_param(models: dict) -> dict:
