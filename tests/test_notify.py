@@ -247,6 +247,43 @@ class Texts(unittest.TestCase):
                                                          "TWILIO_MESSAGING_SERVICE_SID": "c"}))
 
 
+class Digest(unittest.TestCase):
+    TUE_EVENING = datetime(2026, 11, 3, 18, 30)   # shop time, after closing
+
+    def setUp(self):
+        from receptionist import schedule
+        self.biz = {**SHOP, "texting_enabled": False}
+        self.n, self.store = notifier()
+        self.at = schedule.local_now(self.biz, "2026-11-03T18:30")
+        self.noon = schedule.local_now(self.biz, "2026-11-03T12:00")
+        self.store.start_call("c1", self.biz["id"], "retell", "+12085550142", self.at)
+        self.store.save_summary("c1", {**SUMMARY, "flags": [{"type": "price_quoted", "quote": "q", "explanation": "quoted $50"}]})
+        self.store.add_message(self.biz["id"], "c1", "Pat", "2085550142", "Call me about the gate", "owner", False, self.at)
+
+    def test_it_waits_for_closing_time_and_goes_once_a_day(self):
+        self.assertFalse(self.n.digest_due(self.biz, self.noon))
+        self.assertTrue(self.n.digest_due(self.biz, self.at))
+        self.assertEqual(self.n.run_digests([self.biz], self.at), 1)
+        self.assertEqual(self.n.run_digests([self.biz], self.at), 0)
+        self.assertEqual(len(self.n.email.sent), 1)
+
+    def test_it_counts_the_days_calls_messages_and_review_flags(self):
+        self.assertTrue(self.n.send_digest(self.biz, self.at))
+        subject, body = self.n.email.sent[0][1:]
+        self.assertIn("1 calls", subject)
+        for fact in ("Calls answered: 1", "Messages for you: 1", "Call me about the gate", "price_quoted", "quoted $50"):
+            self.assertIn(fact, body)
+
+    def test_a_failed_digest_is_retried_not_marked_done(self):
+        self.n.email = FakeEmail(fail=True)
+        self.assertEqual(self.n.run_digests([self.biz], self.at), 0)
+        self.assertTrue(self.n.digest_due(self.biz, self.at))
+
+    def test_a_shop_can_turn_it_off(self):
+        biz = {**self.biz, "notify": {"email": ["o@example.test"], "digest": False}}
+        self.assertFalse(self.n.digest_due(biz, self.at))
+
+
 class Through_the_server(unittest.TestCase):
     """A call ended through the Retell webhook emails the owner and shows on the admin view."""
 

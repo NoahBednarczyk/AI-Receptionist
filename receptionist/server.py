@@ -141,6 +141,8 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         base_url=os.environ.get("PUBLIC_BASE_URL"),
         shop_key=(lambda b: access.shop_key(token_secret, b, "dashboard")) if token_secret else None)
     app.state.notifier = notifier
+    threading.Thread(target=notify.digest_loop, args=(notifier, lambda: all_businesses(cfg), stop), daemon=True,
+                     name="digest").start()
 
     def finish_call(biz: dict, call_id: str, transcript: list[dict], reason: str | None,
                     call_state: str | None = None) -> None:

@@ -244,6 +244,68 @@ class Notifier:
             return START_REPLY
         return None
 
+    # -- W2.3: the daily digest --
+    def digest_due(self, biz: dict, now: datetime) -> bool:
+        """True once the shop's closing time has passed today (shop time), the shop wants it, and none went yet today."""
+        if (biz.get("notify") or {}).get("digest", True) is False or not (biz.get("notify") or {}).get("email"):
+            return False
+        span = schedule.hours_for(biz, now.date())
+        if not span or now.time() < schedule._t(span[1]):
+            return False
+        return not self.store._rows("SELECT 1 FROM digest_sent WHERE business_id=? AND day=?", (biz["id"], now.date().isoformat()))
+
+    def send_digest(self, biz: dict, now: datetime | None = None) -> bool:
+        """Email today's numbers to the shop. Marks the day done only when something was sent (a failure is retried on
+        the next check). Never raises."""
+        try:
+            now = now or schedule.local_now(biz)
+            day = now.date()
+            calls = [c for c in self.store.recent("calls", biz["id"], 500)
+                     if c.get("started_at") and datetime.fromisoformat(c["started_at"]).astimezone(now.tzinfo).date() == day]
+            ids = {c["id"] for c in calls}
+            summaries = [json.loads(c["summary"]) for c in calls if c.get("summary")]
+            booked = [a for a in self.store.recent("appointments", biz["id"], 500) if a["call_id"] in ids]
+            msgs = [m for m in self.store.recent("messages", biz["id"], 500) if m["call_id"] in ids]
+            leads = [x for x in self.store.recent("leads", biz["id"], 500) if x["call_id"] in ids]
+            flagged = [f for sm in summaries for f in sm.get("flags") or []]
+            held = self.store._rows("SELECT COUNT(*) AS n FROM notify_log WHERE day=? AND business_id=? AND status='held'",
+                                    (_day(self.clock()), biz["id"]))[0]["n"]
+            body = [f"{biz['name']}: {day.strftime('%A %b %d')}", "",
+                    f"Calls answered: {len(calls)}", f"Jobs booked: {len(booked)}", f"Messages for you: {len(msgs)} "
+                    f"({sum(1 for m in msgs if m['urgent'])} urgent)", f"Leads to follow up: {len(leads)}"]
+            for m in msgs:
+                body.append(f"  - {m['name'] or 'Caller'} {spoken_phone(m['phone']) if m['phone'] else ''}: {m['message']}")
+            for x in leads:
+                body.append(f"  - Lead: {x['name'] or 'Caller'} {spoken_phone(x['phone']) if x['phone'] else ''}: {x['problem'] or ''}")
+            if flagged:
+                body += ["", "Calls the review flagged (worth a look):"] + [f"  - {f.get('type')}: {f.get('explanation', '')}" for f in flagged]
+            if held:
+                body += ["", f"{held} call email(s) were held back today to stay under the sending limit; they are on your dashboard."]
+            link = self.link(biz)
+            body += (["", f"Everything: {link}"] if link else [])
+            ok = False
+            for to in biz["notify"]["email"]:
+                ok |= self._send_email(biz["id"], None, "digest", to, f"{biz['name']}: today's calls ({len(calls)} calls, {len(booked)} booked)",
+                                       "\n".join(body), urgent=True)   # one a day per address: never held
+            if ok:
+                self.store._write("INSERT OR IGNORE INTO digest_sent (business_id, day) VALUES (?, ?)", (biz["id"], day.isoformat()))
+            return ok
+        except Exception:
+            log.exception("digest failed for %s", biz.get("id"))
+            return False
+
+    def run_digests(self, businesses: list[dict], now: datetime | None = None) -> int:
+        """Send every digest that is due now. Called every few minutes by `digest_loop`."""
+        sent = 0
+        for biz in businesses:
+            try:
+                at = now.astimezone(schedule.tz(biz)) if now else schedule.local_now(biz)
+                if self.digest_due(biz, at) and self.send_digest(biz, at):
+                    sent += 1
+            except Exception:
+                log.exception("digest check failed for %s", biz.get("id"))
+        return sent
+
 
 def call_email(biz: dict, f: dict, link: str) -> tuple[str, str]:
     s = f["summary"]
@@ -304,3 +366,12 @@ def sms_sender_from_env(env=None) -> TwilioSender | None:
 
 def _digits(number: str | None) -> str:
     return "".join(c for c in (number or "") if c.isdigit())[-10:]
+
+
+def digest_loop(notifier: Notifier, businesses, stop: threading.Event, every: int = 300) -> None:
+    """Background thread: check every five minutes whether a shop's closing time has passed. `businesses()` returns the shops."""
+    while not stop.wait(every):
+        try:
+            notifier.run_digests(businesses())
+        except Exception:
+            log.exception("digest loop")
