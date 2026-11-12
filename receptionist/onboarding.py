@@ -198,8 +198,13 @@ def build(intake: dict, template: dict) -> dict:
     biz["greetings"] = [g.replace(template["spoken_name"], spoken) for g in biz["greetings"]]
     biz["greeting"] = biz["greetings"][0]
     # The recording notice and AI disclosure are on for every new shop (the demo shops' own switches are not inherited).
-    biz["recording_notice"] = intake.get("recording_notice", prompts.DEFAULT_NOTICE)
-    biz["ai_disclosure_in_greeting"] = bool(intake.get("ai_disclosure_in_greeting", True))
+    # (and they stay on: a real shop cannot ask for either to be off. Washington callers are all-party consent.)
+    if "recording_notice" in intake and not str(intake["recording_notice"] or "").strip():
+        raise IntakeError("A real shop's greeting always carries the recording notice; leave recording_notice out to use the standard one.")
+    if intake.get("ai_disclosure_in_greeting") is False:
+        raise IntakeError("A real shop's greeting always says it is the shop's virtual assistant; it cannot be turned off.")
+    biz["recording_notice"] = str(intake.get("recording_notice") or prompts.DEFAULT_NOTICE).strip()
+    biz["ai_disclosure_in_greeting"] = True
     biz["retention_days"] = int(intake.get("retention_days") or 90)
     biz["token_version"] = 1
     biz["calendars"] = []
@@ -229,10 +234,10 @@ def build(intake: dict, template: dict) -> dict:
 
 def check(biz: dict) -> None:
     """Everything the live server does with a business, run once so a bad file is caught now, not on a call."""
-    if not biz.get("recording_notice", prompts.DEFAULT_NOTICE) and not biz.get("ai_disclosure_in_greeting", True) \
-            and not biz.get("notice_waived"):
-        raise IntakeError("Both the recording notice and the AI disclosure are off. Turn one on, or pass --allow-no-notice "
-                          "if the shop's lawyer has cleared a greeting without them.")
+    if not biz.get("demo") and not (biz.get("recording_notice") and biz.get("ai_disclosure_in_greeting")):
+        # Demo shops may waive them (the live demo line); a real shop never does, whatever else its file says.
+        raise IntakeError("A real shop's greeting must carry both the recording notice and the AI disclosure "
+                          "(recording_notice set, ai_disclosure_in_greeting true).")
     prompts.stable_prompt(biz)
     tools.schemas(biz)
     safety.match(biz["vertical"], profile_for(biz)["safety_probe"])
@@ -331,7 +336,7 @@ def write(biz: dict, clients_dir: Path, force: bool = False) -> Path:
     return path
 
 
-def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print, allow_no_notice: bool = False,
+def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print,
         template_id: str | None = None) -> Path:
     intake = intake or ask_interactively()
     template_id = template_id or intake.get("template") or DEFAULT_TEMPLATE
@@ -339,8 +344,6 @@ def run(cfg: dict, intake: dict | None = None, force: bool = False, out=print, a
         raise IntakeError(f"Unknown template {template_id!r}. Choose from: {', '.join(PROFILES)}.")
     template = json.loads((Path(cfg["businesses_dir"]) / f"{template_id}.json").read_text())
     biz = build(intake, template)
-    if allow_no_notice:
-        biz["notice_waived"] = True
     check(biz)
     check_unique(cfg, biz, force)
     path = write(biz, cfg["clients_dir"], force)

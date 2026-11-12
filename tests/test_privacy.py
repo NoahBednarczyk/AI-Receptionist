@@ -63,10 +63,13 @@ class Greeting(unittest.TestCase):
         self.assertTrue(biz["recording_notice"] and biz["ai_disclosure_in_greeting"])
         self.assertEqual(biz["retention_days"], 90)
         onboarding.check(biz)
-        off = onboarding.build({**intake, "recording_notice": "", "ai_disclosure_in_greeting": False}, SHOP)
+        for off in ({"recording_notice": ""}, {"ai_disclosure_in_greeting": False}):
+            with self.assertRaises(onboarding.IntakeError):    # a real shop cannot ask for either to be off
+                onboarding.build({**intake, **off}, SHOP)
+        hand_edited = {**biz, "recording_notice": "", "notice_waived": True}   # nor can a hand-edited file waive them
         with self.assertRaises(onboarding.IntakeError):
-            onboarding.check(off)
-        onboarding.check({**off, "notice_waived": True})
+            onboarding.check(hand_edited)
+        onboarding.check({**hand_edited, "demo": True})    # only a demo shop may
 
     def test_a_bad_calendar_link_is_refused_at_intake(self):
         intake = __import__("yaml").safe_load((Path(CFG["businesses_dir"]).parent / ".internal" / "intake.example.yaml").read_text())
