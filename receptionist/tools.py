@@ -152,13 +152,12 @@ def schemas(biz: dict) -> list[dict]:
 
 def _schemas(biz: dict) -> list[dict]:
     service_ids = [s["id"] for s in biz["services"]]
-    clinic = schedule.in_clinic(biz)
     targets = list(biz["transfer_targets"])
     text = {"type": "string"}
     return [
         {
             "name": "check_availability",
-            "description": ("Get open appointment times" if clinic else "Get open arrival windows") + " for a service. "
+            "description": "Get open arrival windows" + " for a service. "
                            "Call before offering any time; never guess. "
                            "Returns up to 6 starting from earliest_date, or as soon as possible.",
             "input_schema": _obj({
@@ -168,9 +167,7 @@ def _schemas(biz: dict) -> list[dict]:
         },
         {
             "name": "book_appointment",
-            "description": ("Book an appointment time from check_availability, only after the caller confirmed the "
-                            "read-back of day, time and callback number. " if clinic else
-                            "Book an arrival window from check_availability, only after the caller confirmed the "
+            "description": ("Book an arrival window from check_availability, only after the caller confirmed the "
                             "read-back of day and window, street address, town and callback number. ")
                            + ("Texts the caller a confirmation. " if biz.get("texting_enabled") else "")
                            + "Calling it again for the same service on the same call updates that booking (new notes or "
@@ -180,14 +177,11 @@ def _schemas(biz: dict) -> list[dict]:
                 "service_id": {"type": "string", "enum": service_ids},
                 "customer_name": text,
                 "callback_number": {"type": "string", "description": "Full 10-digit number."},
-                **({} if clinic else {"street_address": text, "town": text}),
-                "problem_summary": {"type": "string", "description": "One sentence for the " + (
-                    "provider: what the client wants to come in for." if clinic else "technician.")},
-                "access_notes": {"type": "string", "description": (
-                    "Anything the client wants the team to know. Omit if none." if clinic
-                    else "Gate codes, pets, parking. Omit if none.")},
+                "street_address": text, "town": text,
+                "problem_summary": {"type": "string", "description": "One sentence for the technician."},
+                "access_notes": {"type": "string", "description": "Gate codes, pets, parking. Omit if none."},
             }, ["window_id", "service_id", "customer_name", "callback_number",
-                *([] if clinic else ["street_address", "town"]), "problem_summary"]),
+                "street_address", "town", "problem_summary"]),
         },
         {
             "name": "lookup_customer",
@@ -336,16 +330,14 @@ def _sent_note(ctx: ToolContext, what: str) -> str:
     if ctx.biz.get("texting_enabled"):
         return f"A {what} text is on its way."
     return ("No confirmation text goes out, so give the caller the confirmation number to write down. Don't bring "
-            "up texts unless the caller asks"
-            + ("." if schedule.in_clinic(ctx.biz) else "; the technician still calls or texts before arriving."))
+            "up texts unless the caller asks; the technician still calls or texts before arriving.")
 
 def book_appointment(ctx: ToolContext, a: dict) -> dict:
     biz, bid = ctx.biz, ctx.biz["id"]
     wid = a["window_id"]
     service = _service(biz, a["service_id"])
-    clinic = schedule.in_clinic(biz)
-    street = None if clinic else a["street_address"]
-    town = None if clinic else _town(biz, a["town"])
+    street = a["street_address"]
+    town = _town(biz, a["town"])
     phone = _phone(a["callback_number"])
     name = a["customer_name"].strip()
     if not name:

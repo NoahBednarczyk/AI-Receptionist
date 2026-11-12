@@ -189,12 +189,6 @@ class Writing(unittest.TestCase):
         gcal.push(shop(write=False), self.appt(), client(fake))
         self.assertEqual(fake.sent, [])
 
-    def test_the_clinic_event_has_no_street_address(self):
-        glow = {**load_business(load_config(), "glow"), "calendars": [{"type": "google", "calendar_id": CAL, "label": "x"}]}
-        fake = FakeGoogle()
-        gcal.push(glow, self.appt(window_id="2026-11-04T14:00", service_id=glow["services"][0]["id"]), client(fake))
-        self.assertNotIn("location", next(iter(fake.stored.values())))
-
 
 class InTheCall(unittest.TestCase):
     """The booking tools push to Google without waiting, and a failure never reaches the caller."""

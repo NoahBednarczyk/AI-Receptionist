@@ -160,7 +160,7 @@ class OverflowTests(unittest.TestCase):
         self.assertEqual(CFG["default_business"], "hvac")
         numbers = [n for b in all_businesses(CFG) for n in b.get("phone_numbers", [])]
         self.assertEqual(len(numbers), len(set(numbers)))          # no number routes to two businesses
-        self.assertEqual({b["id"] for b in all_businesses(CFG)} >= {"acme", "glow", "hvac"}, True)
+        self.assertEqual({b["id"] for b in all_businesses(CFG)} >= {"acme", "hvac", "lawn_care"}, True)
 
 
 class ScenarioFileTests(unittest.TestCase):

@@ -231,7 +231,7 @@ class RespondDontInterviewTests(unittest.TestCase):
             self.assertNotIn("confirm the address on file is still right", state)
 
     def test_every_vertical_tells_the_agent_to_respond_first_and_steer_only_at_the_end(self):
-        for biz in (LAWN, ACME, load_business(CFG, "glow")):
+        for biz in (LAWN, ACME, load_business(CFG, "hvac")):
             p = prompts.stable_prompt(biz)
             for needle in ("You respond; you don't run an interview", "Don't open by asking for their name, address",
                            "Once everything they wanted is dealt with, offer the next step",

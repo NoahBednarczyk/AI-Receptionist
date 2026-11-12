@@ -67,40 +67,6 @@ HOME_SERVICES_ES = [
      "Si es seguro, apague la electricidad o el gas del aparato y mantenga a todos alejados."),
 ]
 
-# Med spa: the real risks are an allergic reaction, filler blocking a blood vessel (vision changes, skin turning white
-# or blue), heavy bleeding, and an infection or burn. None of these is judged by the receptionist: it says the line
-# and gets a provider.
-MED_SPA = [
-    ("allergic_reaction", [r"\b(?:can'?t|cannot|couldn'?t) breathe\b", r"\b(?:trouble|difficulty|hard to|hard time) breathing\b",
-                           r"\b(?:throat|tongue|lips?|face)(?: \S+){0,3} (?:swelling|swollen|closing|tight|puffing up)\b",
-                           r"\b(?:swelling|swollen)(?: \S+){0,2} (?:in|of|on) (?:my |the )?(?:throat|tongue|face|lips?)\b",
-                           r"\banaphyla", r"\bhives all over\b", r"\bpassing out\b|\bpassed out\b|\bfainted\b"],
-     "If you're having trouble breathing, or your face or throat is swelling, call 911 right now."),
-    ("vision_or_blockage", [r"\b(?:vision|eyesight)\b(?: \S+){0,4} (?:blurry|blurred|changed|changing|gone|dark|double|dim|doubled)\b",
-                            r"\b(?:blurry|double|blurred) vision\b", r"\b(?:went|going|gone) blind\b|\bcan'?t see\b",
-                            r"\b(?:skin|lip|lips|nose|area|forehead|cheek)(?: \S+){0,3} (?:turning|turned|went|looks|looking|gone|is) "
-                            r"(?:white|blue|gr[ae]y|purple|dark|mottled|dusky|blanched)\b",
-                            r"\b(?:severe|terrible|horrible|intense|excruciating) pain\b(?: \S+){0,6} (?:filler|injection|injected|botox)"],
-     "That needs a provider right away. If your vision has changed or you can't breathe, call 911 now."),
-    ("heavy_bleeding", [r"\b(?:won'?t|wont|doesn'?t|not) stop bleeding\b", r"\bbleeding (?:a lot|heavily|badly|everywhere|through)\b",
-                        r"\bsoaking through\b"],
-     "Press firmly on the area with a clean cloth, and call 911 if the bleeding doesn't stop in a few minutes."),
-    ("urgent_reaction", [r"\b(?:pus|oozing)\b", r"\bspreading redness\b|\bredness (?:is )?spreading\b",
-                         r"\bblisters?\b|\bblistering\b", r"\bburn(?:ed|t|s)? (?:my|the) (?:skin|face)\b",
-                         r"\bfever\b(?: \S+){0,6} (?:treatment|filler|botox|laser|peel)|(?:treatment|filler|botox|laser|peel)(?: \S+){0,10} fever\b"],
-     "That should be looked at by a provider soon, so I'm getting our nurse team for you."),
-]
-MED_SPA_ES = [
-    ("allergic_reaction", [r"\bno puedo respirar\b", r"\bdificultad (?:para|al) respirar\b",
-                           r"\b(?:garganta|lengua|labios|cara)(?: \S+){0,3} (?:hinchad[ao]s?|cerr[ao]ndose)\b", r"\banafilax"],
-     "Si le cuesta respirar, o se le hincha la cara o la garganta, llame al 911 ahora mismo."),
-    ("vision_or_blockage", [r"\bvisi[oó]n(?: \S+){0,4} (?:borrosa|doble|cambi[oó]|oscura)\b", r"\bvisi[oó]n borrosa\b",
-                            r"\bno puedo ver\b"],
-     "Eso necesita a un proveedor de inmediato. Si cambió su visión o no puede respirar, llame al 911 ahora."),
-    ("heavy_bleeding", [r"\bno (?:para|deja) de sangrar\b", r"\bsangr(?:a|ando) mucho\b"],
-     "Presione firmemente la zona con un paño limpio, y llame al 911 si el sangrado no para en unos minutos."),
-]
-
 # HVAC and plumbing, winter first. Every home-services line comes first and is untouched (first match wins, so gas,
 # carbon monoxide, flooding and the rest still win over the new tiers); the cold-weather tiers are added after them.
 _NUMBER_WORDS = (r"(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
@@ -166,7 +132,6 @@ LAWN_CARE_ES = [
 ]
 VERTICALS = {"home_services": {"en": HOME_SERVICES, "es": HOME_SERVICES_ES},
              "hvac": {"en": HOME_SERVICES + HVAC_WINTER, "es": HOME_SERVICES_ES + HVAC_WINTER_ES},
-             "med_spa": {"en": MED_SPA, "es": MED_SPA_ES},
              "lawn_care": {"en": LAWN_CARE, "es": LAWN_CARE_ES}}
 
 # Gas or CO with the caller still inside: after the line, this, then hang up (the playbook's rule).

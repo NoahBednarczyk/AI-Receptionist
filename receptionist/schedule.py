@@ -120,22 +120,13 @@ def window_end(biz: dict, wid: str) -> str | None:
     return next((e for s, e in biz["booking"]["windows"] if s == parsed[1]), None)
 
 
-def in_clinic(biz: dict) -> bool:
-    """Clients come to the business at a fixed time (a med spa) instead of a technician arriving in a window."""
-    return biz.get("visit_type") == "in_clinic"
-
-
 def capacity(biz: dict) -> int:
     rules = biz["booking"]
-    return rules.get("providers", rules.get("technicians", 1))
+    return rules.get("technicians", 1)
 
 
 def spoken_window(biz: dict, wid: str, now: datetime, lang: str = "en") -> str:
     d, start = parse_window_id(wid)
-    if in_clinic(biz):
-        if lang == "es":
-            return f"{spoken_date_es(d, now.date())} a las {spoken_time_es(start)}"
-        return f"{spoken_date(d, now.date())} at {spoken_time(start)}"
     end = window_end(biz, wid) or start
     if lang == "es":
         return f"{spoken_date_es(d, now.date())}, entre {spoken_time_es(start)} y {spoken_time_es(end)}"

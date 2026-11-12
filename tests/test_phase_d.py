@@ -61,7 +61,7 @@ class SizeAndWordingTests(unittest.TestCase):
             self.assertIn(kept, self.prompt)
 
     def test_the_other_shops_still_build(self):
-        for shop in ("acme", "glow"):
+        for shop in ("acme", "hvac"):
             biz = load_business(CFG, shop)
             self.assertIn("# Who you are", prompts.stable_prompt(biz))
 

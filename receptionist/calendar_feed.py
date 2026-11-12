@@ -67,7 +67,7 @@ def render(biz: dict, appointments: list[dict], now: datetime) -> str:
                  f"DTSTART:{_utc(begin)}", f"DTEND:{_utc(end)}",
                  f"SUMMARY:{_escape(_title(services.get(a['service_id']), a))}",
                  f"DESCRIPTION:{_escape(chr(10).join(desc))}"]
-        if where and not schedule.in_clinic(biz):
+        if where:
             event.append(f"LOCATION:{_escape(where)}")
         event += [f"STATUS:{'CANCELLED' if cancelled else 'CONFIRMED'}", "END:VEVENT"]
         lines += event

@@ -209,7 +209,7 @@ def _body(biz: dict, appt: dict) -> dict:
             "end": {"dateTime": end.isoformat(), "timeZone": biz["timezone"]},
             "extendedProperties": {"private": {MARK: "1", "confirmation": appt["confirmation"]}}}
     where = ", ".join(x for x in (appt.get("address"), appt.get("town")) if x)
-    if where and not schedule.in_clinic(biz):
+    if where:
         body["location"] = where
     return body
 

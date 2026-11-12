@@ -84,18 +84,6 @@ Every example in these instructions shows an idea, never the words to use.
 # Wording that differs by business type. A business picks its set with its "vertical".
 HOME_ADVICE = '- You can help callers with simple, safe things to do while they wait. Share a matching tip from the approved tips in the business facts, or a common-sense step anyone can safely do, such as putting a bucket or towel under a drip, not using a fixture that\'s acting up, keeping kids and pets away from water, or noting an error code. Share it when the caller describes the problem or asks what to do, in one sentence, as the whole reply: ask your next question in your next turn. Never tack a tip onto a booking confirmation or a goodbye.\n- Getting the caller booked comes first: don\'t give a tip before the booking (or message) is done, unless the caller asks what to do or it\'s an emergency. After the confirmation, one short tip is fine.\n- At most one approved tip per problem. Answering a follow-up about that tip, or a simple step like keeping a bucket under a drip, is fine; don\'t pile on more advice. Never add warnings about problems the caller hasn\'t described; for example, don\'t bring up gas smells unless they do.\n- Never advise on anything involving gas, electrical work beyond the approved tips, opening or taking apart an appliance or fixture, tools, chemicals, ladders or the roof. For those, say: "I\'m sorry, that one\'s for the technician; I can\'t walk you through it over the phone." If they ask again: "I understand, but I really can\'t advise on that."\n- Don\'t diagnose causes or guess what\'s wrong. You can say whether something sounds urgent, using the playbook\'s emergency list.\n- In an emergency, stick to the playbook\'s safety line; no other tips.\n'
 HOME_READBACK = '- Before book_appointment, always read back the day and window, the street address and town, and the callback number in one short read-back (nothing else), in whatever language you\'re speaking, and get a clear yes. For example: "That\'s today between 2 PM and 4 PM at 14 Birch Lane in Sagle, with 312-555-0142 as your callback number. Shall I book it?"\n'
-CLINIC_ADVICE = """\
-- You are not a medical professional. Never give medical advice or opinions: whether someone is a good candidate for a treatment, what is safe with a medication, pregnancy, a condition or an allergy, what a treatment will do for their face or skin, how many units or sessions they will need, or whether a symptom is normal. Say a provider covers that at the consultation, and offer to book it or to take a message for the nurse team.
-- Never promise or imply results ("you'll look ten years younger"), never call a treatment risk-free or painless, and never compare the business with another one.
-- Share an approved aftercare tip from the business facts only when the caller asks what to do after a treatment, in one sentence. For anything else about aftercare, offer a message for the nurse team.
-- A caller who describes a problem after a treatment (swelling, bruising, redness, pain, a lump, a rash, anything that worries them): you can't tell whether it's normal, so don't say it is or isn't. Follow the playbook's rules for urgent signs, and otherwise take a message for the nurse team.
-- Treatments are private. Never read out a client's treatment history, never say who has had what done, and never mention another client.
-- In an emergency, stick to the playbook's safety line; no other tips.
-"""
-CLINIC_READBACK = (
-    "- Before book_appointment, always read back the day and time, the treatment, and the callback number in one "
-    "short read-back (nothing else), in whatever language you're speaking, and get a clear yes. For example: "
-    "\"That's Thursday at 2 PM for a HydraFacial, with 208-555-0142 as your callback number. Shall I book it?\"\n")
 TERMS = {
     "home_services": dict(
         example_stack='  Wrong: "Is water backing up, or is it draining slowly? And can I get your name?"\n'
@@ -106,15 +94,6 @@ TERMS = {
         unknown_example="the technician's name or whether the window can move",
         promise_example="a technician being on the way or arriving by a certain time, and don't say you'll get "
                         "someone out until it's booked"),
-    "med_spa": dict(
-        example_stack='  Wrong: "Is this your first visit with us? And can I get your name?"\n'
-                      '  Right: "Is this your first visit with us?" (then, next turn) "Can I get your name?"',
-        example_narrate='  Wrong: "Possible allergic reaction, so I\'ll give the safety line first. Call 911 right now."\n'
-                        '  Right: "Call 911 right now."',
-        advice=CLINIC_ADVICE, readback=CLINIC_READBACK, slot="time",
-        unknown_example="which provider they would see or whether a treatment suits them",
-        promise_example="results, a particular provider, a discount, or a time being held, and don't say a time is "
-                        "theirs until it's booked"),
 }
 
 # HVAC and plumbing: the home-services wording, plus one rule for wood and pellet stoves, which are a message with no advice.
@@ -181,9 +160,7 @@ def stable_prompt(biz: dict, channel: bool = False) -> str:
 
 
 def business_facts(biz: dict) -> str:
-    clinic = schedule.in_clinic(biz)
-    windows = ", ".join(spoken_time(s) if clinic else f"{spoken_time(s)} to {spoken_time(e)}"
-                        for s, e in biz["booking"]["windows"])
+    windows = ", ".join(f"{spoken_time(s)} to {spoken_time(e)}" for s, e in biz["booking"]["windows"])
     lines = [
         "# Business facts",
         f"Business: {biz['name']} (say it as \"{biz['spoken_name']}\"). Your name: {biz['agent_name']}.",
@@ -211,9 +188,7 @@ def business_facts(biz: dict) -> str:
         *(["About the business. This is what you know from working here: use it naturally, in your own words, when "
            "it helps the caller, and never recite it.", *[f"- {a}" for a in biz.get("about", [])], ""]
           if biz.get("about") else []),
-        "Approved tips (share one when it matches what the caller describes; the business has approved these):"
-        if not schedule.in_clinic(biz) else
-        "Approved aftercare tips (share one only when the caller asks what to do after a treatment):",
+        "Approved tips (share one when it matches what the caller describes; the business has approved these):",
         *[f"- For {t['when']}: \"{t['tip']}\"" for t in biz.get("approved_tips", [])],
         "",
         "Never:",
@@ -223,16 +198,11 @@ def business_facts(biz: dict) -> str:
 
 
 def business_place(biz: dict) -> list[str]:
-    if schedule.in_clinic(biz):
-        return [f"Location: {biz['location']}"]
     return [f"Service area: {biz['service_area']['note']} Towns served: {', '.join(biz['service_area']['towns'])}."]
 
 
 def booking_line(biz: dict, windows: str) -> str:
     note = biz["booking"].get("note", "")
-    if schedule.in_clinic(biz):
-        return (f"Booking: clients come in at a fixed time ({windows}) on days we're open, about an hour each, only "
-                f"where the appointment fits inside that day's hours. {note}").strip()
     return (f"Booking: {biz['booking'].get('crew_word', 'technicians')} arrive within a two-hour window ({windows}) on days we're open, "
             f"only where the window fits inside that day's hours. {note}").strip()
 
@@ -314,15 +284,10 @@ def call_state(biz: dict, now: datetime, caller: str | None, customer: dict | No
         if upcoming:
             appts = "; ".join(f"{a['confirmation']} {schedule.spoken_window(biz, a['window_id'], now)}" for a in upcoming)
             lines.append(f"Upcoming appointments: {appts}.")
-        if schedule.in_clinic(biz):
-            lines.append("You recognize this caller. You may use their name casually, but don't ask for or confirm "
-                         "anything about them up front, and never read out their treatment history. Respond to what "
-                         "they say first.")
-        else:
-            lines.append("You recognize this caller. You may use their name casually once, but never open by asking for "
-                         "or confirming their address, number or any detail, and don't bring up what you have on file "
-                         "until it's useful (when they want a visit, just check it in passing, like asking if it's "
-                         "still the same place). Respond to what they say first.")
+        lines.append("You recognize this caller. You may use their name casually once, but never open by asking for "
+                     "or confirming their address, number or any detail, and don't bring up what you have on file "
+                     "until it's useful (when they want a visit, just check it in passing, like asking if it's "
+                     "still the same place). Respond to what they say first.")
     elif caller:
         lines.append("No customer record matches this number.")
     return "\n".join(lines)
