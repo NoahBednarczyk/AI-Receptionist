@@ -181,6 +181,46 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
                             f"Call from {spoken_phone(summary.get('callback_number')) if summary.get('callback_number') else 'unknown'}: "
                             f"{summary['summary']}", schedule.local_now(biz))
 
+    # ---- the landing page and its contact form (served by this server: free, same origin) -------------
+    contact_limit = access.FailureLimit(per_minute=3)
+    site_page = Path(__file__).resolve().parent.parent / "site" / "index.html"
+
+    @app.get("/", response_class=HTMLResponse)
+    def landing():
+        try:
+            return HTMLResponse(site_page.read_text())
+        except OSError:
+            raise HTTPException(404)
+
+    @app.post("/contact")
+    async def contact(request: Request):
+        """A prospective shop writes to the admin. Honeypot, three tries a minute per address, plain text only, and the
+        email goes to ADMIN_EMAIL (never to anything the visitor typed)."""
+        who = _who(request)
+        contact_limit.record(who)
+        if contact_limit.blocked(who) and len(contact_limit._recent(who)) > 3:
+            raise HTTPException(429, "slow down")
+        try:
+            form = json.loads((await request.body())[:5000] or b"{}")
+        except ValueError:
+            raise HTTPException(400)
+        if not isinstance(form, dict):
+            raise HTTPException(400)
+        clean = lambda k, n: " ".join(str(form.get(k) or "").split())[:n]
+        name, shop, how, note = clean("name", 80), clean("shop", 80), clean("contact", 120), clean("message", 600)
+        if form.get("website"):
+            return {"ok": True}   # a bot filled the hidden field: pretend it worked
+        if not name or not how:
+            raise HTTPException(400, "name and a phone or email are required")
+        admin = os.environ.get("ADMIN_EMAIL")
+        if not admin or notifier.email is None:
+            raise HTTPException(503, "not set up")
+        sent = notifier._send_email("site", None, "contact", admin, f"Landing page: {name} ({shop or 'no shop given'})",
+                                    f"Name: {name}\nShop: {shop}\nContact: {how}\n\n{note}\n", urgent=True)
+        if not sent:
+            raise HTTPException(503, "could not send")
+        return {"ok": True}
+
     @app.get("/health")
     def health():
         return {"ok": True}   # no shop names: this one is open to anyone
