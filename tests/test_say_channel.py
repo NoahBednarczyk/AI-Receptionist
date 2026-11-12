@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 import tests  # noqa: F401
-from receptionist import platforms, prompts
+from receptionist import prompts
 from receptionist.agent import NUDGE, NUDGE_SAY, CallSession, Sentences, SayChannel, say_text
 from receptionist.speech import channel_guard, unspeakable
 from tests.test_logic import BIZ, CFG, TUE_1015, FakeClient, FakeStream, fresh_store, reply, text, use
@@ -150,11 +150,6 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("<say>", prompts.stable_prompt(BIZ))
         self.assertIn("<say>", prompts.stable_prompt(BIZ, channel=True))
         self.assertTrue(prompts.stable_prompt(BIZ, True).rstrip().endswith("(listening) with no tags."))
-        biz = BIZ
-        vapi = platforms.vapi_assistant(CFG, biz, "https://x.io", None)
-        self.assertNotIn("<say>", str(vapi))
-        retell = platforms.retell_llm(CFG, biz, "https://x.io") if hasattr(platforms, "retell_llm") else ""
-        self.assertNotIn("<say>", str(retell))
 
     def test_session_warm_and_prewarm_build_the_identical_prefix(self):
         s = chan_session(reply("end_turn", text("<say>x</say>")))

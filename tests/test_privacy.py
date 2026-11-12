@@ -271,10 +271,8 @@ class FailClosed(unittest.TestCase):
     def test_platform_routes_refuse_unsigned_requests_unless_dev_mode(self):
         class Fake: pass
         with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"ALLOW_UNVERIFIED_WEBHOOKS": "0"}):
-            for k in ("VAPI_SERVER_TOKEN", "RETELL_API_KEY"):
+            for k in ("RETELL_API_KEY",):
                 os.environ.pop(k, None)
             c = TestClient(create_app({**CFG, "data_dir": d, "clients_dir": d + "/c"}, client=Fake(), warm_cache=False))
             self.assertEqual(c.post("/retell/inbound", json={}).status_code, 401)
-            self.assertEqual(c.post("/retell/tool/x", json={}).status_code, 401)
             self.assertEqual(c.post("/retell/webhook", json={}).status_code, 401)
-            self.assertEqual(c.post("/vapi/webhook", json={"message": {}}).status_code, 401)

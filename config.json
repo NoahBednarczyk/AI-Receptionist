@@ -52,10 +52,6 @@
       "wants_person_after_hours"
     ]
   },
-  "platforms": {
-    "vapi_model": "claude-haiku-5-5",
-    "retell_model": "claude-5.5-haiku"
-  },
   "spend_report": {
     "project_budget_usd": [
       100,

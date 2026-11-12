@@ -1,17 +1,13 @@
 """Webhook server for the voice platforms: python -m receptionist serve
 
-Vapi:   phone number server URL  -> POST /vapi/webhook  (assistant-request, tool-calls, end-of-call-report)
-Retell, custom LLM (recommended: our agent runs every turn)
+Retell, custom LLM (our agent runs every turn, with its guards)
         agent LLM websocket      -> wss://<host>/llm-websocket/<RETELL_WS_SECRET>   (Retell appends /{call_id})
         agent webhook URL        -> POST /retell/webhook   (call_ended)
-Retell, platform-hosted model (prompt and tools only)
-        phone number inbound URL -> POST /retell/inbound
-        custom tools             -> POST /retell/tool/{name}
+        phone number inbound URL -> POST /retell/inbound   (optional: starts the call record)
 Owner page                       -> GET /dashboard?token=<shop key>&business=<id> (then a cookie)
 
 Environment:
   PUBLIC_BASE_URL     https URL the platforms reach this server on (e.g. an ngrok URL)
-  VAPI_SERVER_TOKEN   shared token; requests must send "Authorization: Bearer <token>" or "X-Vapi-Secret: <token>"
   RETELL_API_KEY      verifies Retell's X-Retell-Signature
   RETELL_WS_SECRET    secret path segment for the live-call websocket, so only Retell can start calls
   DASHBOARD_TOKEN     admin key: opens any shop's dashboard and calendar feed; both are off without it
@@ -35,13 +31,12 @@ import anthropic
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, platforms, postcall, prompts, schedule
-from . import backup, finance as finance_mod, keepwarm, latency as latency_mod, notify
+from . import access, calendar_busy, calendar_feed, dashboard, live, outbound, outbound_live, postcall, prompts, schedule
+from . import retell_hooks, backup, finance as finance_mod, keepwarm, latency as latency_mod, notify
 from .agent import CallSession, cache_write_mult, make_client, prewarm, transcript_text, usage_cost
 from .config import all_businesses, business_for_number
 from .speech import spoken_phone
 from .store import Store
-from .tools import ToolContext, run_tool
 
 log = logging.getLogger("receptionist")
 pool = ThreadPoolExecutor(max_workers=4)   # background cache warm-ups
@@ -62,7 +57,6 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     for biz in all_businesses(cfg):
         if biz.get("demo_seed"):
             store.seed_demo(biz, schedule.local_now(biz))
-    vapi_token = os.environ.get("VAPI_SERVER_TOKEN")
     retell_key = os.environ.get("RETELL_API_KEY")
     ws_secret = os.environ.get("RETELL_WS_SECRET")
     dashboard_token = os.environ.get("DASHBOARD_TOKEN")      # the admin key: opens any shop
@@ -128,8 +122,6 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         threading.Thread(target=backup.backup_loop, args=(cfg["data_dir"], stop), daemon=True, name="backup").start()
     if warm_cache:
         threading.Thread(target=keep_warm, daemon=True, name="keep-warm").start()
-    if not vapi_token:
-        log.warning("VAPI_SERVER_TOKEN is not set: /vapi/webhook is %s", "open (ALLOW_UNVERIFIED_WEBHOOKS=1)" if unverified_ok else "closed")
     if not retell_key:
         log.warning("RETELL_API_KEY is not set: Retell routes are %s", "open (ALLOW_UNVERIFIED_WEBHOOKS=1)" if unverified_ok else "closed")
 
@@ -514,49 +506,12 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         except WebSocketDisconnect:
             pass
 
-    # ---- Vapi -------------------------------------------------------------
-    @app.post("/vapi/webhook")
-    async def vapi_webhook(request: Request, background: BackgroundTasks):
-        if not vapi_token and not unverified_ok:
-            raise HTTPException(401, "bad token")
-        if vapi_token:
-            auth = request.headers.get("authorization", "")
-            if auth != f"Bearer {vapi_token}" and request.headers.get("x-vapi-secret") != vapi_token:
-                raise HTTPException(401, "bad token")
-        msg = (await request.json()).get("message") or {}
-        kind = msg.get("type")
-        call_id, dialed, caller = platforms.vapi_call_info(msg)
-        call_id = f"vapi-{call_id}"
-        biz = business_for_number(cfg, dialed)
-
-        if kind == "assistant-request":
-            if not biz:
-                log.error("assistant-request for unknown number %s; add it to a business's phone_numbers", dialed)
-                return {"error": "Sorry, this number isn't set up yet."}
-            store.start_call(call_id, biz["id"], "vapi", caller, schedule.local_now(biz))
-            return {"assistant": platforms.vapi_assistant(cfg, biz, base_url(request),
-                                                          call_state_for(biz, caller, dialed), vapi_token)}
-        if kind == "tool-calls":
-            calls = platforms.vapi_tool_calls(msg)
-            if not biz:
-                return {"results": [{"toolCallId": tc_id, "error": "This number isn't set up."} for tc_id, _, _ in calls]}
-            ctx = ToolContext(biz, store, schedule.local_now(biz), caller, call_id)
-            results = []
-            for tc_id, name, args in calls:
-                result, is_error = run_tool(ctx, name, args)
-                results.append({"name": name, "toolCallId": tc_id,
-                                ("error" if is_error else "result"): json.dumps(result, ensure_ascii=False)})
-            return {"results": results}
-        if kind == "end-of-call-report" and biz:
-            background.add_task(finish_call, biz, call_id, platforms.vapi_transcript(msg), msg.get("endedReason"))
-        return {}
-
     # ---- Retell -----------------------------------------------------------
     async def retell_body(request: Request) -> dict:
         raw = await request.body()
         if not retell_key and not unverified_ok:
             raise HTTPException(401, "bad signature")
-        if retell_key and not platforms.retell_signature_ok(raw, retell_key, request.headers.get("x-retell-signature")):
+        if retell_key and not retell_hooks.retell_signature_ok(raw, retell_key, request.headers.get("x-retell-signature")):
             raise HTTPException(401, "bad signature")
         return json.loads(raw or b"{}")
 
@@ -571,17 +526,6 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         store.start_call(f"retell-{inbound.get('call_id')}", biz["id"], "retell", caller, schedule.local_now(biz))
         return {"call_inbound": {"dynamic_variables": {"call_state": call_state_for(biz, caller,
                                                                                     inbound.get("to_number"))}}}
-
-    @app.post("/retell/tool/{name}")
-    async def retell_tool(name: str, request: Request):
-        body = await retell_body(request)
-        call = body.get("call") or {}
-        biz = business_for_number(cfg, call.get("to_number"))
-        if not biz:
-            return JSONResponse({"error": "This number isn't set up."})
-        ctx = ToolContext(biz, store, schedule.local_now(biz), call.get("from_number"), f"retell-{call.get('call_id')}")
-        result, _ = run_tool(ctx, name, body.get("args") or {})
-        return JSONResponse(result)
 
     @app.post("/retell/webhook")
     async def retell_webhook(request: Request, background: BackgroundTasks):
@@ -601,7 +545,7 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         stored = store.get_call(call_id)
         if body.get("event") == "call_ended" and biz and not (stored and stored.get("transcript")):
             # Live custom-LLM calls already stored our own, richer transcript when the socket closed.
-            background.add_task(finish_call, biz, call_id, platforms.retell_transcript(call),
+            background.add_task(finish_call, biz, call_id, retell_hooks.retell_transcript(call),
                                 call.get("disconnection_reason"))
         return {}
 

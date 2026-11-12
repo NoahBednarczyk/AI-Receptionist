@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
-from receptionist import platforms, prompts, schedule
+from receptionist import prompts, retell_hooks, schedule
 from receptionist.agent import REFUSAL_LINE, CallSession, transcript_text
 from receptionist.config import business_for_number, load_business, load_config
 from receptionist.simulate import run_checks
@@ -722,52 +722,18 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(business_for_number(CFG, "(312) 555-0100")["id"], "acme")
         self.assertIsNone(business_for_number(CFG, "+13125559999"))
 
-    def test_vapi_parsing(self):
-        msg = {"type": "tool-calls", "call": {"id": "c1", "customer": {"number": "+13125550177"},
-                                              "phoneNumber": {"number": "+13125550100"}},
-               "toolCallList": [{"id": "tc1", "function": {"name": "lookup_customer", "arguments": '{"phone": "3125550142"}'}}],
-               "artifact": {"messages": [{"role": "system", "message": "x"}, {"role": "assistant", "message": "Hi"},
-                                         {"role": "user", "message": "Hello"}]}}
-        self.assertEqual(platforms.vapi_call_info(msg), ("c1", "+13125550100", "+13125550177"))
-        self.assertEqual(platforms.vapi_tool_calls(msg), [("tc1", "lookup_customer", {"phone": "3125550142"})])
-        self.assertEqual([t["role"] for t in platforms.vapi_transcript(msg)], ["agent", "caller"])
-
-    def test_vapi_assistant(self):
-        a = platforms.vapi_assistant(CFG, BIZ, "https://x.test", "# This call\nnow", token="tok")
-        names = [t.get("function", {}).get("name") or t["type"] for t in a["model"]["tools"]]
-        self.assertIn("book_appointment", names)
-        self.assertNotIn("transfer_call", names)
-        self.assertIn("transferCall", names)
-        self.assertEqual(a["model"]["model"], "claude-haiku-5-5")
-        self.assertTrue(a["model"]["messages"][0]["content"].endswith("now"))
-        self.assertEqual(a["server"]["headers"]["Authorization"], "Bearer tok")
-        book = next(t for t in a["model"]["tools"] if t.get("function", {}).get("name") == "check_availability")
-        self.assertEqual(book["messages"][0]["content"], "Mm, let's see.")
-
-    def test_retell_llm(self):
-        llm = platforms.retell_llm(CFG, BIZ, "https://x.test")
-        names = {t["name"]: t["type"] for t in llm["general_tools"]}
-        self.assertEqual(names["transfer_call_on_call"], "transfer_call")
-        self.assertEqual(names["end_call"], "end_call")
-        self.assertEqual(names["book_appointment"], "custom")
-        lookup = next(t for t in llm["general_tools"] if t["name"] == "lookup_customer")
-        self.assertEqual((lookup["execution_message_type"], lookup["execution_message_description"]),
-                         ("static_text", "Mm, let me pull that up."))
-        self.assertIn("{{call_state}}", llm["general_prompt"])
-        self.assertEqual(llm["model_config"]["primary"]["model"], "claude-5.5-haiku")
-
     def test_retell_signature(self):
         import hashlib, hmac
         body, key, ms = b'{"event":"call_ended"}', "key_123", 1_800_000_000_000
         sig = f"v={ms},d=" + hmac.new(key.encode(), body + str(ms).encode(), hashlib.sha256).hexdigest()
-        self.assertTrue(platforms.retell_signature_ok(body, key, sig, now_ms=ms + 1000))
-        self.assertFalse(platforms.retell_signature_ok(body + b" ", key, sig, now_ms=ms))
-        self.assertFalse(platforms.retell_signature_ok(body, key, sig, now_ms=ms + 6 * 60 * 1000))
-        self.assertFalse(platforms.retell_signature_ok(body, key, None))
+        self.assertTrue(retell_hooks.retell_signature_ok(body, key, sig, now_ms=ms + 1000))
+        self.assertFalse(retell_hooks.retell_signature_ok(body + b" ", key, sig, now_ms=ms))
+        self.assertFalse(retell_hooks.retell_signature_ok(body, key, sig, now_ms=ms + 6 * 60 * 1000))
+        self.assertFalse(retell_hooks.retell_signature_ok(body, key, None))
 
     def test_retell_transcript_fallback(self):
         call = {"transcript": "Agent: Hi there\nUser: My drain is slow\n"}
-        self.assertEqual(platforms.retell_transcript(call),
+        self.assertEqual(retell_hooks.retell_transcript(call),
                          [{"role": "agent", "text": "Hi there"}, {"role": "caller", "text": "My drain is slow"}])
 
 
@@ -779,46 +745,18 @@ class ServerTests(unittest.TestCase):
         from receptionist.server import create_app
         self.tmp = tempfile.TemporaryDirectory()
         cfg = {**CFG, "data_dir": self.tmp.name}
-        os.environ["VAPI_SERVER_TOKEN"] = "tok"
         os.environ.pop("RETELL_API_KEY", None)
         os.environ["PUBLIC_BASE_URL"] = "https://example.test"
         self.client = TestClient(create_app(cfg))
-        self.auth = {"Authorization": "Bearer tok"}
-
     def tearDown(self):
-        for k in ("VAPI_SERVER_TOKEN", "PUBLIC_BASE_URL"):
+        for k in ("PUBLIC_BASE_URL",):
             os.environ.pop(k, None)
         self.tmp.cleanup()
 
-    def vapi(self, message, headers=None):
-        return self.client.post("/vapi/webhook", json={"message": message}, headers=self.auth if headers is None else headers)
-
-    def test_vapi_requires_token(self):
-        self.assertEqual(self.vapi({"type": "status-update"}, headers={}).status_code, 401)
-
-    def test_vapi_assistant_request_and_tool_call(self):
-        call = {"id": "c9", "customer": {"number": "+13125550177"}, "phoneNumber": {"number": "+13125550100"}}
-        r = self.vapi({"type": "assistant-request", "call": call}).json()
-        self.assertEqual(r["assistant"]["firstMessage"], BIZ["greeting"])
-        self.assertIn("https://example.test/vapi/webhook", json.dumps(r))
-        r = self.vapi({"type": "tool-calls", "call": call, "toolCallList": [
-            {"id": "tc1", "function": {"name": "lookup_customer", "arguments": {"phone": "nope"}}},
-            {"id": "tc2", "function": {"name": "lookup_customer", "arguments": {"phone": "3125550199"}}}]}).json()
-        self.assertIn("error", r["results"][0])
-        self.assertEqual(json.loads(r["results"][1]["result"]), {"found": False})
-
-    def test_vapi_unknown_number(self):
-        call = {"id": "c1", "phoneNumber": {"number": "+13125559999"}}
-        self.assertIn("error", self.vapi({"type": "assistant-request", "call": call}).json())
-
-    def test_retell_inbound_and_tool(self):
+    def test_retell_inbound(self):
         r = self.client.post("/retell/inbound", json={"event": "call_inbound", "call_inbound": {
             "call_id": "r1", "from_number": "+13125550142", "to_number": "+13125550100"}}).json()
         self.assertIn("Pat Rivera", r["call_inbound"]["dynamic_variables"]["call_state"])
-        r = self.client.post("/retell/tool/check_availability", json={
-            "name": "check_availability", "args": {"service_id": "drain_cleaning"},
-            "call": {"call_id": "r1", "from_number": "+13125550142", "to_number": "+13125550100"}}).json()
-        self.assertTrue(r["windows"])
         r = self.client.post("/retell/inbound", json={"call_inbound": {"to_number": "+13125559999"}}).json()
         self.assertEqual(r, {"call_inbound": {"reject": True}})
 

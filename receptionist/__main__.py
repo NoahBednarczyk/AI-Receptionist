@@ -385,16 +385,6 @@ def cmd_serve(cfg, a):
     uvicorn.run(create_app(cfg), host=a.host, port=a.port)
 
 
-def cmd_export(cfg, a):
-    from .platforms import retell_llm, vapi_assistant
-    biz = load_business(cfg, a.business)
-    base = a.base_url.rstrip("/")
-    payload = vapi_assistant(cfg, biz, base, call_state_text=None) if a.platform == "vapi" else retell_llm(cfg, biz, base)
-    out = Path(cfg["data_dir"]) / f"{a.platform}-{biz['id']}.json"
-    out.write_text(json.dumps(payload, indent=2))
-    print(f"Wrote {out}")
-
-
 def cmd_spend_report(cfg, a):
     from datetime import datetime, timezone
     from . import spend_report
@@ -565,16 +555,10 @@ def main():
     sp.add_argument("--base-url", help="the server's https address, used only when RETELL_API_KEY is not on this machine")
     sp.set_defaults(fn=cmd_latency_report)
 
-    sp = sub.add_parser("serve", help="webhook server for Vapi and Retell")
+    sp = sub.add_parser("serve", help="the live server: Retell websocket, webhooks, dashboard")
     sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=8000)
     sp.set_defaults(fn=cmd_serve)
-
-    sp = sub.add_parser("export", help="write the agent config a voice platform needs")
-    sp.add_argument("platform", choices=["vapi", "retell"])
-    sp.add_argument("--base-url", required=True, help="public https URL of `serve`, e.g. from ngrok")
-    biz_args(sp, at=False)
-    sp.set_defaults(fn=cmd_export)
 
     a = p.parse_args()
     a.fn(cfg, a)
