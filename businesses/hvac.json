@@ -219,14 +219,6 @@
       "a": "Yes. An adult needs to be home for the whole window to let the technician in."
     },
     {
-      "q": "Do you service wood or pellet stoves?",
-      "a": "I don't have details on stoves or fireplaces. I can take a message and the technician will call you back."
-    },
-    {
-      "q": "How fast can you get here if I have no heat?",
-      "a": "No heat in freezing weather and burst pipes get the earliest emergency slot, or I can try the owner's cell. I can't promise an arrival time beyond the window that's booked."
-    },
-    {
       "q": "Can I get a text confirmation?",
       "a": "I can't send texts right now. I'll give you a confirmation number to write down."
     },
@@ -238,7 +230,6 @@
   "never_say": [
     "Never promise an arrival time narrower than the booked two-hour window.",
     "Never guess what is wrong or say a problem is probably minor.",
-    "Never give advice about gas, wood or pellet stoves, fireplaces or chimneys.",
     "Never offer discounts, coupons or promotions."
   ],
   "approved_tips": [
@@ -360,10 +351,7 @@
     "Peak is an owner-operated heating, cooling and plumbing shop. The owner is a licensed technician and still takes calls in the field, and winter is the busy season.",
     "Most furnace and boiler calls are repairs. Technicians carry the common parts for popular brands, so many repairs are finished on the first visit, though that can't be promised for a specific job.",
     "Heat pumps and ductless mini-splits are serviced year-round, and a tune-up before winter is the most useful visit a furnace or boiler can get.",
-    "A diagnostic visit finds the problem and gives a firm price on site. The diagnostic fee comes off the bill when the customer approves the repair.",
-    "No heat in freezing weather and burst or frozen pipes get the earliest emergency slot, or the owner's cell if the caller wants a person.",
-    "Technicians call or text about thirty minutes before they arrive, and an adult needs to be home for the whole window to let them in.",
-    "Wood and pellet stoves, fireplaces and chimneys are not something the phone line can advise on; those calls become a message for the technician."
+    "A diagnostic visit finds the problem and gives a firm price on site. The diagnostic fee comes off the bill when the customer approves the repair."
   ],
   "demo": true,
   "notice_waived": true,

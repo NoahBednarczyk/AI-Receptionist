@@ -17,8 +17,12 @@ class SizeAndWordingTests(unittest.TestCase):
         self.prompt = prompts.stable_prompt(LAWN)
 
     def test_the_lawn_care_prompt_is_at_most_6500_words_and_never_appears_at_most_60_times(self):
-        self.assertLessEqual(len(self.prompt.split()), 6550)
+        self.assertLessEqual(len(self.prompt.split()), 6500)     # W4.4: 6,497 before, 6,478 now; the 4,000 target is not reached
         self.assertLessEqual(len(re.findall(r"\bnever\b", self.prompt, re.I)), 60)
+
+    def test_the_trades_prompt_stays_under_its_ceiling(self):
+        hvac = prompts.stable_prompt(load_business(CFG, "hvac"))
+        self.assertLessEqual(len(hvac.split()), 5400)             # W4.4: 5,976 before the cut (the spec's 4,000 is not reached)
 
     def test_no_sarcasm_and_no_plumbing_jokes_in_a_lawn_prompt(self):
         low = self.prompt.lower()
