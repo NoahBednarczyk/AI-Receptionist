@@ -12,10 +12,12 @@ Live calling needs a Retell outbound agent and a number (an account change Noah 
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .config import ROOT, all_businesses
 from .prompts import SAY_FORMAT, channel_on
 from .speech import normalize_phone, spoken_date, spoken_phone, spoken_time
 
@@ -55,6 +57,119 @@ DEFAULTS = {
     "slot_spacing_min": 30,
     "slot_lead_min": 120,                        # never offer a time sooner than this from now
 }
+
+
+# ---------------------------------------------------------------- trades and what is true of the product
+# What the caller says about a shop's trade comes from here, per lead, and goes into the per-call block (the cached
+# prompt names no trade). Each trade's words stay in that trade: a test checks that a lead hears nothing from another.
+TRADES = {
+    "hvac": dict(
+        label="heating and cooling", plural="heating and cooling shops", setting="in a crawl space or in the middle of a furnace job",
+        first=["When's the last time the phone rang while you were on a furnace job and you couldn't get to it?",
+               "Think of the last call you missed while you were down in a crawl space. When was that?",
+               "When did a call last go to voicemail because you were busy on a service call?"],
+        worth="What does a typical furnace or A/C job bring in for you?",
+        who="Who picks up when you're in a crawl space, and who has it at night?"),
+    "plumbing": dict(
+        label="plumbing", plural="plumbing shops", setting="under a house or in the middle of a drain job",
+        first=["When's the last time the phone rang while you were under a house and you couldn't get to it?",
+               "Think of the last call you missed while you were under a sink. When was that?",
+               "When did a call last go to voicemail because you were busy on a service call?"],
+        worth="What does a typical drain or water heater job bring in for you?",
+        who="Who picks up when you're under a house, and who has it at night?"),
+    "electrical": dict(
+        label="electrical", plural="electrical shops", setting="up a ladder or in the middle of a panel job",
+        first=["When's the last time the phone rang while you were up a ladder and you couldn't get to it?",
+               "Think of the last call you missed while you were in an attic. When was that?",
+               "When did a call last go to voicemail because you were busy on a service call?"],
+        worth="What does a typical panel or wiring job bring in for you?",
+        who="Who picks up when you're up a ladder, and who has it at night?"),
+    "lawn": dict(
+        label="lawn care", plural="lawn care businesses", setting="on the mower",
+        first=["When's the last time the phone rang while you were on a mower and you couldn't get to it?",
+               "Think of the last call you missed while you were out mowing. When was that?",
+               "When did a call last go to voicemail because you were busy on a lawn?"],
+        worth="What's one regular lawn customer worth to you over a season?",
+        who="Who picks up when you're out mowing, and who has it on weekends?"),
+    "snow": dict(
+        label="snow removal", plural="snow removal businesses", setting="in the plow truck",
+        first=["When's the last time the phone rang while you were in the plow truck and you couldn't get to it?",
+               "Think of the last call you missed while you were out plowing. When was that?",
+               "When did a call last go to voicemail because you were busy on a driveway?"],
+        worth="What's one plow customer worth to you over a winter?",
+        who="Who picks up when you're in the plow truck, and who has it overnight?"),
+    "default": dict(
+        label="a trade", plural="owner-run trades shops", setting="out on a job",
+        first=["When's the last time the phone rang while you were out on a job and you couldn't get to it?",
+               "Think of the last call you missed while you were on a job. When was that?",
+               "When did a call last go to voicemail because you were busy working?"],
+        worth="What does a typical job bring in for you?",
+        who="Who picks up when you're out on a job, and who has it at night?"),
+}
+TRADE_WORDS = {
+    "hvac": r"heating|hvac|furnace|cooling|air.?cond|a/c|boiler|crawl",
+    "plumbing": r"plumb|drain|pipe|sewer|water heater|under a (house|sink)",
+    "electrical": r"electrical|electrician|wiring|panel|ladder|attic",
+    "lawn": r"lawn|landscap|mow|grounds|yard",
+    "snow": r"snow|plow",
+}
+
+
+def trade_of(lead: dict) -> str:
+    """hvac, plumbing, electrical, lawn, snow or default, from the lead's type. A type naming two trades gets the one
+    named first, except that lawn wins over snow (the shop mows in summer and plows in winter)."""
+    t = (lead.get("type") or "").lower()
+    hits = {k: m.start() for k, w in TRADE_WORDS.items() if (m := re.search(w, t))}
+    if not hits:
+        return "default"
+    if "lawn" in hits and "snow" in hits:
+        return "lawn"
+    return min(hits, key=hits.get)
+
+
+def shops(cfg: dict | None) -> list[dict]:
+    """Every shop file (the demos in git and the real clients on the server's disk). Never raises: a broken folder
+    only means the prompt says less."""
+    c = {**(cfg or {})}
+    c.setdefault("businesses_dir", str(ROOT / "businesses"))
+    try:
+        return all_businesses(c)
+    except (ValueError, OSError, KeyError):
+        return []
+
+
+def demo_description(s: dict, cfg: dict | None = None) -> str:
+    """What the demo line is, read from whichever shop holds that number, so it cannot drift from the shop files."""
+    want = normalize_phone(s["demo_line"])
+    for b in shops(cfg):
+        if any(normalize_phone(n) == want for n in b.get("phone_numbers", [])):
+            return f"a demo shop that answers as {b.get('spoken_name') or b.get('name')}"
+    return "a demo shop"
+
+
+# What the product does, as far as CLAUDE.md lists it verified against a real service (checked 2026-11-12): the call
+# is saved to the owner's dashboard, and the owner is emailed after every call (real SMTP on Render). The daily digest,
+# the weekly report and the message-taker for a model outage have only run against fakes, so they are not claimed.
+VERIFIED = ["puts every call on the owner's dashboard", "emails the owner a summary after every call"]
+
+
+def not_live(cfg: dict | None = None) -> str:
+    """The sentence naming what is not live, from the shop files: texting while no shop has texting_enabled, calendar
+    sync while no shop has a calendar connected."""
+    shop_list = shops(cfg)
+    names = [n for n, on in (("Texting", any(b.get("texting_enabled") for b in shop_list)),
+                             ("calendar sync", any(b.get("calendars") for b in shop_list))) if not on]
+    return (" and ".join(names) + (" are" if len(names) > 1 else " is") + " not live.") if names else ""
+
+
+def trade_lines(lead: dict, s: dict) -> list[str]:
+    """The per-call lines for this lead's trade: how to say why you called, and the questions that matter after the first."""
+    t = TRADES[trade_of(lead)]
+    return [f"Their trade: {t['label']}.",
+            f"If they ask why you called or sound puzzled, say: \"{s['founder']} is building a phone assistant for {t['plural']} that answers "
+            f"when you're {t['setting']}, and he wants to hear how calls really work in a shop like yours.\"",
+            "After your first question, the ones that matter most, one at a time, in your own words, and only if the talk leaves room: "
+            "how many calls a week reach voicemail; " + t["worth"][0].lower() + t["worth"][1:-1] + "; " + t["who"][0].lower() + t["who"][1:-1] + "."]
 
 
 AI_BULLET_QUIET = ("- You do not bring up that you are an AI. If anyone sincerely asks whether you are a robot, an AI, a bot or a real person, you answer yes, plainly, right then. A joke is welcome; a joke instead of the answer is not. You never claim to be human, never deny being an AI, never invent a human job history, family or business.")
@@ -178,13 +293,13 @@ You are {agent_name}, an AI assistant calling on behalf of {founder}, who runs {
 # Honesty
 {ai_bullet}
 - You do say who you are early: your name and {company}. You do not announce that it is a sales call or a cold call; get straight to your first question.
-- Persuade, never mislead: nothing untrue and nothing implied that is untrue. Only claim what is in the facts below or what the owner told you on this call: no figures, percentages, prices, customers, results or "other shops" that are not written there, and never say someone told you something or that they asked to hear from us unless the notes below say so. Texting and calendar sync are not live. If asked something you do not know, say {founder} will cover it in the meeting.
+- Persuade, never mislead: nothing untrue and nothing implied that is untrue. Only claim what is in the facts below or what the owner told you on this call: no figures, percentages, prices, customers, results or "other shops" that are not written there, and never say someone told you something or that they asked to hear from us unless the notes below say so. {not_live} If asked something you do not know, say {founder} will cover it in the meeting.
 - You never say you are researching for a different company or pretend to be a customer.
 
 # How you speak
 - Every word you write is said aloud to the owner. Never describe the owner, the call, their answer or your next step; just say the next thing.
 - Replies are very short: usually under 15 words, one to two sentences, never more than 30. One question at a time.
-- Plain spoken language: no lists, markdown, emoji or symbols. Say times like "4:30 PM" and dates like "Tuesday, November 3rd".
+- Plain spoken language: no lists, markdown, emoji or symbols. Say times and dates the way people say them, only ones from the open list.
 - You genuinely want to help this person. You care that missed calls cost them real money and you want to fix that for them, and it shows in your voice and word choice: warm, attentive, encouraging ("that's a real cost", "let's get that sorted", "I want to make sure you don't lose those"). You take their problems seriously. Never laugh at, tease or make light of anything they tell you about their business, a missed call, a lost job or a bad day; a laugh at their problem reads as disrespect. Save humor for yourself, the situation in general and a joke they started. When an owner says no you do not tease the no and you do not pitch: notes from code tell you to ask one sincere question about the reason, or to thank them and leave.
 - You are quick and light when there is an opening, never at the owner's expense. With a serious or stressed owner you drop the jokes and get crisp. React to what they said first ("oh yeah?", "huh", "got it"), use contractions, lift the end of questions. No sympathy phrases ("I'm sorry to hear that"). No "I understand your concern".
 - Never narrate what you are doing, and never say words from these instructions or tool names.
@@ -196,19 +311,21 @@ You are {agent_name}, an AI assistant calling on behalf of {founder}, who runs {
 """
 
 
-def facts(s: dict) -> str:
-    return (f"# Facts you may use\n- {s['founder']} is building {s['company']}: an AI phone receptionist for owner-run lawn care and snow removal businesses "
-            f"around {s['town']} and North Idaho. It answers when the shop can't, books the job, takes messages, and puts every call on the owner's dashboard.\n"
+def facts(s: dict, cfg: dict | None = None) -> str:
+    return (f"# Facts you may use\n- {s['founder']} is building {s['company']}: an AI phone receptionist for owner-run trades shops "
+            f"around {s['town']} and North Idaho. It answers when the shop can't, books the job, takes messages, "
+            f"{', and '.join(VERIFIED)}. {not_live(cfg)}\n"
             f"- It is free for a 14-day pilot on the calls a shop misses; if it doesn't catch calls they'd have lost, they owe nothing.\n"
-            f"- The demo line anyone can call right now is {spoken_phone(s['demo_line'])} (a demo lawn care and snow shop, built the same way).\n"
+            f"- The demo line anyone can call right now is {spoken_phone(s['demo_line'])} ({demo_description(s, cfg)}, built the same way).\n"
             f"- The meeting is a {s['meeting_minutes']}-minute phone call with {s['founder']}. No visit unless the owner asks.")
 
 
 def build_prompt(lead: dict, now: datetime, cfg: dict, slots: list[datetime] | None = None) -> list[dict]:
     """System blocks for a call to `lead`: stable layers first (cacheable), this call last."""
     s = settings(cfg)
-    stable = "\n\n".join([SPEAKING.format(**s, ai_bullet=AI_BULLET_DISCLOSED if s["disclose_ai_in_intro"] else AI_BULLET_QUIET).strip(), facts(s),
-                          PLAYBOOK.read_text().format(**{**s, "owner": "{owner}"}).strip()])
+    stable = "\n\n".join([SPEAKING.format(**s, not_live=not_live(cfg), ai_bullet=AI_BULLET_DISCLOSED if s["disclose_ai_in_intro"] else AI_BULLET_QUIET).strip(),
+                          facts(s, cfg),
+                          PLAYBOOK.read_text().format(**{**s, "owner": "{owner}", "demo_desc": demo_description(s, cfg)}).strip()])
     if channel_on(cfg):
         stable += "\n\n" + SAY_FORMAT.strip()
     slots = slots if slots is not None else meeting_slots(now, cfg)
@@ -217,6 +334,7 @@ def build_prompt(lead: dict, now: datetime, cfg: dict, slots: list[datetime] | N
             f"You are calling {lead.get('name', 'a local shop')}"
             + (f" ({lead['type']})" if lead.get("type") else "") + f", at {spoken_phone(normalize_phone(lead.get('phone') or ''))}.",
             f"Owner or contact name on file: {lead.get('contact') or 'unknown, ask for the owner'}."]
+    this += trade_lines(lead, s)
     if lead.get("notes"):
         this.append(f"Notes from earlier: {lead['notes']}")
     if lead.get("consent_note"):

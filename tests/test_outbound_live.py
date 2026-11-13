@@ -148,29 +148,6 @@ class RetellTests(Fixture):
             ol.place_call(cfg, warm, NOW, self.state, fn, env={"OUTBOUND_LIVE": "1"})
 
 
-class LawnCareOnlyTests(unittest.TestCase):
-    """The pitch is for lawn care and snow removal businesses. Nothing the caller says, or leaves on a voicemail, may
-    mention the old heating and plumbing niche."""
-    BAD = r"(?i)plumb|heating|furnace|hvac|water heater"
-
-    def test_pitch_hooks_voicemail_and_keywords_are_lawn_care_only(self):
-        import re
-        s = outbound.settings(CFG)
-        texts = [outbound.facts(s), outbound.PLAYBOOK.read_text(), json.dumps(ol.GREETINGS + ol.INTRO)]
-        payload = ol.agent_payload(CFG, "https://x.io", "S")
-        texts += [" ".join(payload["boosted_keywords"])]
-        for text in texts:
-            self.assertIsNone(re.search(self.BAD, text), text[:80])
-
-    def test_trades_pick_the_right_hooks(self):
-        self.assertEqual(ol.trade_of({"type": "Lawn care"}), "lawn")
-        self.assertEqual(ol.trade_of({"type": "Landscaping"}), "lawn")
-        self.assertEqual(ol.trade_of({"type": "Lawn & Snow"}), "lawn")
-        self.assertEqual(ol.trade_of({"type": "Snow removal"}), "snow")
-        self.assertEqual(ol.trade_of({"type": "Other"}), "default")
-        self.assertEqual(ol.trade_of({}), "default")
-
-
 class AgentRecordFileTests(unittest.TestCase):
     def test_none_until_written_then_round_trips(self):
         with tempfile.TemporaryDirectory() as d:

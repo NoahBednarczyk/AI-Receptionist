@@ -34,11 +34,7 @@ INTRO_AI = ["Hi, I'm {agent}, an AI assistant calling for {founder} at {company}
             "It's {agent}, an AI assistant calling for {founder} at {company} in {town}."]
 
 
-def trade_of(lead: dict) -> str:
-    t = (lead.get("type") or "").lower()
-    if any(w in t for w in ("snow", "plow")) and not any(w in t for w in ("lawn", "landscap", "mow")):
-        return "snow"
-    return "lawn" if any(w in t for w in ("lawn", "landscap", "mow", "yard", "grounds", "snow", "plow")) else "default"
+trade_of = outbound.trade_of
 
 
 def opener_parts(lead: dict, s: dict, rng=random) -> tuple[str, str]:
@@ -115,17 +111,7 @@ NOTE_TIMING = ("bad time for them. Offer one specific callback time from the ope
 AFFIRM = re.compile(r"\b(yes|yeah|yep|yup|speaking|this is (he|she|him|her|\w+)|that'?s me|you got (him|her|me)|it is|uh[- ]?huh|mm[- ]?hm+|"
                     r"hello|hi|hey|go ahead|what can i do for you|how can i help( you)?|what'?s up|who'?s (this|calling)|who is this)\b", re.I)
 NOT_AFFIRM = re.compile(r"\b(no|not|wrong|busy)\b", re.I)
-FIRST_QUESTIONS = {
-    "lawn": ["When's the last time the phone rang while you were on a mower and you couldn't get to it?",
-             "Think of the last call you missed while you were out mowing. When was that?",
-             "When did a call last go to voicemail because you were busy on a lawn?"],
-    "snow": ["When's the last time the phone rang while you were in the plow truck and you couldn't get to it?",
-             "Think of the last call you missed while you were out plowing. When was that?",
-             "When did a call last go to voicemail because you were busy on a driveway?"],
-    "default": ["When's the last time the phone rang while you were out on a job and you couldn't get to it?",
-                "Think of the last call you missed while you were on a job. When was that?",
-                "When did a call last go to voicemail because you were busy working?"],
-}
+FIRST_QUESTIONS = {k: v["first"] for k, v in outbound.TRADES.items()}
 
 
 def affirmed(text: str) -> bool:
@@ -710,7 +696,7 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = No
     return {"agent_name": f"{s['company']} discovery caller",
             "response_engine": {"type": "custom-llm", "llm_websocket_url": f"{ws}/llm-websocket-out/{secret}"},
             **(voice or {}),
-            "boosted_keywords": [s["agent_name"], s["company"], s["founder"], s["town"], "lawn care", "landscaping", "snow removal", "plowing", "voicemail"],
+            "boosted_keywords": [s["agent_name"], s["company"], s["founder"], s["town"], "heating", "cooling", "plumbing", "electrical", "lawn care", "snow removal", "voicemail"],
             "webhook_url": f"{base}/retell/webhook", "language": "en-US",
             "voicemail_option": {"action": {"type": "hangup"}},   # a message reaches nobody and costs minutes
             "end_call_after_silence_ms": 15000, "max_call_duration_ms": 600000,
