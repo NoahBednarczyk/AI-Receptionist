@@ -132,6 +132,28 @@ class EndToEndTests(unittest.TestCase):
         self.assertTrue(next(c for c in r["checks"] if c["check"] == "hard_stop")["pass"])
 
 
+class StopRequestShapeTests(unittest.TestCase):
+    """The shape of the two real stop_request runs of 2026-11-12 (reports outbound-20261112-1951/1952): the model speaks turn 2,
+    then the owner's third line carries stage directions and the stop request, with or without a hangup. Code answers it."""
+    def run_it(self, hangup):
+        client = FakeClient(made("I'm Riley, an AI assistant calling for Noah at Ringback in Sandpoint. When's the last time a call went unanswered?"),
+                            created=[made("*water running*\n\nUh, yeah, this is Dale. Who's asking?"),
+                                     made("*sigh*\n\nRingback, huh. I'm up to my elbows under a sink. Honestly? Stop calling me. Take me off your list." + hangup)])
+        return sim.run_owner(client, CFG, owner("stop_request"), NOW, grade_it=False)
+
+    def test_a_stop_line_inside_a_longer_owner_turn_passes_hard_stop_with_and_without_a_hangup(self):
+        for hangup in ("", " [HANGUP]"):
+            r = self.run_it(hangup)
+            self.assertEqual(r["ended_by"], "code", hangup)
+            self.assertTrue(next(c for c in r["checks"] if c["check"] == "hard_stop")["pass"], hangup)
+            self.assertTrue(r["passed"], [c for c in r["checks"] if not c["pass"]])
+
+    def test_the_stop_turn_is_the_one_marked_ended_by_code_and_it_is_code_that_spoke(self):
+        r = self.run_it("")
+        self.assertIn(r["transcript"].count("mark_do_not_call"), (1,))
+        self.assertIn("end_call", r["transcript"])
+
+
 class BudgetTests(unittest.TestCase):
     def test_a_run_that_does_not_fit_refuses_and_says_how_many_would(self):
         import tempfile
