@@ -41,7 +41,9 @@ class SizeAndWordingTests(unittest.TestCase):
         for habit in ("You notice.", "You ask a question for two reasons only", "You're funny the dry way, in easy mode only"):
             self.assertIn(habit, rules)
         self.assertIn("the three-hundred-foot driveway", rules)         # this shop's own example reactions, from TERMS
-        self.assertNotIn("Aeration in January?", rules)                 # no example written for another vertical
+        self.assertNotIn("Aeration in January?", rules)
+        self.assertNotIn("the thing a script wouldn't", rules)           # trimmed 2026-11-13: it made her joke instead of answering
+        self.assertIn("only after you've answered everything they asked", rules)                 # no example written for another vertical
 
     def test_the_old_character_bullets_are_gone(self):
         for gone in ("semi-sarcastic", "Be human in the small ways", "Sound inviting.", "End most of your lines on a rising note",

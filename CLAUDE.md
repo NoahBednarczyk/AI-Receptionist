@@ -71,6 +71,13 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   no-heat scenarios twice, the full suite twice, then three test calls by the user (no heat, a price, "are you real").
   Weak point: the first reply on a broken-furnace call is still in easy mode. Retell agent is now version 23: only
   `boosted_keywords` changed (Riley instead of Sam), voice settings untouched; the number points at v23.
+- **Humor trimmed (2026-11-13, after two bad live calls):** the "say the thing a script wouldn't" sentence is gone from the
+  shared `CHARACTER_DRY` (also used by the outbound caller). Dry humor is now one small line about the situation, after
+  everything the caller asked is answered, never in place of an answer or in a reply that asks a question. Evidence: at
+  1:34 AM she answered "why are you in a microwave?" with a joke and skipped "what services do you offer?". The 1:45 AM
+  call ("My heat's out") had no safety line because `safety.py` could not read the contraction "heat's"; the fix
+  (`(?:['\u2019]s)?` after the noun) plus its test were uncommitted work from another session when this was written.
+  Untested by scenario; the user tests by ear.
 - **Haiku as grader, tested and NOT adopted (2026-11-12):** re-grading the 16 saved hvac transcripts with Haiku 5.5 cost
   $0.009 (Sonnet: $0.177) but agreed on only 57 of 63 criteria; 5 of the 6 differences were Haiku passing what Sonnet
   failed, including the invented recording opt-out (a gate failure). Summary on Haiku would save under a cent a call.
