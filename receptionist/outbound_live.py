@@ -87,9 +87,9 @@ AI_QUESTION = re.compile(r"(\b(are|is) (you|this|that)\b.*\b(robot|a\.?i\.?|arti
 AI_REFUSAL = re.compile(r"\b(not interested in|don'?t want to|won'?t|not gonna|i don'?t)\b.{0,20}\b(talk|speak|deal)\w*\b.{0,12}\b(an? )?(a\.?i\.?|ai|bot|robot|machine|computer|recording)\b|"
                         r"\bi (hate|don'?t do) (robo ?calls|bots|robots|ai)\b", re.I)
 
-# What the caller said that counts as a refusal. Code keeps the count, classifies each refusal into one of six kinds, and
-# hands the model the next move as a note: it never ends a call on a no. A call ends on a yes, a stop request (below), the
-# owner hanging up, a voicemail, or Retell's own call-length limit.
+# What the caller said that counts as a refusal. Code classifies each refusal into one of six kinds and hands the model the
+# next move as a note: find the real reason behind the no, answer it, ask for a next step. Code never ends a call on a no,
+# however many: a call ends on a yes, a stop request (below), the owner hanging up, a voicemail, or Retell's call-length limit.
 NO_SIGNAL = re.compile(r"\b(not interested|no thanks|no thank you|we'?re (good|fine|all set)|i'?m (good|fine|all set)|"
                        r"don'?t need (it|that|this)|(i|we) (already )?(said|told you) no|pass(?! (it|that|this|me|you|along|the)\b))\b|^\W*no\W*$|^\W*no\W+(don'?t|do not|never|not|already|thanks|thank)\b", re.I)
 # A bad time gets a callback: it is a kind of refusal, but it never walks the ladder.
@@ -147,12 +147,12 @@ FLOOR = {"bad_time": 1, "no_need": 0, "no_trust_ai": 1, "no_money": 3, "tried_be
 # One answer per objection, from the facts only, under 20 words, in their terms. Wording is the model's own each time.
 ANSWER = {
     "bad_time": "A bad time. Take the time they give and nothing else now.",
-    "no_need": "They say they have it covered. Believe them and don't argue. The one thing true of the product: it answers only the calls they can't get to.",
-    "no_trust_ai": "They don't trust an AI. Say plainly that yes, you are one (never claim to be human). The one thing true: it never promises a price or time they haven't set, and anything it isn't sure of goes to them as a message.",
-    "no_money": "Cost is the objection. The one thing true: free for fourteen days on the calls they miss, nothing to cancel, and Noah talks pricing only if it caught real jobs. Never invent a price.",
-    "tried_before": "They have tried something like it. Ask what went wrong with it, in one plain question, or take what they say; the one thing true: this one is free on missed calls only, so nothing of theirs changes.",
-    "dislikes_calls": "They dislike being called. Agree with what is fair in a few words. Nothing about the product.",
-    "unclear": "You don't know yet what the no is about. Ask one plain question to find out: is it the timing, the AI, the cost, or missed calls simply aren't a problem for them? Do not ask for anything else.",
+    "no_need": "They say they have it covered. Don't argue; get curious about the edges: what happens to a call that comes in while they're on a job, or at night? Once you know, the one thing true of the product: it answers only the calls they can't get to.",
+    "no_trust_ai": "They don't trust an AI. Say plainly that yes, you are one (never claim to be human), and ask what worries them about it: a wrong answer, customers hanging up, sounding fake? Answer that worry with what is true: it never promises a price or time they haven't set, it says it's a virtual assistant when asked, and anything it isn't sure of goes to them as a message.",
+    "no_money": "Cost is the objection. Find out which part: the price itself, or not knowing whether it would pay off? The one thing true: free for fourteen days on the calls they miss, nothing to cancel, and Noah talks pricing only if it caught real jobs. Never invent a price.",
+    "tried_before": "They have tried something like it. Ask what went wrong with it, in one plain question, and answer that exact thing from the facts; the one thing true: this one is free on missed calls only, so nothing of theirs changes.",
+    "dislikes_calls": "They dislike being called. Agree with what is fair in a few words, then ask one curious question about how calls work in their shop. Nothing pushy.",
+    "unclear": "You don't know yet what the no is about. Get curious, not pushy: ask one genuine question to find what is really behind it, from a different angle than any earlier question (the timing, the cost, how their calls are handled now, a bad experience before; the AI only if they brought it up). Do not ask for anything else in this reply.",
 }
 NOTE_TIMING = ("bad time for them. Take a time they name, or offer one from the open list, and say Noah calls then. Call log_call with "
                "Callback requested and the date, then end_call once they agree. No questions about their calls now.")
@@ -170,21 +170,28 @@ def next_rung(offered: int, kind: str, irritated: bool) -> int:
     return min(max(offered + 1, floor), LAST_RUNG)
 
 
-def refusal_note(kind: str, offered: int, tried: tuple, irritated: bool, why_asked: bool = False) -> str:
-    """The note that tells the model what the no is and what to ask for next. Code decides the move; the words are the model's.
-    A bare no gets one plain question about its reason, once; after that it is treated like any other no."""
+def refusal_note(kind: str, offered: int, tried: tuple, irritated: bool) -> str:
+    """The note that tells the model what the no is and what to do next. Code decides the move; the words are the model's.
+    A no is never the end: a bare no gets a curious question about what is behind it (every time, from a new angle); a no
+    with a reason gets that reason answered and the next, smaller ask; past the smallest ask, the model keeps working on the
+    real reason and asks again for whatever fits once it is answered."""
     if kind == "bad_time":
         return NOTE_TIMING
-    if kind == "unclear" and not why_asked and not irritated:
-        return "they said no. " + ANSWER["unclear"]
-    rung = RUNGS[next_rung(offered, kind, irritated)]
-    answer = "They gave no reason and you have asked once: accept it in a few words, don't ask why again." if kind == "unclear" else ANSWER[kind]
-    parts = [f"they said no ({kind.replace('_', ' ')}). {answer}"]
+    parts = [f"they said no ({kind.replace('_', ' ')}). {ANSWER[kind]}"]
     if irritated:
-        parts.append("They are short or annoyed: agree with what is fair, one sentence in all, no humor, no pressure, nothing untrue.")
-    parts.append(f"Answer only that, in under 20 words, then ask for this and only this: {rung['ask']}. Fresh reason, never the same words as an earlier ask.")
-    if tried:
-        parts.append("Already asked for: " + ", ".join(tried) + ". Do not offer those again unless they open the door.")
+        parts.append("They are short or annoyed: agree with what is fair first, no humor, nothing untrue, and keep it to one or two short sentences.")
+    if kind == "unclear":
+        return " ".join(parts)
+    if offered >= LAST_RUNG:
+        parts.append("Every smaller ask has been offered. Don't walk the list again: stay curious about what is really stopping them, "
+                     "answer that from the facts in under 20 words, and once it is answered, ask again for whichever step fits now "
+                     "(the 15-minute call, the demo line or the free pilot), in fresh words.")
+    else:
+        rung = RUNGS[next_rung(offered, kind, irritated)]
+        parts.append(f"Answer the real reason in under 20 words (if you don't know it yet, ask about it first and ask for nothing this turn), "
+                     f"then ask for this and only this: {rung['ask']}. Fresh reason, never the same words as an earlier ask.")
+        if tried:
+            parts.append("Already asked for: " + ", ".join(tried) + ". Do not offer those again unless their reason has been answered or they open the door.")
     return " ".join(parts)
 
 
@@ -565,7 +572,6 @@ class OutboundSession(CallSession):
         self._rung = -1           # the last rung of the ladder we asked for (-1: none yet)
         self._refusals: tuple = ()   # every refusal, as its kind (what the log shows)
         self._rungs: tuple = ()      # every rung we asked for, in order
-        self._why = False         # we have already asked what a bare no is about
         self._person = False      # a person has talked with us (not a recording)
         self._rng = rng
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
@@ -588,7 +594,7 @@ class OutboundSession(CallSession):
                     self.usage[k] += (got or {}).get(k, 0)
             warm_in_background(_warm)
 
-    COUNTERS = ("_opened", "_intro_checked", "_person", "_nos", "_rung", "_refusals", "_rungs", "_why")
+    COUNTERS = ("_opened", "_intro_checked", "_person", "_nos", "_rung", "_refusals", "_rungs")
 
     def _snapshot(self) -> dict:
         return {k: getattr(self, k) for k in self.COUNTERS}
@@ -646,12 +652,9 @@ class OutboundSession(CallSession):
         if refused:
             irritated = bool(IRRITATED.search(caller_text))
             if refused != "bad_time":
-                if self._rung >= LAST_RUNG:   # a no to the smallest ask is a request not to hear from us again
-                    return self._stop(caller_text, on_text, why="refused the last offer (checking back)")
-                self._nos += 1
-            directive = refusal_note(refused, self._rung, tuple(RUNGS[i]["key"] for i in sorted(set(self._rungs))), irritated, self._why)
+                self._nos += 1   # counted for the log only: no number of nos ends a call; only a stop request does
+            directive = refusal_note(refused, self._rung, tuple(RUNGS[i]["key"] for i in sorted(set(self._rungs))), irritated)
             self._refusals += (refused,)
-            self._why = self._why or refused == "unclear"
             note = f"{note} {directive}" if note else directive
         tone = callreview.tone_note(caller_text)
         if tone:
@@ -711,7 +714,7 @@ class OutboundSession(CallSession):
         return Turn("", used, None, 0.0, True)
 
     def _stop(self, caller_text: str, on_text, why: str | None = None) -> Turn:
-        """A clear request to stop (or a no to the smallest ask on the ladder): said and done by code, no model call.
+        """A clear request to stop: said and done by code, no model call. A no, however many, never comes here.
         Marks the number and hangs up."""
         line = random.choice(STOP_LINES)
         if on_text:

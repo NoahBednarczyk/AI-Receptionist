@@ -89,7 +89,7 @@ class LadderTests(unittest.TestCase):
 
     def test_every_answer_is_short_and_makes_no_invented_claim(self):
         for kind, answer in ol.ANSWER.items():
-            self.assertLess(len(answer.split()), 55, kind)
+            self.assertLess(len(answer.split()), 70, kind)   # the root-finding question plus the one true answer
             self.assertNotRegex(answer, r"\$|\d+ ?%|other shops|guarantee", kind)
 
 
@@ -122,26 +122,26 @@ class Calls(_t.ScriptedFixture):
         self.assertIn(ol.RUNGS[3]["ask"], note(self.client))
         self.assertEqual(s._rungs, (0, 1, 2, 3))
 
-    def test_a_bare_no_gets_one_plain_question_about_the_reason_then_it_moves_on(self):
+    def test_every_bare_no_gets_a_curious_question_about_the_reason(self):
         s = self.make(*[reply("end_turn", text("What's the no about?"))] * 3)
         s.respond("Tell me more")
-        s.respond("No thanks.")
-        self.assertIn("what the no is about", note(self.client))
-        s.respond("No.")
-        self.assertIn("don't ask why again", note(self.client))
-        self.assertIn(ol.RUNGS[0]["ask"], note(self.client))
+        for line in ("No thanks.", "No."):
+            s.respond(line)
+            self.assertIn("what the no is about", note(self.client))
+            self.assertIn("different angle", note(self.client))
+            self.assertNotIn("don't ask why again", note(self.client))
 
-    def test_a_no_to_the_last_rung_is_a_stop_request_and_ends_it_at_once(self):
-        s = self.make(reply("end_turn", text("Mind if I check back after the season?")))
+    def test_a_no_to_the_last_rung_does_not_end_the_call(self):
+        """2026-11-13, the user: nothing in code hangs up on a no. Past the smallest ask the model keeps working on the
+        real reason; the number is not put on the do-not-call list."""
+        s = self.make(reply("end_turn", text("Mind if I check back after the season?")), reply("end_turn", text("What's holding you back?")))
         s.respond("Tell me more")
         self.assertEqual(s._rung, 5)
-        said = []
-        turn = s.respond("No, don't.", said.append)
-        self.assertTrue(turn.ended and s.ctx.ended)
-        self.assertIn(said[0], ol.STOP_LINES)
-        self.assertEqual(len(self.client.requests), 1)   # no model call for the stop
-        self.assertEqual([c["name"] for c in turn.tools], ["mark_do_not_call", "log_call", "end_call"])
-        self.assertIn("last offer", turn.tools[0]["args"]["reason"])
+        turn = s.respond("No thanks, we're covered.")
+        self.assertFalse(turn.ended or s.ctx.ended)
+        self.assertEqual(len(self.client.requests), 2)   # the model answers the no
+        self.assertNotIn("mark_do_not_call", [c["name"] for c in turn.tools])
+        self.assertIn("Every smaller ask has been offered", note(self.client))
 
     def test_an_explicit_stop_request_still_ends_the_call_at_once(self):
         s = self.make()
@@ -164,7 +164,7 @@ class Calls(_t.ScriptedFixture):
         control.drop()
         with self.assertRaises(TurnDropped):
             s.respond("No thanks, we're good.", None, control)
-        self.assertEqual((s._nos, s._refusals, s._why), (0, (), False))
+        self.assertEqual((s._nos, s._refusals), (0, ()))
 
     def test_the_call_row_logs_refusals_rungs_and_the_rung_each_yes_came_from(self):
         from datetime import timedelta

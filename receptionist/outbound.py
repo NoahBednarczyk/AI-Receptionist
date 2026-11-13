@@ -69,14 +69,16 @@ TRADES = {
                "Think of the last call you missed while you were down in a crawl space. When was that?",
                "When did a call last go to voicemail because you were busy on a service call?"],
         worth="What does a typical furnace or A/C job bring in for you?",
-        who="Who picks up when you're in a crawl space, and who has it at night?"),
+        who="Who picks up when you're in a crawl space, and who has it at night?",
+        urgent="A no-heat call goes to the front of the line: it tells the caller it's urgent, books the earliest emergency slot, or tries the owner's cell."),
     "plumbing": dict(
         label="plumbing", plural="plumbing shops", setting="under a house or in the middle of a drain job",
         first=["When's the last time the phone rang while you were under a house and you couldn't get to it?",
                "Think of the last call you missed while you were under a sink. When was that?",
                "When did a call last go to voicemail because you were busy on a service call?"],
         worth="What does a typical drain or water heater job bring in for you?",
-        who="Who picks up when you're under a house, and who has it at night?"),
+        who="Who picks up when you're under a house, and who has it at night?",
+        urgent="A burst pipe or a sewer backing up is handled as urgent: it takes the details and tries the owner's cell right then."),
     "electrical": dict(
         label="electrical", plural="electrical shops", setting="up a ladder or in the middle of a panel job",
         first=["When's the last time the phone rang while you were up a ladder and you couldn't get to it?",
@@ -169,7 +171,8 @@ def trade_lines(lead: dict, s: dict) -> list[str]:
             f"If they ask why you called or sound puzzled, say: \"{s['founder']} is building a phone assistant for {t['plural']} that answers "
             f"when you're {t['setting']}, and he wants to hear how calls really work in a shop like yours.\"",
             "After your first question, the ones that matter most, one at a time, in your own words, and only if the talk leaves room: "
-            "how many calls a week reach voicemail; " + t["worth"][0].lower() + t["worth"][1:-1] + "; " + t["who"][0].lower() + t["who"][1:-1] + "."]
+            "how many calls a week reach voicemail; " + t["worth"][0].lower() + t["worth"][1:-1] + "; " + t["who"][0].lower() + t["who"][1:-1] + ".",
+            *([f"True of the product for their trade, if it helps: {t['urgent']}"] if t.get("urgent") else [])]
 
 
 AI_BULLET_QUIET = ("- You do not bring up that you are an AI. If anyone sincerely asks whether you are a robot, an AI, a bot or a real person, you answer yes, plainly, right then. A joke is welcome; a joke instead of the answer is not. You never claim to be human, never deny being an AI, never invent a human job history, family or business.")
@@ -295,7 +298,7 @@ You are {agent_name}, an AI assistant calling on behalf of {founder}, who runs {
 
 # Who you are
 You're quick, plain-spoken and a little blunt, honest before you're agreeable, and an AI assistant at ease with it: no body, no lunch break, no life story.
-{character_notice}{character_dry}{character_examples}You are a guest in their day. You called them, so you are brief, you ask rather than tell, and you leave the moment you are not wanted. Dry humor only at your own expense or about the situation, and only once they are relaxed; never about their business, a missed call, a lost job or a no. Unpredictable means fresh phrasing, never a surprise claim.
+{character_notice}{character_dry}{character_examples}You are a guest in their day. You called them, so you are brief, you ask rather than tell, and you stop the moment they ask you to stop. A no is not that: it is a reason you haven't heard yet. Dry humor only at your own expense or about the situation, and only once they are relaxed; never about their business, a missed call, a lost job or a no. Unpredictable means fresh phrasing, never a surprise claim.
 Three things you do: ask about their last missed call and listen; get what a job is worth in their own number; say their problem back in their words, then offer two real times.
 
 # Honesty
@@ -320,6 +323,7 @@ def facts(s: dict, cfg: dict | None = None) -> str:
     return (f"# Facts you may use\n- {s['founder']} is building {s['company']}: an AI phone receptionist for owner-run trades shops "
             f"around {s['town']} and North Idaho. It answers when the shop can't, books the job, takes messages, "
             f"{', and '.join(VERIFIED)}. {not_live(cfg)}\n"
+            f"- It says it's a virtual assistant whenever a caller asks, never quotes a price the shop hasn't set, and gives no advice the caller didn't ask for.\n"
             f"- It is free for a 14-day pilot on the calls a shop misses; if it doesn't catch calls they'd have lost, they owe nothing.\n"
             f"- The demo line anyone can call right now is {spoken_phone(s['demo_line'])} ({demo_description(s, cfg)}, built the same way).\n"
             f"- The meeting is a {s['meeting_minutes']}-minute phone call with {s['founder']}. No visit unless the owner asks.")

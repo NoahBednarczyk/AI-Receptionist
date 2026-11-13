@@ -25,7 +25,8 @@ for why something is the way it is). Design doc: https://claude.ai/artifact/GtSq
   pitch, demo line, verified capabilities), (2) its character (shared with the receptionist, plus the "guest in their day"
   mode; it never says "sales call", "cold call", "pitch" or "selling"), (3) Part E: code never ends a call because the owner
   said no; a refusal is classified, answered, and the ask moves down a ladder of smaller yeses. An explicit stop request
-  (and refusing the last rung) still ends the call at once. **Still off limits, and not to be raised with the user:** outbound
+  still ends the call at once. Since 2026-11-13 (user's word) a no to the last rung no longer ends the call: every no gets
+  a curious root-cause question, an answer, and a next ask; nothing in code hangs up on a no. **Still off limits, and not to be raised with the user:** outbound
   `mode`, `cold_enabled`, consent handling, `can_call` and its gates, call hours, attempt limits, the render cron, the block
   runner. The AI disclosure in the intro stays on and nothing untrue is ever said.
 

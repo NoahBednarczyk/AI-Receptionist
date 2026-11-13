@@ -132,7 +132,7 @@ class PromptLintTests(unittest.TestCase):
         text = outbound.PLAYBOOK.read_text()
         for o in ("Send me some info", "How much", "Is this a robot", "how'd you get my number"):
             self.assertIn(o.lower(), text.lower())
-        self.assertIn("Notes from code name what the no is about", text)   # the six kinds of no and their answers live in code (outbound_live.ANSWER)
+        self.assertIn("Notes from code name the next, smaller ask", text)   # the six kinds of no and their answers live in code (outbound_live.ANSWER)
         from receptionist import outbound_live
         self.assertEqual(set(outbound_live.KINDS) | {"unclear"}, set(outbound_live.ANSWER))
 

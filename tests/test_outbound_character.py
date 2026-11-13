@@ -28,7 +28,7 @@ class SharedCharacterTests(unittest.TestCase):
 
     def test_the_outbound_mode_is_a_guest_in_their_day(self):
         text = stable()
-        for needle in ("You are a guest in their day", "you ask rather than tell", "leave the moment you are not wanted",
+        for needle in ("You are a guest in their day", "you ask rather than tell", "you stop the moment they ask you to stop",
                        "only at your own expense or about the situation", "never about their business, a missed call, a lost job or a no",
                        "fresh phrasing, never a surprise claim"):
             self.assertIn(needle, text)
