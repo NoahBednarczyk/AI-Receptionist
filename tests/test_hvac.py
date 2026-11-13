@@ -365,6 +365,15 @@ class HeatingSeasonTests(unittest.TestCase):
         self.assertEqual(safety.match("hvac", "La calefacción no funciona", "es", heating_season=True)[0], "no_heat_freezing")
         self.assertIsNone(safety.match("hvac", "La calefacción no funciona", "es", heating_season=False))
 
+    def test_a_contraction_does_not_hide_no_heat(self):
+        """Found on the 1:45 AM live call: "My heat's out" matched nothing, so no safety line and no problem mode."""
+        for said in ("My heat's out.", "my furnace's out", "Hey man. He's out. My heat's out.", "the boiler\u2019s dead", "heat's not working"):
+            got = safety.match("hvac", said, "en", heating_season=True)
+            self.assertIsNotNone(got, said)
+            self.assertEqual(got[0], "no_heat_freezing", said)
+        self.assertIsNone(safety.match("hvac", "My heat's out.", "en", heating_season=False))   # out of season it still needs a cold word
+        self.assertEqual(safety.match("hvac", "My heat's out and it's freezing.", "en")[0], "no_heat_freezing")
+
     def test_the_service_is_not_defined_by_the_weather(self):
         emergency = [s for s in HVAC["services"] if s["id"] == "emergency_visit"][0]
         self.assertNotIn("freezing", emergency["name"])

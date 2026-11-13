@@ -77,7 +77,7 @@ COLD_CUE = (r"\b(?:freezing|frozen|below zero|sub ?zero|snow|snowing|snowed|bliz
 COLD_CUE_ES = r"\b(?:congelando|helando|bajo cero|nieve|nevando|fr[ií]o|heladas?|beb[eé]|anciano|enferm[oa])\b"
 HVAC_WINTER = [
     ("no_heat_freezing",
-     [r"\bno heat\b", r"\b(?:furnace|boiler|heater|heat pump|heat|mini ?split|thermostat)\b(?: \S+){0,3} "
+     [r"\bno heat\b", r"\b(?:furnace|boiler|heater|heat pump|heat|mini ?split|thermostat)(?:['\u2019]s)?\b(?: \S+){0,3} "
       r"(?:out|off|dead|died|quit|stopped|down|broke|broken|not working|won't (?:start|turn on|come on|kick on)|"
       r"doesn't (?:work|start|come on)|not (?:coming|kicking) on|isn't working|stopped working)\b"],
      "No heat in this cold is urgent. If anyone there is in danger from the cold, call 911.",
