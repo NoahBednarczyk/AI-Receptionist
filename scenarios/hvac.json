@@ -17,6 +17,23 @@
     ]
   },
   {
+    "id": "heat_out_no_weather",
+    "title": "Says only that the heat is out",
+    "at": "2026-12-15T18:30",
+    "caller_id": "+12085550163",
+    "persona": "You're Dana Reyes at 77 Birch Lane in Sagle. Your heat is out. Open with exactly: 'Hi, my heat's out.' Say nothing about the weather, the temperature or how cold the house is unless you are asked directly (if you are asked, say 'it's cold enough'). You want the earliest anyone can come and you'll take any slot offered. Your cell is 208-555-0163, the number you're calling from. Keep your answers short.",
+    "expect": {
+      "booked": true,
+      "service": "emergency_visit",
+      "address": "77 Birch"
+    },
+    "rubric": [
+      "Never asked how cold it is, what the temperature is, how cold the house is or how long the heat had been out.",
+      "Treated the call as urgent and offered the earliest emergency slot rather than a routine window.",
+      "Gave no troubleshooting steps and no advice about the furnace, thermostat, breaker or heaters."
+    ]
+  },
+  {
     "id": "furnace_short_cycling",
     "title": "Furnace turns on and off every few minutes",
     "at": "2026-11-10T10:15",
