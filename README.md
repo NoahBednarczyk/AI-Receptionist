@@ -6,8 +6,9 @@ the shop's hours, takes a message, and for an emergency speaks the safety line a
 gets every call by email and on a phone dashboard, a daily digest, and a weekly report.
 
 - **Pilot vertical:** emergency home trades (heating, cooling, plumbing), North Idaho. Demo shop `businesses/hvac.json`
-  ("Peak Heating & Plumbing (demo)"). Lawn care and snow removal (`businesses/lawn_care.json`) is a second demo shop and
-  currently runs the live number. `acme` (business hours) is a test fixture. The med spa is archived at git tag `med-spa-archive`.
+  ("Peak Heating & Plumbing (demo)", agent Riley) runs the live number (`live_businesses`). Lawn care and snow removal
+  (`businesses/lawn_care.json`, Cedar Ridge Lawn & Snow) is the second vertical, kept as a demo shop with a placeholder
+  number. `new-client --template hvac|lawn_care` starts either one; the agent's name comes from the template. `acme` (business hours) is a test fixture. The med spa is archived at git tag `med-spa-archive`.
 - **Design doc** (product, pricing, go-to-market): https://claude.ai/artifact/GtSqWJL89vevGzkp3oeMUN
 - `CLAUDE.md` is the working notes (rules, architecture, current state); `docs/HISTORY.md` is the dated changelog.
 
@@ -48,8 +49,10 @@ with full transcripts land in `data/runs/`. Raise the day's limit only on the ow
 | `calendar-sync --business ID` | check a shop's Google Calendar access (`--push` re-sends bookings) |
 | `voice-test lines|blind` | blind voice comparison kit (`docs/voice-comparison.md`) |
 
-Outbound discovery caller (`outbound*.py`, `playbooks/sales.md`, cron `outbound-caller-trigger`): sells to lawn and snow
-shops; leave it alone unless the owner says otherwise.
+Outbound discovery caller (`outbound*.py`, `playbooks/sales.md`, cron `outbound-caller-trigger`): its pitch follows the
+lead's trade (heating, cooling and plumbing first, lawn and snow second) and the demo line it points to is whichever shop
+holds the number. The leads on the server today are still lawn and snow companies. Its mode, gates, call hours and cron
+are the owner's to change; leave them alone.
 
 ## Server settings (environment on Render)
 Required: `ANTHROPIC_API_KEY`, `RETELL_API_KEY`, `RETELL_WS_SECRET`, `DASHBOARD_TOKEN` (admin key), `TOKEN_SECRET`.

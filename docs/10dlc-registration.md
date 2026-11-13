@@ -30,9 +30,11 @@ code, and texts the business owner an alert about the booking. Messages are sent
 and gave their number during the call, or to the business owner. No marketing."
 
 Sample messages (2-5 are required; these match the code):
-1. `Cedar Ridge Lawn & Snow: you're booked Fri Nov 13, 8-10 AM at 1 Main St. Confirmation A1007. Reply STOP to opt out.`
-2. `Cedar Ridge Lawn & Snow: your visit moved to Mon Nov 16, 10-12. Confirmation A1007. Reply STOP to opt out.`
-3. `Cedar Ridge Lawn & Snow: your Nov 13 visit (A1007) is cancelled. Reply STOP to opt out.`
+The first shop is a heating, cooling and plumbing company (the pilot vertical), so the samples use one. A lawn care or
+snow shop's texts have the same shape with its own name and service.
+1. `Peak Heating & Plumbing: you're booked for furnace repair, Fri Nov 13, 8-10 AM. Confirmation A1007. Your technician will text about 30 minutes before arriving. Reply STOP to opt out.`
+2. `Peak Heating & Plumbing: your visit A1007 moved to Mon Nov 16, 10-12. Reply STOP to opt out.`
+3. `Peak Heating & Plumbing: your visit A1007 is cancelled. Reply STOP to opt out.`
 4. `New booking A1007: Pat, 208-555-0142, Fri 8-10, sprinkler leak.`   (owner alert)
 
 ## How the callers opted in (the consent answer)
@@ -48,7 +50,7 @@ Twilio may want a *written* description of the opt-in flow plus a screenshot or 
   (`Notifier.handle_inbound_sms`, table `sms_optout`). Twilio answers STOP/HELP itself on the Messaging Service; our
   table keeps the queue from texting a number that opted out.
 - Owner alerts go only to the shop's own `owner_sms`.
-- HELP reply to set on the Messaging Service: "Cedar Ridge Lawn & Snow booking texts. Questions: call (208) 555-0100. Reply STOP to opt out."
+- HELP reply to set on the Messaging Service: "Peak Heating & Plumbing booking texts. Questions: call (208) 555-0100. Reply STOP to opt out." (use the shop's own name and number)
 
 ## Not built yet (needed before texting goes live)
 - A route for Twilio's inbound-message webhook that calls `Notifier.handle_inbound_sms` (the method is ready and tested;

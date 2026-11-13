@@ -26,7 +26,6 @@ TEMPLATE_ID = DEFAULT_TEMPLATE
 # What differs between the trades: wording that must fit the shop's own work, and what is kept from the demo shop.
 PROFILES = {
     "hvac": dict(
-        agent_name="Sam",
         no_quote="We don't quote repair or replacement prices over the phone. The technician gives a firm price on site "
                  "before any work starts.",
         tip_example="a furnace that won't start: check the thermostat is set to heat",
@@ -38,7 +37,6 @@ PROFILES = {
         rules="{agent} never gives advice about gas, electrical work, stoves or fireplaces, and never quotes a repair price.",
         ),
     "lawn_care": dict(
-        agent_name="Riley",
         no_quote="We don't quote a price over the phone for a specific property. The crew lead gives a firm price on site "
                  "before any work starts.",
         tip_example="a sprinkler system that won't shut off: turn off the water at the main shutoff valve",
@@ -167,7 +165,7 @@ def build(intake: dict, template: dict) -> dict:
     biz = json.loads(json.dumps(template))   # a private copy
     prof = profile_for(template)
     spoken = intake.get("spoken_name") or name
-    biz.update(id=slug(name), name=name, spoken_name=spoken, agent_name=intake.get("agent_name") or prof["agent_name"],
+    biz.update(id=slug(name), name=name, spoken_name=spoken, agent_name=intake.get("agent_name") or template["agent_name"],
                timezone=intake.get("timezone") or template["timezone"], phone_numbers=[ours] if ours else [],
                hours=parse_hours(intake.get("hours")), owner_sms=owner, texting_enabled=False)
     for k in ("demo_seed", "simulate_quick", "simulate_for"):

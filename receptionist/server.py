@@ -15,6 +15,7 @@ Environment:
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -185,10 +186,21 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
     contact_limit = access.FailureLimit(per_minute=3)
     site_page = Path(__file__).resolve().parent.parent / "site" / "index.html"
 
+    # What the demo line plays is read from the shop file that holds the number, so the page cannot drift from it.
+    trade_words = {"hvac": "a heating, cooling and plumbing shop", "lawn_care": "a lawn care and snow shop",
+                   "home_services": "a home services shop"}
+
+    def demo_shop_sentence() -> str:
+        biz = business_for_number(cfg, outbound.settings(cfg)["demo_line"])
+        if not biz:
+            return "It plays a demo shop"
+        name = biz.get("spoken_name") or biz.get("name")
+        return f"It answers as {name}, {trade_words.get(biz.get('vertical'), 'a local shop')}"
+
     @app.get("/", response_class=HTMLResponse)
     def landing():
         try:
-            return HTMLResponse(site_page.read_text())
+            return HTMLResponse(site_page.read_text().replace("{{DEMO_SHOP}}", html.escape(demo_shop_sentence())))
         except OSError:
             raise HTTPException(404)
 

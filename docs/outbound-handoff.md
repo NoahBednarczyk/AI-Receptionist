@@ -1,12 +1,19 @@
 # Handoff to the Manager: what changed, and the new cold caller
 
+> **Status as of 2026-11-13.** This is the 2026-11-01 handoff, kept as written. Since then: the trades shop (`hvac.json`,
+> "Peak Heating & Plumbing (demo)", agent Riley) holds the live number and `live_businesses` is `["hvac"]`; everything
+> below was pushed and is deployed; the caller's pitch follows the lead's trade (heating, cooling and plumbing first, lawn
+> and snow second) and describes the demo line from the shop that holds the number; refusals move down a ladder of
+> smaller asks instead of ending the call (only a stop request, or a no to the last rung, ends it); it never says "sales
+> call". The 113 leads on the server are still lawn and snow companies. See `CLAUDE.md` for the current state and
+> `docs/HISTORY.md` for the dated changes. Where this file says "lawn_care" is live, or "sales call", read it as history.
 Written 2026-11-01 by the Claude Code session. Repo: `/Users/noahbednarczyk/Documents/receptionist` (GitHub NoahBednarczyk/AI-Receptionist, deployed on Render). 269 tests pass. **Everything below is committed locally; nothing from this stretch is pushed, and the cold caller has never placed a call or been run against the model.**
 
 ## 1. Other changes this session (not the cold caller)
 
 **Cost work**
 - `spend-report` now reads Anthropic's Admin API: finished days from the cost report, today priced from token counts (`prices_per_mtok`; cache reads 0.1x, 5-minute writes 1.25x, 1-hour writes 2x), split by model, plus CSV export.
-- Found two self-inflicted cost drivers and fixed them locally: test/simulate runs now use the 5-minute cache (the live server keeps 1 hour), and the server only pre-warms shops in `live_businesses` (just `lawn_care`).
+- Found two self-inflicted cost drivers and fixed them locally: test/simulate runs now use the 5-minute cache (the live server keeps 1 hour), and the server only pre-warms shops in `live_businesses` (then just `lawn_care`; now `hvac`).
 - Retell's own post-call summary (about 2 cents a call, duplicated by ours) is switched off in code (`post_call_analysis_model: None`) but **not applied to the live agent** until `retell-tune` is run with Noah's yes.
 - Retell costs about 16.3 cents a minute (voice 44%, engine 34%, phone 9%).
 

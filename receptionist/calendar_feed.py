@@ -1,6 +1,6 @@
 """An iCalendar (.ics) feed of a business's bookings, for subscribing in Google Calendar or Apple Calendar.
 
-One-way: the feed shows what Sam booked. Calendar apps re-read a subscribed feed every few hours, so a new booking can
+One-way: the feed shows what the assistant booked. Calendar apps re-read a subscribed feed every few hours, so a new booking can
 take a while to appear, and events added by hand in the calendar do not block availability.
 """
 from __future__ import annotations
