@@ -329,8 +329,8 @@ def _sent_note(ctx: ToolContext, what: str) -> str:
     """What to tell the caller about a text, so the agent never promises one that isn't sent."""
     if ctx.biz.get("texting_enabled"):
         return f"A {what} text is on its way."
-    return ("No confirmation text goes out, so give the caller the confirmation number to write down. Don't bring "
-            "up texts unless the caller asks; the technician still calls or texts before arriving.")
+    return ("No confirmation text goes out. Don't read out the confirmation number or bring up texts unless the caller "
+            "asks; the technician still calls or texts before arriving.")
 
 def book_appointment(ctx: ToolContext, a: dict) -> dict:
     biz, bid = ctx.biz, ctx.biz["id"]
