@@ -80,18 +80,22 @@
   "services": [
     {
       "id": "furnace_repair",
+      "problem": true,
       "name": "Furnace repair: gas, propane, oil and electric furnaces that won't start, short-cycle, blow cold air or make noise"
     },
     {
       "id": "boiler_repair",
+      "problem": true,
       "name": "Boiler and hydronic heat repair: radiant floors, baseboard and radiators"
     },
     {
       "id": "heat_pump",
+      "problem": true,
       "name": "Heat pump and ductless mini-split repair and service"
     },
     {
       "id": "ac_repair",
+      "problem": true,
       "name": "Air conditioning repair: an AC that isn't cooling or won't turn on"
     },
     {
@@ -100,14 +104,17 @@
     },
     {
       "id": "water_heater",
+      "problem": true,
       "name": "Water heater repair or replacement, tank and tankless"
     },
     {
       "id": "leak_repair",
+      "problem": true,
       "name": "Leak, pipe and fixture repair: leaking pipes, dripping faucets, running or leaking toilets"
     },
     {
       "id": "drain_cleaning",
+      "problem": true,
       "name": "Drain cleaning and clogs"
     },
     {

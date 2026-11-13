@@ -38,9 +38,10 @@ class SizeAndWordingTests(unittest.TestCase):
         rules = self.prompt.split("# How you speak")[0]
         self.assertIn("# Who you are", rules)
         self.assertEqual(self.prompt.count("# Who you are"), 1)
-        for habit in ("You notice.", "You get curious when something doesn't add up.", "You're funny the dry way"):
+        for habit in ("You notice.", "You ask a question for two reasons only", "You're funny the dry way, in easy mode only"):
             self.assertIn(habit, rules)
-        self.assertIn("Aeration in January?", rules)
+        self.assertIn("the three-hundred-foot driveway", rules)         # this shop's own example reactions, from TERMS
+        self.assertNotIn("Aeration in January?", rules)                 # no example written for another vertical
 
     def test_the_old_character_bullets_are_gone(self):
         for gone in ("semi-sarcastic", "Be human in the small ways", "Sound inviting.", "End most of your lines on a rising note",

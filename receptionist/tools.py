@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
-from . import calendar_busy, gcal, schedule
+from . import calendar_busy, gcal, prompts, schedule
 from .speech import fictional_phone, normalize_phone, spoken_date, spoken_phone, spoken_time
 from .store import Store
 
@@ -321,7 +321,8 @@ def check_availability(ctx: ToolContext, a: dict) -> dict:
     return {**unread,
         "windows": [{"window_id": w["window_id"],
                      "spoken": schedule.spoken_window(ctx.biz, w["window_id"], ctx.now, ctx.language)} for w in wins],
-        "note": "Soonest first. Offer the caller at most two of these.",
+        "note": "Soonest first. Offer the caller at most two of these."
+                + (" " + prompts.MODE_PROBLEM if service.get("emergency") or service.get("problem") else ""),
     }
 
 

@@ -371,5 +371,31 @@ class HeatingSeasonTests(unittest.TestCase):
         self.assertNotIn("freezing weather", (Path("receptionist/playbooks/hvac.md").read_text()))
 
 
+class CallModeTests(unittest.TestCase):
+    """Problem or easy is decided by code: the call starts easy, and a safety line or a problem service flips it."""
+    def test_every_call_starts_in_easy_mode_and_the_two_lines_differ(self):
+        from datetime import datetime
+        self.assertIn(prompts.MODE_EASY, prompts.call_state(HVAC, datetime(2026, 11, 10, 10), None, None, []))
+        self.assertNotIn("Call mode: problem", prompts.call_state(HVAC, datetime(2026, 11, 10, 10), None, None, []))
+        self.assertIn("no jokes", prompts.MODE_PROBLEM)
+
+    def test_problem_services_and_the_emergency_service_carry_the_problem_line_but_a_tune_up_does_not(self):
+        import tests.test_logic as tl
+        from datetime import datetime
+        store = Store(":memory:")
+        ctx = ToolContext(HVAC, store, datetime(2026, 11, 10, 10, 15), "+12085550100", "c-mode", None)
+        for sid, expect in (("emergency_visit", True), ("furnace_repair", True), ("hvac_tune_up", False), ("estimate", False)):
+            note = run_tool(ctx, "check_availability", {"service_id": sid})[0]["note"]
+            self.assertEqual("Call mode: problem" in note, expect, sid)
+
+    def test_each_vertical_gets_its_own_example_reactions(self):
+        lawn = prompts.stable_prompt(load_business(CFG, "lawn_care"))
+        trades = prompts.stable_prompt(HVAC)
+        self.assertIn("the old boiler, the crawl space", trades)
+        self.assertNotIn("three-hundred-foot driveway", trades)
+        self.assertIn("three-hundred-foot driveway", lawn)
+        self.assertNotIn("the old boiler", lawn)
+
+
 if __name__ == "__main__":
     unittest.main()
