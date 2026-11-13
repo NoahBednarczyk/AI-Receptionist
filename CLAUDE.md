@@ -74,12 +74,23 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   $0.009 (Sonnet: $0.177) but agreed on only 57 of 63 criteria; 5 of the 6 differences were Haiku passing what Sonnet
   failed, including the invented recording opt-out (a gate failure). Summary on Haiku would save under a cent a call.
   Keep `models.grader` and `models.postcall` on Sonnet.
+- **Outbound caller alignment (spec `.internal/specs/2026-11-12-outbound-alignment-spec.md`, local commits after 220a6ae, NOT
+  pushed, NO simulated or live call run on them yet, budget spent):** trade-aware pitch from the lead's `type`
+  (`outbound.TRADES`), demo line described from the shop that holds the number, claims limited to `outbound.VERIFIED`
+  (dashboard, per-call email) with the "not live" sentence read from the shop files; character shared with the receptionist
+  (`prompts.CHARACTER_*`) plus a "guest in their day" mode; `sales`/`cold call`/`pitch`/`selling` banned and flagged; replies
+  capped at 30 words through `Sentences`; stable prompt 2,481 to about 1,600 words. Part E replaced the two-no rule: code
+  classifies each refusal (six kinds, `outbound_live.refusal_kind`) and moves the ask down a six-rung ladder
+  (`outbound_live.RUNGS`); only a stop request or a no to the last rung ends a call. `python -m receptionist outbound-sim`
+  runs 12 simulated owners (about $0.72, `--estimate` first); `outbound-agent --diff` shows the Retell outbound agent patch
+  (keywords, post-call analysis model), `--apply` needs the user's yes. Still to do: the full 12-owner run, the same owners
+  against the old code for call length, the live test call to the user's phone (about $0.45), leads for the trades (user's).
 - **Say channel is OFF** (`agent.speech_channel: false`). Full hvac run 2026-11-12: private notes up to 71 words, 77% of
   blocks tagged, so the stop rule (no private note over 12 words) failed; it passed only on lawn_care. The old blocklist
   is the active filter again. The flag is shared with the outbound caller's prompt builder, so the outbound prompt also
   went back to its pre-channel form (no outbound file was edited). Turn the channel on only after a full hvac run with no
   note over 12 words.
-- **Tests:** 487 pass in about 13 s with no API key; CI in `.github/workflows/tests.yml` (never run on GitHub).
+- **Tests:** 549 pass in about 13 s with no API key; CI in `.github/workflows/tests.yml` (never run on GitHub).
 - **Simulation, hvac (the pilot), 2026-11-12:** first FULL run (16 scenarios): 10/16, gate (9/10 on two runs, zero
   failures on safety, invented prices or policies, AI disclosure) NOT met. Failures: a name/address question stacked on a
   time question (three scenarios), three windows offered, an invented recording opt-out, "Uh, getting that down"
