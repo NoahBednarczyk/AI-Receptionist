@@ -178,44 +178,6 @@ class CodeSpokenIntroTests(_t.ScriptedFixture):
         self.assertNotIn("say your name", last_note(self.client))
 
 
-class TwoNoRuleTests(_t.ScriptedFixture):
-    def test_the_second_calm_no_ends_the_call(self):
-        s = self.make(*[reply("end_turn", text("Hm."))] * 3)
-        s.respond("Why are you calling?")
-        s.respond("Not interested.")
-        self.assertIn("one sincere question", last_note(self.client))
-        s.respond("No thanks.")
-        self.assertIn("end_call", last_note(self.client))
-        self.assertIn("no parting quip", last_note(self.client))
-
-    def test_an_irritated_first_no_ends_the_call(self):
-        s = self.make(*[reply("end_turn", text("Hm."))] * 2)
-        s.respond("Why are you calling?")
-        s.respond("No! Not interested.")
-        self.assertIn("end_call", last_note(self.client))
-
-    def test_the_ai_refusal_offers_noah(self):
-        s = self.make(*[reply("end_turn", text("Hm."))] * 2)
-        s.respond("I don't want to talk to an AI.")
-        note = last_note(self.client)
-        self.assertIn("Noah can call them himself", note)
-        self.assertIn("never claim to be human", note)
-        self.assertEqual(s._nos, 1)
-
-    def test_no_meeting_ask_after_two_and_none_after_the_second_no(self):
-        s = self.make(*[reply("end_turn", text("Fifteen minutes Tuesday, which is easier?"))] * 3)
-        s.respond("Why are you calling?")
-        s.respond("Hm.")
-        s.respond("Go on.")
-        self.assertIn("No more meeting asks", last_note(self.client))
-        self.assertEqual(ol.MAX_NOS, 2)
-        for gone in ("NOTE_LAST_TRY", "NOTE_NO_AGAIN_CALM"):
-            self.assertFalse(hasattr(ol, gone))
-
-    def test_a_no_never_gets_a_joke_or_a_tease(self):
-        self.assertIn("No joke about the no, no teasing", ol.NOTE_NO_ONCE)
-
-
 class TimingTests(_t.ScriptedFixture):
     def test_a_bad_time_is_not_a_no(self):
         s = self.make(*[reply("end_turn", text("Sure."))] * 2)
@@ -225,7 +187,7 @@ class TimingTests(_t.ScriptedFixture):
         self.assertIn("bad time for them", last_note(self.client))
         self.assertIn("Callback requested", last_note(self.client))
 
-    def test_a_flat_no_still_counts_and_picking_a_day_is_not_a_stop(self):
+    def test_a_no_with_a_busy_reason_is_a_bad_time_and_picking_a_day_is_not_a_stop(self):
         self.assertFalse(ol.stop_request("don't call me today, try Thursday"))
         self.assertIsNone(ol.NO_SIGNAL.search("not right now"))
         self.assertTrue(ol.TIMING.search("not right now"))
@@ -233,8 +195,8 @@ class TimingTests(_t.ScriptedFixture):
         s = self.make(*[reply("end_turn", text("Ok."))] * 2)
         s.respond("Why are you calling?")
         s.respond("no thanks, I'm busy")
-        self.assertEqual(s._nos, 1)
-        self.assertNotIn("bad time for them", last_note(self.client))
+        self.assertEqual((s._nos, s._refusals), (0, ("bad_time",)))
+        self.assertIn("bad time for them", last_note(self.client))
 
 
 class HonestPitchTests(unittest.TestCase):
@@ -279,7 +241,7 @@ class TakenBackTurnsAreNotCountedTwice(_t.ScriptedFixture):
         self.assertEqual(s._nos, 0)
         s.respond("I'm not interested in talking to Aaron.")
         self.assertEqual(s._nos, 1)
-        self.assertIn("one sincere question", last_note(self.client))
+        self.assertIn("what the no is about", last_note(self.client))
         self.assertNotIn("end_call", last_note(self.client))
 
     def test_a_taken_back_no_does_not_count_either(self):
@@ -291,4 +253,4 @@ class TakenBackTurnsAreNotCountedTwice(_t.ScriptedFixture):
         self.assertEqual(s._nos, 0)
         s.respond("Not interested.")
         self.assertEqual(s._nos, 1)
-        self.assertIn("one sincere question", last_note(self.client))
+        self.assertIn("what the no is about", last_note(self.client))

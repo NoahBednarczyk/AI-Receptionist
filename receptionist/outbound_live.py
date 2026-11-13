@@ -89,22 +89,105 @@ AI_QUESTION = re.compile(r"(\b(are|is) (you|this|that)\b.*\b(robot|a\.?i\.?|arti
 AI_REFUSAL = re.compile(r"\b(not interested in|don'?t want to|won'?t|not gonna|i don'?t)\b.{0,20}\b(talk|speak|deal)\w*\b.{0,12}\b(an? )?(a\.?i\.?|ai|bot|robot|machine|computer|recording)\b|"
                         r"\bi (hate|don'?t do) (robo ?calls|bots|robots|ai)\b", re.I)
 
-# What the caller said that counts as a refusal, and what our own reply counts as a meeting ask. Code keeps these
-# counts and hands the model the next move as a note, so the model has no state to reason about out loud.
+# What the caller said that counts as a refusal. Code keeps the count, classifies each refusal into one of six kinds, and
+# hands the model the next move as a note: it never ends a call on a no. A call ends on a yes, a stop request (below), the
+# owner hanging up, a voicemail, or Retell's own call-length limit.
 NO_SIGNAL = re.compile(r"\b(not interested|no thanks|no thank you|we'?re (good|fine|all set)|i'?m (good|fine|all set)|"
-                       r"don'?t need (it|that|this)|pass(?! (it|that|this|me|you|along|the)\b))\b|^\W*no\W*$", re.I)
-# A bad time is not a refusal: it gets a callback, not a "no".
+                       r"don'?t need (it|that|this)|(i|we) (already )?(said|told you) no|pass(?! (it|that|this|me|you|along|the)\b))\b|^\W*no\W*$|^\W*no\W+(don'?t|do not|never|not|already|thanks|thank)\b", re.I)
+# A bad time gets a callback: it is a kind of refusal, but it never walks the ladder.
 TIMING = re.compile(r"\b(not (right )?now|bad time|busy|in the middle of|on a job|driving|call (me )?(back|later)|later|another time)\b", re.I)
 IRRITATED = re.compile(r"\b(i (already )?(said|told you)|again|seriously|for the last time|quit|enough|waste of)\b|!", re.I)
-MEETING_ASK = re.compile(r"\b(fifteen|15|ten|10)[- ]minutes?\b|\bwhich (is|works) (easier|better)\b", re.I)
-NOTE_NO_ONCE = ("they said no. Accept it in a few words, then ask one sincere question about the reason (is it the timing, the AI, or are "
-                "missed calls simply not a problem for them). Take the answer at face value. No joke about the no, no teasing, no pitch.")
-NOTE_NO_AGAIN = ("they said no again. Thank them, wish them a good season, call log_call, then end_call. No further ask and no parting quip.")
-NOTE_NO_MORE_ASKS = "No more meeting asks on this call."
-NOTE_AI_REFUSAL = ("they don't want to talk to an AI. Say plainly that yes, you are one (never claim to be human), and offer the alternative: "
-                   "{founder} can call them himself. One short question. Nothing else.")
-NOTE_TIMING = ("bad time for them. Offer one specific callback time from the open list, get a yes or a better time, call log_call with "
-               "Callback requested and the date, then end_call. No questions about their calls now.")
+NO_TRUST = re.compile(r"\b(don'?t|do not|wouldn'?t|never) trust\b|\bcustomers (want|expect|like|talk to|need)\b.{0,25}\b(real|human|person|people)\b|"
+                      r"\b(real|actual) (person|people|human)s?\b.{0,20}\b(only|instead|rather|prefer|want)\b", re.I)
+NO_MONEY = re.compile(r"\b(can'?t|cannot|don'?t|do not) (afford|have the (money|budget))\b|\b(too|way too) (expensive|much)\b|\bno (money|budget)\b|"
+                      r"\bnot in the budget\b|\bwhat does it cost\b.{0,20}\bno\b", re.I)
+TRIED = re.compile(r"\b(already )?(tried|used|had|have) (it|that|one|something|a service|an? \w+ (service|system|thing|app))\b.{0,25}\b(before|already|didn'?t|never|worked|bad|waste)\b|"
+                   r"\bdidn'?t work\b|\bgot burned\b|\bwe(?:'ve| have) tried\b", re.I)
+DISLIKES = re.compile(r"\b(hate|can'?t stand|sick of) (cold |sales |these |robo ?)?(calls|call|solicit\w*|telemarket\w*)\b|"
+                      r"\b(don'?t|do not) (like|want) (being )?(called|calls|phone calls|solicit\w*|these calls)\b|"
+                      r"\bhow(?:'d| did) you get (my|this) (number|info)\b|\bsolicit\w*\b|\brobo ?calls?\b", re.I)
+NO_NEED = re.compile(r"\bwe (always )?(answer|pick up|get) (our|the|every|all)\b|\b(we|i) (never|don'?t) miss\b|\bwe'?re covered\b|"
+                     r"\b(wife|husband|office|secretary|girl|dispatcher|son|daughter) (answers|picks up|handles|takes)\b|\balready have (someone|somebody|a service|an answering)\b|"
+                     r"\bno need\b|\bnot (a problem|an issue)\b", re.I)
+KINDS = ("bad_time", "no_need", "no_trust_ai", "no_money", "tried_before", "dislikes_calls")
+
+
+def refusal_kind(text: str) -> str | None:
+    """None when the caller did not refuse. Otherwise one of the six kinds, or "unclear" for a bare no, so the model
+    asks what the no is about instead of answering an objection that was never raised. "My wife answers the phone" or
+    "we tried one once" are answers to our questions, not refusals, unless they come with a decline."""
+    explicit = bool(NO_SIGNAL.search(text) or AI_REFUSAL.search(text))
+    for kind, rx, needs_decline in (("no_trust_ai", AI_REFUSAL, False), ("no_trust_ai", NO_TRUST, False), ("dislikes_calls", DISLIKES, False),
+                                    ("no_money", NO_MONEY, False), ("tried_before", TRIED, True), ("no_need", NO_NEED, True)):
+        if rx.search(text) and (explicit or not needs_decline):
+            return kind
+    if TIMING.search(text):
+        return "bad_time"
+    return "unclear" if explicit else None
+
+
+# The ladder of smaller yeses, top to bottom. `sees` is how code recognises which rung the agent just offered in its own
+# words (the highest one named wins). A no to a rung moves the next ask down one rung, with a fresh reason; never back up.
+RUNGS = [
+    dict(key="a", sees=r"\b(fifteen|15)[- ]minutes?\b",
+         ask="the 15-minute call with Noah: two times, both from the open list"),
+    dict(key="b", sees=r"\b(ten|10)[- ]minutes?\b|\bnoah (can |could |will )?(call|ring) you\b",
+         ask="ten minutes instead, with Noah himself calling them at a time they name"),
+    dict(key="c", sees=r"\bdemo (line|number)\b|\b(try|call) (it|the line|the demo|our demo)( yourself)?\b",
+         ask="calling the demo line themselves, whenever suits them, right now or later; give the number"),
+    dict(key="d", sees=r"\b(fourteen|14)[- ]day\b|\bfree pilot\b|\bfree for (fourteen|14)\b",
+         ask="the free 14-day pilot on missed calls only, nothing to cancel"),
+    dict(key="e", sees=r"\b(text|e-?mail)\b|\bsend (you|over)\b",
+         ask="Noah sending one text or email with the demo number, only to a number or address they give you"),
+    dict(key="f", sees=r"\bcheck (back|in)\b|\bcircle back\b|\bcall (you )?back (in|after|next|around)\b|\btouch base\b",
+         ask="checking back at a time they pick (after the season, next month)"),
+]
+LAST_RUNG = len(RUNGS) - 1
+# Where each kind of no enters the ladder: a bad time starts at "Noah calls when you say"; no money meets the free pilot;
+# someone who dislikes being called gets only the two smallest asks.
+FLOOR = {"bad_time": 1, "no_need": 0, "no_trust_ai": 1, "no_money": 3, "tried_before": 2, "dislikes_calls": 4, "unclear": 0}
+# One answer per objection, from the facts only, under 20 words, in their terms. Wording is the model's own each time.
+ANSWER = {
+    "bad_time": "A bad time. Take the time they give; no pitch now.",
+    "no_need": "They say they have it covered. Believe them and don't argue. The one thing true of the product: it answers only the calls they can't get to.",
+    "no_trust_ai": "They don't trust an AI. Say plainly that yes, you are one (never claim to be human). The one thing true: it never promises a price or time they haven't set, and anything it isn't sure of goes to them as a message.",
+    "no_money": "Cost is the objection. The one thing true: free for fourteen days on the calls they miss, nothing to cancel, and Noah talks pricing only if it caught real jobs. Never invent a price.",
+    "tried_before": "They have tried something like it. Ask what went wrong with it, in one plain question, or take what they say; the one thing true: this one is free on missed calls only, so nothing of theirs changes.",
+    "dislikes_calls": "They dislike being called. Agree with what is fair in a few words. Nothing about the product.",
+    "unclear": "You don't know yet what the no is about. Ask one plain question to find out: is it the timing, the AI, the cost, or missed calls simply aren't a problem for them? Do not ask for anything else.",
+}
+NOTE_TIMING = ("bad time for them. Take a time they name, or offer one from the open list, and say Noah calls then. Call log_call with "
+               "Callback requested and the date, then end_call once they agree. No questions about their calls now.")
+
+
+def rung_offered(text: str) -> int:
+    """The index of the rung an agent reply asks for (the highest one it names), or -1."""
+    return max((i for i, r in enumerate(RUNGS) if re.search(r["sees"], text or "", re.I)), default=-1)
+
+
+def next_rung(offered: int, kind: str, irritated: bool) -> int:
+    """The rung to ask for now: one below the last one offered, never above where this kind of no enters, and the two
+    smallest only for someone who is short with us. Never back up."""
+    floor = max(FLOOR.get(kind, 0), 4 if irritated else 0)
+    return min(max(offered + 1, floor), LAST_RUNG)
+
+
+def refusal_note(kind: str, offered: int, tried: tuple, irritated: bool, why_asked: bool = False) -> str:
+    """The note that tells the model what the no is and what to ask for next. Code decides the move; the words are the model's.
+    A bare no gets one plain question about its reason, once; after that it is treated like any other no."""
+    if kind == "bad_time":
+        return NOTE_TIMING
+    if kind == "unclear" and not why_asked and not irritated:
+        return "they said no. " + ANSWER["unclear"]
+    rung = RUNGS[next_rung(offered, kind, irritated)]
+    answer = "They gave no reason and you have asked once: accept it in a few words, don't ask why again." if kind == "unclear" else ANSWER[kind]
+    parts = [f"they said no ({kind.replace('_', ' ')}). {answer}"]
+    if irritated:
+        parts.append("They are short or annoyed: agree with what is fair, one sentence in all, no humor, no pressure, nothing untrue.")
+    parts.append(f"Answer only that, in under 20 words, then ask for this and only this: {rung['ask']}. Fresh reason, never the same words as an earlier ask.")
+    if tried:
+        parts.append("Already asked for: " + ", ".join(tried) + ". Do not offer those again unless they open the door.")
+    return " ".join(parts)
 
 
 # ---- the first two turns are spoken by code: who is calling, then question one
@@ -132,7 +215,6 @@ PHONE_MENU = re.compile(r"\b(press (zero|one|two|three|four|five|six|seven|eight
                         r"main menu|menu options|office hours are|(we are|we're|office is|office is currently) (currently )?closed)\b", re.I)
 ON_HOLD = re.compile(r"\b(stay on the line|please hold|hold (on )?while|(while|as) (i|we) (try to )?(connect|transfer)|"
                      r"your call is (important|being (transferred|connected|recorded))|transferring your call|connecting you)\b", re.I)
-MAX_NOS = 2          # a second refusal of any kind ends the call
 
 
 def machine_kind(text: str) -> str | None:
@@ -481,8 +563,11 @@ class OutboundSession(CallSession):
         self._resumed = False
         self._opened = False
         self._intro_checked = False
-        self._asks = 0            # meeting asks we have made
-        self._nos = 0             # refusals the caller has given
+        self._nos = 0             # refusals the caller has given (a bad time is not one)
+        self._rung = -1           # the last rung of the ladder we asked for (-1: none yet)
+        self._refusals: tuple = ()   # every refusal, as its kind (what the log shows)
+        self._rungs: tuple = ()      # every rung we asked for, in order
+        self._why = False         # we have already asked what a bare no is about
         self._person = False      # a person has talked with us (not a recording)
         self._rng = rng
         self.call_id = call_id or f"outbound-{int(now.timestamp())}"
@@ -505,7 +590,7 @@ class OutboundSession(CallSession):
                     self.usage[k] += (got or {}).get(k, 0)
             warm_in_background(_warm)
 
-    COUNTERS = ("_opened", "_intro_checked", "_person", "_asks", "_nos")
+    COUNTERS = ("_opened", "_intro_checked", "_person", "_nos", "_rung", "_refusals", "_rungs", "_why")
 
     def _snapshot(self) -> dict:
         return {k: getattr(self, k) for k in self.COUNTERS}
@@ -552,7 +637,6 @@ class OutboundSession(CallSession):
             return Turn(self.opener, [], 0.0, 0.0, False)
         if not self._intro_checked and not self.ctx.ended and affirmed(caller_text):
             return self._intro_and_first_question(caller_text, on_text)
-        refusal = AI_REFUSAL.search(caller_text)
         if not self._intro_checked:   # the first model turn after the opener
             self._intro_checked = True
             self._person = True   # someone answered our "is this the owner?": from here machine words are ordinary talk
@@ -560,22 +644,25 @@ class OutboundSession(CallSession):
             note = f"{note} {intro}" if note else intro
         if asked_if_ai(caller_text):
             note = f"{note} {AI_NOTE}" if note else AI_NOTE
-        directive = None
-        if NO_SIGNAL.search(caller_text) or refusal:
-            self._nos += 1
-            directive = self._no_directive(caller_text, bool(refusal))
-        elif TIMING.search(caller_text):
-            directive = NOTE_TIMING
-        elif self._asks >= 2:
-            directive = NOTE_NO_MORE_ASKS
-        if directive:
+        refused = refusal_kind(caller_text)
+        if refused:
+            irritated = bool(IRRITATED.search(caller_text))
+            if refused != "bad_time":
+                if self._rung >= LAST_RUNG:   # a no to the smallest ask is a request not to hear from us again
+                    return self._stop(caller_text, on_text, why="refused the last offer (checking back)")
+                self._nos += 1
+            directive = refusal_note(refused, self._rung, tuple(RUNGS[i]["key"] for i in sorted(set(self._rungs))), irritated, self._why)
+            self._refusals += (refused,)
+            self._why = self._why or refused == "unclear"
             note = f"{note} {directive}" if note else directive
         tone = callreview.tone_note(caller_text)
         if tone:
             note = f"{note} {tone}" if note else tone
         turn = super().respond(caller_text, on_text, control, heard_only, note)
-        if MEETING_ASK.search(getattr(turn, "text", "") or ""):
-            self._asks += 1
+        offered = rung_offered(getattr(turn, "text", "") or "")
+        if offered >= 0:
+            self._rung = offered
+            self._rungs += (offered,)
         return turn
 
     def protected(self, chunk: str) -> bool:
@@ -604,15 +691,6 @@ class OutboundSession(CallSession):
         self.transcript.append({"role": "agent", "text": self.intro_text, "resumed": True})
         return self.intro_text
 
-    def _no_directive(self, caller_text: str, ai_refusal: bool) -> str:
-        """The first no gets one sincere question (or, for "I don't want to talk to an AI", an honest yes and Noah's offer to call
-        himself). A second no of any kind, or an irritated first one, ends the call warmly."""
-        if self._nos >= MAX_NOS or IRRITATED.search(caller_text):
-            return NOTE_NO_AGAIN
-        if ai_refusal:
-            return NOTE_AI_REFUSAL.format(founder=outbound.settings(self.cfg)["founder"])
-        return NOTE_NO_ONCE
-
     def _machine(self, kind: str, caller_text: str, on_text) -> Turn:
         """A recording, not a person. Handled by code, so the model never has to work out (out loud) what it is hearing.
         Voicemail and any key-press menu ("press one...") are the same thing to us: a message costs call minutes and reaches
@@ -634,13 +712,14 @@ class OutboundSession(CallSession):
         self._before = None
         return Turn("", used, None, 0.0, True)
 
-    def _stop(self, caller_text: str, on_text) -> Turn:
-        """A clear request to stop: said and done by code, no model call. Marks the number and hangs up."""
+    def _stop(self, caller_text: str, on_text, why: str | None = None) -> Turn:
+        """A clear request to stop (or a no to the smallest ask on the ladder): said and done by code, no model call.
+        Marks the number and hangs up."""
         line = random.choice(STOP_LINES)
         if on_text:
             on_text(line)
         used = []
-        for name, args in (("mark_do_not_call", {"reason": caller_text[:80]}),
+        for name, args in (("mark_do_not_call", {"reason": why or caller_text[:80]}),
                            ("log_call", {"outcome": "Not interested", "objection": "Not interested",
                                          "summary": "Asked not to be called again. Number added to the do-not-call list."}),
                            ("end_call", {"reason": "asked to stop"})):
@@ -662,6 +741,10 @@ class OutboundSession(CallSession):
                                 transcript_text(self.transcript, with_tools=False))
         row["estCost"] = outbound.est_cost(minutes, outbound.settings(self.cfg))
         row["callId"] = raw_id
+        yes = log.get("yes_rung")   # which rung of the ladder the owner said yes to, so Noah can see what converts
+        row["refusals"] = list(self._refusals)
+        row["rungs"] = [RUNGS[i]["key"] for i in self._rungs]
+        row["yesRung"] = yes if yes in tuple("abcdef") else ("a" if self.ctx.extra.get("booked") else None)
         if self.first_word_times:
             row["latency"] = {"median_s": round(statistics.median(self.first_word_times), 2),
                               "max_s": round(max(self.first_word_times), 2), "replies": len(self.first_word_times)}

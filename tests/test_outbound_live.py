@@ -571,47 +571,10 @@ class CallStateTests(ScriptedFixture):
         for t in ("what can I do for you?", "I need to pass it to my wife", "we get ten calls a week", "I don't know"):
             self.assertFalse(ol.NO_SIGNAL.search(t), t)
 
-    def test_a_calm_no_gets_one_sincere_question_then_the_second_no_ends_the_call(self):
-        from tests.test_logic import reply, text
-        s = self.make(*[reply("end_turn", text("Hm."))] * 4)
-        s.respond("Why are you calling?")
-        s.respond("Not interested.")
-        once = json.dumps(self.client.requests[-1]["messages"][-1])
-        self.assertIn("one sincere question about the reason", once)
-        self.assertIn("No joke about the no", once)
-        s.respond("No thanks.")
-        self.assertIn("end_call", json.dumps(self.client.requests[-1]["messages"][-1]))
-
-    def test_an_irritated_first_no_ends_the_call(self):
-        from tests.test_logic import reply, text
-        s = self.make(*[reply("end_turn", text("Hm."))] * 4)
-        s.respond("Why are you calling?")
-        s.respond("I said I'm not interested.")
-        last = json.dumps(self.client.requests[-1]["messages"][-1])
-        self.assertIn("they said no again", last)
-        self.assertIn("end_call", last)
-        self.assertNotIn("last light try", last)
-
-    def test_the_second_refusal_ends_the_call_whatever_the_tone(self):
-        from tests.test_logic import reply, text
-        s = self.make(*[reply("end_turn", text("Hm."))] * 5)
-        s.respond("Why are you calling?")
-        for t in ("No thanks.", "We're good."):
-            s.respond(t)
-        self.assertIn("end_call", json.dumps(self.client.requests[-1]["messages"][-1]))
-
     def test_anger_is_a_code_level_stop(self):
         for t in ("quit bugging me", "I said no, stop calling", "piss off", "leave me alone"):
             self.assertTrue(ol.stop_request(t), t)
         self.assertFalse(ol.stop_request("not right now, I'm busy"))
-
-    def test_two_meeting_asks_end_the_asking(self):
-        from tests.test_logic import reply, text
-        s = self.make(*[reply("end_turn", text("Fifteen minutes Tuesday, which is easier?"))] * 4)
-        for t in ("Why are you calling?", "Hm.", "Maybe.", "Go on."):
-            s.respond(t)
-        self.assertEqual(s._asks, 4)
-        self.assertIn("No more meeting asks", json.dumps(self.client.requests[-1]["messages"][-1]))
 
     def test_the_playbook_teaches_no_counting_labels(self):
         text = outbound.PLAYBOOK.read_text().lower()
@@ -636,22 +599,15 @@ class AiRefusalTests(ScriptedFixture):
         for t in ("this is a robot", "you're a bot", "You are an AI."):
             self.assertTrue(ol.asked_if_ai(t), t)
 
-    def test_the_first_refusal_goes_to_the_model_with_an_honest_playful_note(self):
+    def test_the_first_refusal_goes_to_the_model_with_an_honest_note_and_the_ladder(self):
         from tests.test_logic import reply, text
         s = self.make(reply("end_turn", text("Guilty, I'm an AI. But are you interested in money?")))
         s.respond(self.HEARD)
         note = json.dumps(self.client.requests[-1]["messages"][-1])
         self.assertIn("yes, you are one", note)
         self.assertIn("never claim to be human", note)
-        self.assertIn("Noah can call them himself", note)
-        self.assertEqual(s._nos, 1)
-
-    def test_a_second_refusal_after_the_ai_refusal_ends_the_call(self):
-        from tests.test_logic import reply, text
-        s = self.make(reply("end_turn", text("One.")), reply("end_turn", text("Two.")))
-        s.respond(self.HEARD)
-        s.respond("No, I'm good.")
-        self.assertIn("end_call", json.dumps(self.client.requests[-1]["messages"][-1]))
+        self.assertIn("Noah himself calling them", note)
+        self.assertEqual((s._nos, s._refusals), (1, ("no_trust_ai",)))
 
 
 class DisclosureFlagTests(unittest.TestCase):
