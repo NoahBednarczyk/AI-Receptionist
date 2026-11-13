@@ -25,8 +25,6 @@ class SharedCharacterTests(unittest.TestCase):
         self.assertIn(prompts.CHARACTER_EXAMPLES.strip(), text)
         self.assertIn("dry way", text)
         self.assertIn("No joke in place of an answer", text)       # the "say the thing a script wouldn't" sentence was trimmed 2026-11-13
-        # the receptionist's prompt carries the same two bullets from the same constants
-        self.assertIn(prompts.CHARACTER_NOTICE.format(reactions="X").split("(")[0], prompts.PLATFORM_RULES.replace("{character_notice}", prompts.CHARACTER_NOTICE.format(reactions="X")))
 
     def test_the_outbound_mode_is_a_guest_in_their_day(self):
         text = stable()

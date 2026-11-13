@@ -421,7 +421,7 @@ class CallSession:
         if emergency:   # said by code, instantly and word for word; the model continues the emergency flow
             content += (f"\n\n(System note: you have already said the {emergency[0].replace('_', ' ')} safety line to "
                         f"the caller: \"{emergency[1]}\" Don't repeat it or describe the emergency; go straight to the "
-                        "playbook's next step. " + prompts.MODE_PROBLEM + ")")
+                        "playbook's next step.)")
         if emergency and safety.must_leave(emergency[0], caller_text):
             # Gas or CO with the caller still inside: the playbook's whole turn is fixed, so no model call to wait on.
             go_on(irreversible=True)

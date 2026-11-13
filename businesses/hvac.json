@@ -348,19 +348,19 @@
   ],
   "voice": {
     "voice_id": "11labs-Grace",
-    "voice_model": "eleven_v4_turbo",
+    "voice_model": "eleven_v3_conversational",
     "fallback_voice_ids": [
       "cartesia-Cimo"
     ],
     "enable_backchannel": false,
     "ambient_sound": null,
-    "enable_dynamic_voice_speed": true,
-    "enable_dynamic_responsiveness": true,
+    "enable_dynamic_voice_speed": false,
+    "enable_dynamic_responsiveness": false,
     "responsiveness": 1.0,
-    "interruption_sensitivity": 0.4,
+    "interruption_sensitivity": 0.9,
     "denoising_mode": "noise-and-background-speech-cancellation",
-    "voice_temperature": 1.3,
-    "voice_speed": 1.14,
+    "voice_temperature": 1.1,
+    "voice_speed": 1.22,
     "post_call_analysis_model": null,
     "max_call_duration_ms": 479000
   },

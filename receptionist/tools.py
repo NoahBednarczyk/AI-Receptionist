@@ -321,8 +321,7 @@ def check_availability(ctx: ToolContext, a: dict) -> dict:
     return {**unread,
         "windows": [{"window_id": w["window_id"],
                      "spoken": schedule.spoken_window(ctx.biz, w["window_id"], ctx.now, ctx.language)} for w in wins],
-        "note": "Soonest first. Offer the caller at most two of these."
-                + (" " + prompts.MODE_PROBLEM if service.get("emergency") or service.get("problem") else ""),
+        "note": "Soonest first. Offer the caller at most two of these.",
     }
 
 
