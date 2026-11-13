@@ -74,8 +74,8 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   $0.009 (Sonnet: $0.177) but agreed on only 57 of 63 criteria; 5 of the 6 differences were Haiku passing what Sonnet
   failed, including the invented recording opt-out (a gate failure). Summary on Haiku would save under a cent a call.
   Keep `models.grader` and `models.postcall` on Sonnet.
-- **Outbound caller alignment (spec `.internal/specs/2026-11-12-outbound-alignment-spec.md`, local commits after 220a6ae, NOT
-  pushed, NO simulated or live call run on them yet, budget spent):** trade-aware pitch from the lead's `type`
+- **Outbound caller alignment (spec `.internal/specs/2026-11-12-outbound-alignment-spec.md`, commits after 220a6ae, PUSHED:
+  origin/main = HEAD = 80ca1f5 on 2026-11-12 and Render redeployed it; NO simulated or live call run on them yet):** trade-aware pitch from the lead's `type`
   (`outbound.TRADES`), demo line described from the shop that holds the number, claims limited to `outbound.VERIFIED`
   (dashboard, per-call email) with the "not live" sentence read from the shop files; character shared with the receptionist
   (`prompts.CHARACTER_*`) plus a "guest in their day" mode; `sales`/`cold call`/`pitch`/`selling` banned and flagged; replies
@@ -85,6 +85,14 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   runs 12 simulated owners (about $0.72, `--estimate` first); `outbound-agent --diff` shows the Retell outbound agent patch
   (keywords, post-call analysis model), `--apply` needs the user's yes. Still to do: the full 12-owner run, the same owners
   against the old code for call length, the live test call to the user's phone (about $0.45), leads for the trades (user's).
+- **Outbound server state (read-only check 2026-11-12):** 113 leads (all landscaping, lawn or snow companies from local
+  directories, so the pitch and the leads still mismatch the trades pilot), 7 real businesses dialed on Mon 11-09
+  (08:11 to 12:10 PT), none since, plus two test calls to the user's phone. `outbound.mode` is `cold` with
+  `cold_enabled: true`; the block runner is off. `render.yaml` defines the weekday 16:00 UTC cron
+  `outbound-caller-trigger`, but the server shows NO dial on Tue 11-10, Wed 11-11 or Thu 11-12 although the gates would
+  allow one (about 106 untouched leads, inside call hours), so the cron is either not deployed on Render, suspended, or
+  failing (a `DASHBOARD_TOKEN` mismatch would give a 404). Render's dashboard (Cron Jobs, `outbound-caller-trigger`, Logs)
+  is the only place to see which; the user decides. Never trigger `/admin/outbound/call-next` to test it: it dials.
 - **Say channel is OFF** (`agent.speech_channel: false`). Full hvac run 2026-11-12: private notes up to 71 words, 77% of
   blocks tagged, so the stop rule (no private note over 12 words) failed; it passed only on lawn_care. The old blocklist
   is the active filter again. The flag is shared with the outbound caller's prompt builder, so the outbound prompt also
