@@ -125,6 +125,13 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(len(client.create_requests), 2)
 
 
+    def test_a_stop_request_said_with_a_hangup_still_counts_as_ended_by_code(self):
+        client = FakeClient(created=[made("Yeah this is Dale."), made("Stop calling me. Take me off your list. [HANGUP]")])
+        r = sim.run_owner(client, CFG, owner("stop_request"), NOW, grade_it=False)
+        self.assertEqual(r["ended_by"], "code")
+        self.assertTrue(next(c for c in r["checks"] if c["check"] == "hard_stop")["pass"])
+
+
 class BudgetTests(unittest.TestCase):
     def test_a_run_that_does_not_fit_refuses_and_says_how_many_would(self):
         import tempfile

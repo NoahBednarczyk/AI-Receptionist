@@ -192,17 +192,22 @@ def run_owner(client, cfg: dict, owner: dict, now: datetime, max_turns: int = 14
         session = ol.OutboundSession(client, {**cfg, "data_dir": d}, lead, state, store, now, call_id=f"outsim-{owner['id']}", platform="sim",
                                      rng=rng or random.Random(7))
         sim = OwnerSim(client, cfg, owner, shop)
-        turns, line, started = [], "Hello?", time.monotonic()
-        for n in range(max_turns):
-            heard_before = sum(session.usage[k] for k in ("input", "cache_read", "cache_write"))
+        turns, started = [], time.monotonic()
+
+        def say(line: str):
+            """The owner says `line`; the session answers; what code did is recorded for the checks."""
             rung_before, refusals_before = session._rung, len(session._refusals)
             turn = session.respond(line)
-            after = sum(session.usage[k] for k in ("input", "cache_read", "cache_write"))
             refused = len(session._refusals) > refusals_before
-            code_ended = bool(turn.ended and after == heard_before)
+            code_ended = bool(turn.ended and turn.total_s == 0.0)   # code-spoken turns (a stop, a machine) make no model call
             turns.append({"owner": line, "reply": turn.text, "refused": refused, "kind": session._refusals[-1] if refused else None,
                           "ended_by_code": code_ended, "stop_words": ol.stop_request(line),
                           "last_rung_refused": rung_before >= ol.LAST_RUNG and code_ended and not ol.stop_request(line)})
+            return turn
+
+        line = "Hello?"
+        for n in range(max_turns):
+            turn = say(line)
             if session.ended or n == max_turns - 1:
                 break
             said, hangup = sim.reply(turn.text)
@@ -210,9 +215,7 @@ def run_owner(client, cfg: dict, owner: dict, now: datetime, max_turns: int = 14
                 break
             line = said or "(silence)"
             if hangup:
-                turn2 = session.respond(line)   # the owner's last words ("sure, thanks, bye") still get an answer
-                turns.append({"owner": line, "reply": turn2.text, "refused": False, "kind": None, "ended_by_code": False,
-                              "stop_words": ol.stop_request(line), "last_rung_refused": False})
+                say(line)   # the owner's last words ("sure, thanks, bye") still get an answer
                 break
         blocks = outbound.build_prompt(lead, now, cfg)
         allowed = blocks[1]["text"] + " " + json.dumps([c for t in session.transcript for c in (t.get("tools") or [])])
