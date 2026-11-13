@@ -348,7 +348,7 @@
   ],
   "voice": {
     "voice_id": "11labs-Grace",
-    "voice_model": "eleven_v3_conversational",
+    "voice_model": "eleven_v4_turbo",
     "fallback_voice_ids": [
       "cartesia-Cimo"
     ],
