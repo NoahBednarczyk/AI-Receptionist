@@ -77,26 +77,26 @@ COLD_CUE = (r"\b(?:freezing|frozen|below zero|sub ?zero|snow|snowing|snowed|bliz
 COLD_CUE_ES = r"\b(?:congelando|helando|bajo cero|nieve|nevando|fr[ií]o|heladas?|beb[eé]|anciano|enferm[oa])\b"
 HVAC_WINTER = [
     ("no_heat_freezing",
-     [r"\bno heat\b", r"\b(?:furnace|boiler|heater|heat pump|heat|mini ?split|thermostat)(?:['\u2019]s)?\b(?: \S+){0,3} "
+     [r"\bno heat\b", r"\bwithout (?:any )?heat\b",
+      r"\b(?:don't|dont|do not|haven't|havent|have not|ain't) (?:got |have )?(?:any )?heat\b(?! (?:issue|problem|question)s?\b)",
+      r"\b(?:furnace|boiler|heater|heat pump|heat|mini ?split|thermostat)(?:['\u2019]s)?\b(?: \S+){0,3} "
       r"(?:out|off|dead|died|quit|stopped|down|broke|broken|not working|won't (?:start|turn on|come on|kick on)|"
       r"doesn't (?:work|start|come on)|not (?:coming|kicking) on|isn't working|stopped working)\b"],
-     "No heat in this cold is urgent. If anyone there is in danger from the cold, call 911.",
+     "No heat in this cold is urgent, so let's find you the earliest emergency slot.",
      COLD_CUE),
     ("frozen_pipe",
      [r"\bfrozen (?:pipe|pipes|line|lines)\b", r"\b(?:pipe|pipes)(?: \S+){0,3} (?:froze|frozen|freezing)\b"],
-     "A frozen pipe can burst, so we're treating this as urgent. If it does burst, shut off the main water valve, "
-     "usually near the water meter."),
+     "A frozen pipe can burst, so we're treating this as urgent."),
 ]
 HVAC_WINTER_ES = [
     ("no_heat_freezing",
-     [r"\bsin calefacci[oó]n\b", r"\bno hay calefacci[oó]n\b", r"\b(?:calefacci[oó]n|calentador|caldera|horno)\b"
+     [r"\bsin calefacci[oó]n\b", r"\bno (?:tengo|tenemos) (?:nada de )?calefacci[oó]n\b", r"\bno hay calefacci[oó]n\b", r"\b(?:calefacci[oó]n|calentador|caldera|horno)\b"
       r"(?: \S+){0,3} (?:no funciona|no enciende|se apag[oó]|est[aá] descompuest[oa]|dej[oó] de funcionar)\b"],
-     "Sin calefacción con este frío es urgente. Si alguien corre peligro por el frío, llame al 911.",
+     "Sin calefacción con este frío es urgente, así que busquemos la cita de emergencia más pronta.",
      COLD_CUE_ES),
     ("frozen_pipe",
      [r"\btuber[ií]as? (?:congelad[ao]s?|heladas?)\b", r"\b(?:se )?congel[oó] (?:la|una) tuber[ií]a\b"],
-     "Una tubería congelada puede reventar, así que lo tratamos como urgente. Si revienta, cierre la llave de paso "
-     "principal, normalmente cerca del medidor."),
+     "Una tubería congelada puede reventar, así que lo tratamos como urgente."),
 ]
 # Lawn care, landscaping and snow removal. No gas or electrical lines: those are home-repair risks. What can hurt a
 # caller here is a downed power line, a fallen tree, a sprinkler line flooding the yard, and a driveway an ambulance

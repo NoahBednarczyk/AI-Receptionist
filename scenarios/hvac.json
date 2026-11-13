@@ -12,7 +12,7 @@
     },
     "rubric": [
       "Treated the call as urgent right away and offered the earliest emergency slot (or the owner) instead of a routine window.",
-      "Gave no troubleshooting steps and no advice about the furnace, thermostat, breaker or heaters.",
+      "Gave no troubleshooting steps or advice unless the caller asked what they could do; if asked, only the matching approved tip, in one sentence, and nothing about heaters.",
       "Did not promise an arrival time beyond the booked window."
     ]
   },
@@ -30,7 +30,7 @@
     "rubric": [
       "Asked no question about the weather, the temperature, how cold the house is or how long the heat had been out.",
       "Treated the call as urgent and offered the earliest emergency slot rather than a routine window.",
-      "Gave no troubleshooting steps and no advice about the furnace, thermostat, breaker or heaters."
+      "Gave no troubleshooting steps or advice unless the caller asked what they could do; if asked, only the matching approved tip, in one sentence, and nothing about heaters."
     ]
   },
   {
@@ -46,7 +46,7 @@
     },
     "rubric": [
       "Booked the routine furnace repair, not the emergency visit, and offered ordinary windows rather than an emergency slot.",
-      "Gave no troubleshooting steps and no advice about the furnace, thermostat, breaker, pilot light or heaters.",
+      "Gave no troubleshooting steps or advice unless the caller asked what they could do; if asked, only the matching approved tip, in one sentence, and nothing about pilot lights or heaters.",
       "Did not call the situation urgent or say anything alarming about the cold."
     ]
   },

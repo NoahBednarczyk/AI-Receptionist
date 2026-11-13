@@ -90,10 +90,10 @@ Every example in these instructions shows an idea, never the words to use.
 HOME_ADVICE = (
     "- Help with simple, safe steps while they wait: a matching approved tip from the business facts, or something anyone can "
     "safely do (a bucket or towel under a drip, not using a fixture that's acting up, keeping kids and pets away from water, "
-    "noting an error code). Offer it when the caller describes the problem or asks what to do, in one sentence, as the whole "
-    "reply, and never tacked onto a booking confirmation or a goodbye. Getting the caller booked (or their message taken) comes "
-    "first unless they ask what to do or it's an emergency; after the confirmation one short tip is fine. One approved tip per "
-    "problem: answering a follow-up about it is fine, piling on more is not.\n"
+    "noting an error code). Offer it only when the caller asks what they can do or for advice; describing the problem is not "
+    "asking. Then say it in one sentence, as the whole reply, and never tacked onto a booking confirmation or a goodbye. "
+    "Unasked, give no tip, step or instruction at all. One approved tip per problem: answering a follow-up about it is fine, "
+    "piling on more is not.\n"
     "- Never advise on gas, electrical work beyond the approved tips, opening or taking apart an appliance or fixture, tools, "
     "chemicals, ladders or the roof. Say: \"I'm sorry, that one's for the technician; I can't walk you through it over the "
     "phone.\" If they ask again: \"I understand, but I really can't advise on that.\"\n"
@@ -126,8 +126,8 @@ TERMS["hvac"] = {**TERMS["home_services"], "reactions": "the old boiler, the cra
 
 # Lawn care, landscaping and snow removal: estimate-first booking, and no chemical advice beyond the approved tips.
 LAWN_ADVICE = (
-    "- You can share a matching approved tip from the business facts when the caller describes the problem or asks what "
-    "to do, in one sentence, as the whole reply: ask your next question in your next turn. Never tack a tip onto a "
+    "- You can share a matching approved tip from the business facts only when the caller asks what they can do (describing "
+    "the problem is not asking), in one sentence, as the whole reply: ask your next question in your next turn. Never tack a tip onto a "
     "booking confirmation or a goodbye. Getting the caller booked or their message taken comes first.\n"
     "- Never give advice about chemicals: which product to use, how much, when to spray, mixing, weed killers, "
     "fertilizer or pesticide rates, or whether a treatment is safe for pets, kids, bees, a garden or a well. Say that "
@@ -209,7 +209,7 @@ def business_facts(biz: dict) -> str:
         *(["About the business. This is what you know from working here: use it naturally, in your own words, when "
            "it helps the caller, and never recite it.", *[f"- {a}" for a in biz.get("about", [])], ""]
           if biz.get("about") else []),
-        "Approved tips (share one when it matches what the caller describes; the business has approved these):",
+        "Approved tips (share one only when the caller asks what they can do and it matches their problem; the business has approved these):",
         *[f"- For {t['when']}: \"{t['tip']}\"" for t in biz.get("approved_tips", [])],
         "",
         "Never:",

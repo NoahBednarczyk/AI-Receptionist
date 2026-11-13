@@ -65,7 +65,19 @@ class SafetyTierTests(unittest.TestCase):
                      "The heat pump stopped working and the house is cold. It's snowing."):
             got = safety.match("hvac", said)
             self.assertEqual(got and got[0], "no_heat_freezing", said)
-        self.assertIn("911", safety.match("hvac", "No heat, it's freezing")[1])
+        # The no-heat and frozen-pipe lines say it is urgent and give no advice (the caller didn't ask for any).
+        for said in ("No heat, it's freezing", "I think I have a frozen pipe."):
+            line = safety.match("hvac", said)[1]
+            self.assertNotIn("911", line, said)
+            self.assertNotIn("valve", line, said)
+
+    def test_no_heat_said_as_dont_have(self):
+        """The 2026-11-13 test call: "I don't have any heat" matched nothing, and the model filled in the burst-pipe line."""
+        for said in ("Hey. I I don't have any heat.", "We don't have heat.", "I haven't got any heat.", "We're without heat."):
+            got = safety.match("hvac", said, "en", True)
+            self.assertEqual(got and got[0], "no_heat_freezing", said)
+        self.assertEqual(safety.match("hvac", "no tengo calefacción", "es", True)[0], "no_heat_freezing")
+        self.assertIsNone(safety.match("hvac", "I don't have any heat problems, I just want a tune-up.", "en", True))
 
     def test_frozen_pipe(self):
         for said in ("I think I have a frozen pipe.", "The pipe under the sink froze last night."):
