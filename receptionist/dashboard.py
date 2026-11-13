@@ -86,7 +86,7 @@ def _table(headers: list[str], rows: list[list[str]]) -> str:
     return f'<div class="card"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
-def _transcript(raw: str | None) -> str:
+def _transcript(raw: str | None, agent: str = "Agent") -> str:
     """The call as a conversation. Silent turns have no text and are left out; tool calls show as small notes."""
     try:
         turns = json.loads(raw) if raw else []
@@ -96,7 +96,7 @@ def _transcript(raw: str | None) -> str:
     for t in turns:
         text = (t.get("text") or "").strip()
         if text:
-            who = "Sam" if t.get("role") == "agent" else "Caller"
+            who = escape(agent) if t.get("role") == "agent" else "Caller"
             out.append(f'<div class="line {"agent" if t.get("role") == "agent" else "caller"}">'
                        f'<span class="role">{who}</span>{escape(text)}</div>')
         for call in t.get("tools") or []:
@@ -119,7 +119,7 @@ def _call_card(biz: dict, store: Store, c: dict, now: datetime) -> str:
         for a in store.for_call("appointments", c["id"]) if a["status"] == "booked")
     flags = "".join(f'<span class="tag urgent">flag: {escape(f.get("type", ""))}</span> '
                     for f in summary.get("flags") or [])
-    transcript = _transcript(c.get("transcript"))
+    transcript = _transcript(c.get("transcript"), biz.get("agent_name") or "Agent")
     return (f'<article class="call{" urgent-call" if urgent else ""}"><header>'
             f'<span class="who">{escape(caller)}{" - " + escape(name) if name else ""}</span>'
             f'<span class="tag{" urgent" if urgent else ""}">{escape(outcome)}</span>'

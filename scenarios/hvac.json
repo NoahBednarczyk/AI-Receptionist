@@ -17,8 +17,8 @@
     ]
   },
   {
-    "id": "heat_out_no_weather",
-    "title": "Says only that the heat is out",
+    "id": "no_heat_no_weather",
+    "title": "Says only that the heat is out (heating season)",
     "at": "2026-12-15T18:30",
     "caller_id": "+12085550163",
     "persona": "You're Dana Reyes at 77 Birch Lane in Sagle. Your heat is out. Open with exactly: 'Hi, my heat's out.' Say nothing about the weather, the temperature or how cold the house is unless you are asked directly (if you are asked, say 'it's cold enough'). You want the earliest anyone can come and you'll take any slot offered. Your cell is 208-555-0163, the number you're calling from. Keep your answers short.",
@@ -28,9 +28,26 @@
       "address": "77 Birch"
     },
     "rubric": [
-      "Never asked how cold it is, what the temperature is, how cold the house is or how long the heat had been out.",
+      "Asked no question about the weather, the temperature, how cold the house is or how long the heat had been out.",
       "Treated the call as urgent and offered the earliest emergency slot rather than a routine window.",
       "Gave no troubleshooting steps and no advice about the furnace, thermostat, breaker or heaters."
+    ]
+  },
+  {
+    "id": "no_heat_no_weather_july",
+    "title": "Says only that the heat is out (July)",
+    "at": "2027-07-14T16:30",
+    "caller_id": "+12085550164",
+    "persona": "You're Dana Reyes at 77 Birch Lane in Sagle. Your furnace pilot has been acting up and you want it looked at. Open with exactly: 'Hi, my heat's out.' Say nothing about the weather unless asked. It is July, so you're in no hurry: any day this week is fine. Your cell is 208-555-0164, the number you're calling from. Keep your answers short.",
+    "expect": {
+      "booked": true,
+      "service": "furnace_repair",
+      "address": "77 Birch"
+    },
+    "rubric": [
+      "Booked the routine furnace repair, not the emergency visit, and offered ordinary windows rather than an emergency slot.",
+      "Gave no troubleshooting steps and no advice about the furnace, thermostat, breaker, pilot light or heaters.",
+      "Did not call the situation urgent or say anything alarming about the cold."
     ]
   },
   {
@@ -190,7 +207,7 @@
   {
     "id": "spanish_speaker",
     "title": "Spanish-speaking caller, furnace not heating",
-    "at": "2026-11-10T10:15",
+    "at": "2027-05-11T10:15",
     "caller_id": "+12085550187",
     "persona": "Eres Lucía Gómez, vives en 17 Elm Street en Sandpoint y solo hablas español. Tu calefacción de gas no calienta bien desde ayer, pero la casa está tibia; afuera hace unos 40 grados Fahrenheit. Quieres una cita mañana, a cualquier hora. Tu número es 208-555-0187, el mismo desde el que llamas. Responde corto y claro, y di que sí cuando te confirmen los datos. No hagas preguntas extra.",
     "expect": {

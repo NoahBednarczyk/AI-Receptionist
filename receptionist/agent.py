@@ -19,7 +19,7 @@ from datetime import datetime
 import anthropic
 import httpx
 
-from . import degraded, prompts, safety, tools
+from . import degraded, prompts, safety, schedule, tools
 from .speech import channel_guard, looks_spanish, redact_card, short_phone_numbers, unspeakable
 from .store import Store
 
@@ -396,8 +396,9 @@ class CallSession:
         fillers = tools.FILLERS[self.ctx.language]
         messages = list(self.messages)
         content = caller_text
-        emergency = None if self.ctx.safety_given else safety.match(self.biz.get("vertical", ""), caller_text,
-                                                                    self.ctx.language)
+        emergency = None if self.ctx.safety_given else safety.match(
+            self.biz.get("vertical", ""), caller_text, self.ctx.language,
+            schedule.in_heating_season(self.biz, self.ctx.now.date()))
         short = short_phone_numbers(caller_text)
         if short:   # speech recognition often drops a digit; the model tends to fill it in, so say so plainly
             content += (f"\n\n(System note: the phone number the caller just said has only {len(short[0])} digits, "

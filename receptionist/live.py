@@ -20,7 +20,7 @@ import random
 import re
 from collections.abc import Awaitable, Callable
 
-from . import safety
+from . import safety, schedule
 from .agent import CallSession, TurnControl, TurnDropped
 
 log = logging.getLogger("receptionist")
@@ -187,7 +187,8 @@ async def run_retell_call(receive: Callable[[], Awaitable[dict]], send: Callable
         if (not long_enough or GARBLED.match(text) or turn in interjected_turns
                 or now - last_interjection < cfg["min_gap_s"]):
             return
-        if safety.match(session.biz.get("vertical", ""), text, session.ctx.language):
+        if safety.match(session.biz.get("vertical", ""), text, session.ctx.language,
+                        schedule.in_heating_season(session.biz, session.ctx.now.date())):
             return   # an emergency gets its safety line from the normal path, never a cut-in
         interjected_turns.add(turn)
         asyncio.create_task(cut_in(text))

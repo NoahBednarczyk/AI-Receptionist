@@ -2,23 +2,24 @@
   "id": "hvac",
   "name": "Peak Heating & Plumbing (demo)",
   "spoken_name": "Peak Heating and Plumbing",
-  "agent_name": "Sam",
+  "agent_name": "Riley",
   "vertical": "hvac",
   "mode": "overflow",
+  "heating_season": {"from": "10-15", "to": "04-15"},
   "timezone": "America/Los_Angeles",
   "phone_numbers": [
     "+12084286760"
   ],
-  "greeting": "Peak Heating and Plumbing, this is Sam.",
+  "greeting": "Peak Heating and Plumbing, this is Riley.",
   "greetings": [
-    "Peak Heating and Plumbing, this is Sam.",
-    "Thanks for calling Peak Heating and Plumbing, Sam speaking.",
-    "Peak Heating and Plumbing, Sam here.",
-    "Good {daypart}, Peak Heating and Plumbing. This is Sam.",
-    "You've reached Peak Heating and Plumbing. Sam on the line.",
-    "Hey there, Peak Heating and Plumbing, this is Sam.",
-    "Peak Heating and Plumbing, you've got Sam.",
-    "Hi, Peak Heating and Plumbing, this is Sam."
+    "Peak Heating and Plumbing, this is Riley.",
+    "Thanks for calling Peak Heating and Plumbing, Riley speaking.",
+    "Peak Heating and Plumbing, Riley here.",
+    "Good {daypart}, Peak Heating and Plumbing. This is Riley.",
+    "You've reached Peak Heating and Plumbing. Riley on the line.",
+    "Hey there, Peak Heating and Plumbing, this is Riley.",
+    "Peak Heating and Plumbing, you've got Riley.",
+    "Hi, Peak Heating and Plumbing, this is Riley."
   ],
   "hours": {
     "mon": [
@@ -115,7 +116,7 @@
     },
     {
       "id": "emergency_visit",
-      "name": "Emergency visit: no heat in freezing weather, a burst or frozen pipe, or a leak that can't be stopped",
+      "name": "Emergency visit: no heat, a burst or frozen pipe, or a leak that can't be stopped",
       "emergency": true
     }
   ],

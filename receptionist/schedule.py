@@ -32,6 +32,12 @@ def _in_season(season: dict, d: date) -> bool:
     return a <= today <= b if a <= b else today >= a or today <= b
 
 
+def in_heating_season(biz: dict, d: date) -> bool:
+    """True inside the shop's `heating_season` ({"from": "10-15", "to": "04-15"}); False when the shop sets none."""
+    season = biz.get("heating_season")
+    return bool(season) and _in_season(season, d)
+
+
 def hours_table(biz: dict, d: date) -> dict:
     """The week's hours that apply on day `d`: a matching entry in `seasonal_hours`, else the regular `hours`."""
     for season in biz.get("seasonal_hours", []):
@@ -84,7 +90,7 @@ def windows_on(biz: dict, d: date) -> list[tuple[str, str]]:
 
 
 def emergency_rules(biz: dict, service: dict | None) -> dict:
-    """Booking limits for a service. An emergency service (no heat in freezing weather, a burst pipe) may be booked
+    """Booking limits for a service. An emergency service (no heat, a burst pipe) may be booked
     closer to now and into a reserved extra slot per window; everything else uses the normal limits."""
     if service and service.get("emergency"):
         rules = biz["booking"]

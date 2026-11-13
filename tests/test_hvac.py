@@ -149,7 +149,7 @@ class OverflowTests(unittest.TestCase):
     def test_the_prompt_is_for_a_heating_shop(self):
         p = prompts.stable_prompt(HVAC)
         for needle in ("# Heating, cooling and plumbing playbook", "Wood stoves, pellet stoves", "emergency_visit",
-                       "no heat in freezing weather", "bucket or towel"):
+                       "no heat, and frozen pipes", "bucket or towel"):
             self.assertIn(needle.lower(), p.lower())
         self.assertNotIn("med spa", p.lower())
         self.assertIn("virtual assistant", p)                      # the AI-disclosure rule is intact
@@ -164,11 +164,11 @@ class OverflowTests(unittest.TestCase):
 
 
 class ScenarioFileTests(unittest.TestCase):
-    WANTED = {"heat_out_no_weather", "owner_cell_no_answer", "washington_caller_recorded", "seven_digit_number_twice", "four_minute_rambler", "no_heat_night", "furnace_short_cycling", "ac_not_cooling", "burst_pipe", "water_heater_leaking",
+    WANTED = {"no_heat_no_weather", "no_heat_no_weather_july", "owner_cell_no_answer", "washington_caller_recorded", "seven_digit_number_twice", "four_minute_rambler", "no_heat_night", "furnace_short_cycling", "ac_not_cooling", "burst_pipe", "water_heater_leaking",
               "price_shopper", "ai_question", "outside_service_area", "reschedule_existing", "wrong_number",
               "spouse_for_owner", "spanish_speaker"}
 
-    def test_the_seventeen_scenarios_are_there_and_consistent_with_the_shop(self):
+    def test_the_eighteen_scenarios_are_there_and_consistent_with_the_shop(self):
         scenarios = json.loads((Path(CFG["scenarios_dir"]) / "hvac.json").read_text())
         self.assertEqual({s["id"] for s in scenarios}, self.WANTED)
         services = {s["id"] for s in HVAC["services"]}
@@ -275,7 +275,7 @@ class DashboardTests(unittest.TestCase):
         now = schedule.local_now(HVAC, "2026-11-10T10:15")
         store.seed_demo(HVAC, now)
         store.start_call("c1", "hvac", "retell", "+12085550177", now)
-        store.end_call("c1", [{"role": "agent", "text": "Peak Heating and Plumbing, the crew's out on a job right now. This is Sam."},
+        store.end_call("c1", [{"role": "agent", "text": "Peak Heating and Plumbing, the crew's out on a job right now. This is Riley."},
                               {"role": "caller", "text": "My furnace quit <script>alert(1)</script>"},
                               {"role": "agent", "text": "Silent turn", "tools": [{"name": "check_availability"}]}],
                        "booked", now)
@@ -322,6 +322,53 @@ class RetellSettingsTests(unittest.TestCase):
         self.assertIsNone(agent_settings(HVAC)["post_call_analysis_model"])
         on = {**HVAC, "voice": {**HVAC["voice"], "post_call_analysis_model": "gpt-5.6-terra"}}
         self.assertEqual(agent_settings(on)["post_call_analysis_model"], "gpt-5.6-terra")
+
+
+class HeatingSeasonTests(unittest.TestCase):
+    """The season is decided in code, so the model is never left to ask how cold it is."""
+    from datetime import datetime as _dt
+    WINTER = _dt(2026, 12, 15, 19, 20)
+    JULY = _dt(2026, 7, 15, 19, 20)
+    NO_HEAT = "Hey. I ain't got no heat right now."
+
+    def state(self, now):
+        return prompts.call_state(HVAC, now, "+12085550100", None, [])
+
+    def test_the_season_runs_from_october_15_to_april_15(self):
+        for d, want in (((2026, 10, 14), False), ((2026, 10, 15), True), ((2027, 1, 3), True), ((2027, 4, 15), True),
+                        ((2027, 4, 16), False), ((2026, 7, 15), False)):
+            self.assertIs(schedule.in_heating_season(HVAC, __import__("datetime").date(*d)), want, d)
+        self.assertFalse(schedule.in_heating_season({}, __import__("datetime").date(2026, 12, 1)))   # a shop with no season
+
+    def test_call_state_says_which_season_it_is_in_winter_and_in_july(self):
+        winter, july = self.state(self.WINTER), self.state(self.JULY)
+        self.assertIn("It is heating season.", winter)
+        self.assertIn("never asked about", winter)
+        self.assertNotIn("not heating season", winter)
+        self.assertIn("It is not heating season.", july)
+        self.assertIn("routine furnace repair", july)
+
+    def test_no_heat_needs_no_weather_word_in_season_but_does_out_of_season(self):
+        in_season = safety.match("hvac", self.NO_HEAT, "en", heating_season=True)
+        self.assertEqual(in_season[0], "no_heat_freezing")
+        self.assertIsNone(safety.match("hvac", self.NO_HEAT, "en", heating_season=False))
+        self.assertIsNone(safety.match("hvac", self.NO_HEAT, "en"))                   # the old call shape is unchanged
+        self.assertEqual(safety.match("hvac", "My furnace is out and it's freezing.", "en")[0], "no_heat_freezing")
+        self.assertEqual(safety.match("hvac", "No heat and I have a baby here.", "en")[0], "no_heat_freezing")
+
+    def test_gas_and_the_other_first_tiers_still_win_in_season(self):
+        self.assertEqual(safety.match("hvac", "I smell gas and I have no heat.", "en", heating_season=True)[0], "gas")
+        self.assertEqual(safety.match("hvac", "No heat and a burst pipe flooding the basement", "en", heating_season=True)[0],
+                         "flooding")
+
+    def test_the_spanish_tier_follows_the_season_too(self):
+        self.assertEqual(safety.match("hvac", "La calefacción no funciona", "es", heating_season=True)[0], "no_heat_freezing")
+        self.assertIsNone(safety.match("hvac", "La calefacción no funciona", "es", heating_season=False))
+
+    def test_the_service_is_not_defined_by_the_weather(self):
+        emergency = [s for s in HVAC["services"] if s["id"] == "emergency_visit"][0]
+        self.assertNotIn("freezing", emergency["name"])
+        self.assertNotIn("freezing weather", (Path("receptionist/playbooks/hvac.md").read_text()))
 
 
 if __name__ == "__main__":

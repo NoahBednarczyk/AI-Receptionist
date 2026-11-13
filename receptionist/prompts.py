@@ -279,6 +279,12 @@ def call_state(biz: dict, now: datetime, caller: str | None, customer: dict | No
         when = f"{spoken_date(nxt.date(), now.date())} at {spoken_time(nxt.strftime('%H:%M'))}" if nxt else "unknown"
         lines.append(f"The business is closed now (after hours). It next opens {when}."
                      + ("" if overflow else " If the caller asks for a person, start by saying the office is closed right now."))
+    if biz.get("heating_season"):
+        lines.append(
+            "It is heating season. A caller whose heat is out or not keeping up gets the emergency slot; the weather is "
+            "already known, so it is never asked about." if schedule.in_heating_season(biz, now.date()) else
+            "It is not heating season. A heat problem is a routine furnace repair unless the caller says it is cold or "
+            "someone vulnerable is at home.")
     lines.append(f"Caller ID: {spoken_phone(caller)}." if caller else "Caller ID: not available.")
     if customer:
         where = ", ".join(x for x in (customer.get("address"), customer.get("town")) if x)
