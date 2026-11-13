@@ -38,7 +38,7 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
 - **Live line:** +1 208-428-6760 now runs the trades shop (`hvac.json`, "Peak Heating & Plumbing (demo)", agent Riley (was Sam);
   `live_businesses: ["hvac"]`). `lawn_care.json` keeps the placeholder +13125550200. Models: agent Claude Sonnet 5.5
   (`between_tools`), summary and grader Sonnet 5.5, caller sim Haiku 5.5.
-- **Retell (verified against the real API 2026-11-12):** the number points at agent version 22 and `post_call_analysis_model`
+- **Retell (verified against the real API 2026-11-12):** the number points at agent version 23 (22 added post-call analysis off; 23 the Riley keywords) and `post_call_analysis_model`
   is null on it. `retell-tune` was NOT run as written: the live agent's voice values (interruption 0.9, speed 1.22,
   temperature 1.1, dynamic speed off) differ from the `voice` block in the shop JSON files, and running it would have
   overwritten the user's dashboard tuning. Only `post_call_analysis_model` and `boosted_keywords` were changed. Do not run
@@ -53,8 +53,8 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   a real shop takes this number, use a non-demo shop file; `onboarding.check` refuses otherwise.
 - **UptimeRobot** monitors `/health/deep` (user set it up 2026-11-12). The missed-outcome alarm also fires for a pure
   information call (no booking or message), which will be noisy once real callers ask price questions.
-- **Character and no-heat fix (spec `.internal/specs/2026-11-12-character-and-no-heat-spec.md`, local commits 62b2d0b,
-  c1ff4fe, 78bc243, NOT pushed, NO scenario run on them yet):** `heating_season` (10-15 to 04-15) in `hvac.json` is read by
+- **Character and no-heat fix (spec `.internal/specs/2026-11-12-character-and-no-heat-spec.md`, commits 62b2d0b,
+  c1ff4fe, 78bc243, pushed 2026-11-12 at the user's word, NO scenario run on them: the user tests by ear):** `heating_season` (10-15 to 04-15) in `hvac.json` is read by
   `schedule.in_heating_season`; in season `call_state` says the weather is known and `safety.match(..., heating_season=True)`
   fires the no-heat line without a cold word. One shared character block with per-vertical example reactions
   (`TERMS[...]["reactions"]`); questions only when a booking needs them; dry humor in easy mode only; the call starts easy
@@ -62,8 +62,8 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   no sarcasm. Hvac prompt 5,291 words (was 5,378). Five character lines were added to `STANDARD_RUBRIC` and scenarios
   `no_heat_no_weather`, `no_heat_no_weather_july`, `relaxed_tune_up`, `stressed_no_heat` exist. Still to do: the two
   no-heat scenarios twice, the full suite twice, then three test calls by the user (no heat, a price, "are you real").
-  Weak point: the first reply on a broken-furnace call is still in easy mode. Retell `boosted_keywords` on the live agent
-  still say "Sam" (a Retell change, needs the user's yes).
+  Weak point: the first reply on a broken-furnace call is still in easy mode. Retell agent is now version 23: only
+  `boosted_keywords` changed (Riley instead of Sam), voice settings untouched; the number points at v23.
 - **Say channel is OFF** (`agent.speech_channel: false`). Full hvac run 2026-11-12: private notes up to 71 words, 77% of
   blocks tagged, so the stop rule (no private note over 12 words) failed; it passed only on lawn_care. The old blocklist
   is the active filter again. The flag is shared with the outbound caller's prompt builder, so the outbound prompt also
