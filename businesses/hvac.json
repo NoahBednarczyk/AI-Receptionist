@@ -327,6 +327,17 @@
       }
     ]
   },
+  "simulate_for": {
+    "no-heat": ["no_heat_no_weather", "no_heat_no_weather_july", "no_heat_night", "stressed_no_heat"],
+    "character": ["relaxed_tune_up", "price_shopper", "ai_question", "stressed_no_heat"],
+    "safety": ["burst_pipe", "no_heat_night", "stressed_no_heat"],
+    "booking": ["furnace_short_cycling", "ac_not_cooling", "water_heater_leaking", "seven_digit_number_twice"],
+    "honesty": ["price_shopper", "ai_question", "washington_caller_recorded", "outside_service_area"],
+    "owner-handoff": ["owner_cell_no_answer", "spouse_for_owner", "burst_pipe"],
+    "existing-customer": ["reschedule_existing", "wrong_number"],
+    "spanish": ["spanish_speaker"],
+    "long-calls": ["four_minute_rambler", "seven_digit_number_twice"]
+  },
   "simulate_quick": [
     "no_heat_night",
     "furnace_short_cycling",

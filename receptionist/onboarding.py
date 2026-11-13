@@ -170,7 +170,7 @@ def build(intake: dict, template: dict) -> dict:
     biz.update(id=slug(name), name=name, spoken_name=spoken, agent_name=intake.get("agent_name") or prof["agent_name"],
                timezone=intake.get("timezone") or template["timezone"], phone_numbers=[ours] if ours else [],
                hours=parse_hours(intake.get("hours")), owner_sms=owner, texting_enabled=False)
-    for k in ("demo_seed", "simulate_quick"):
+    for k in ("demo_seed", "simulate_quick", "simulate_for"):
         biz.pop(k, None)
     biz["service_area"] = {"towns": towns, "note": intake.get("service_area_note")
                            or f"Homes and small businesses in {towns[0]} and the towns around it."}

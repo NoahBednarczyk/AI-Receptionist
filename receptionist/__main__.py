@@ -114,6 +114,15 @@ def cmd_simulate(cfg, a):
         for s in list_scenarios(cfg, biz):
             print(f"  {s['id']:<28} {s['title']}")
         return
+    if a.topics is not None:
+        from .simulate import topic_ids
+        if not a.topics:   # --for with nothing after it: show the topics and what each run costs
+            from . import budget
+            per = budget.per_scenario_estimate(cfg)
+            for name, ids in (biz.get("simulate_for") or {}).items():
+                print(f"  {name:<18} {len(ids)} scenarios, about ${per * len(ids):.2f}: {', '.join(ids)}")
+            return
+        a.ids = a.ids or topic_ids(biz, a.topics)
     if a.quick:
         a.ids = a.ids or biz.get("simulate_quick") or cfg["simulate"]["quick"]
     if a.effort:
@@ -466,6 +475,8 @@ def main():
     sp.add_argument("-v", "--verbose", action="store_true", help="print each transcript")
     sp.add_argument("--jobs", type=int, default=4, help="scenarios to run at once")
     sp.add_argument("--quick", action="store_true", help="only the quick set in config.json (simulate.quick)")
+    sp.add_argument("--for", dest="topics", nargs="*", metavar="TOPIC",
+                    help="only the scenarios that test this kind of change (the shop's simulate_for); with no topic, list them")
     sp.add_argument("--effort", choices=["low", "medium", "high"], help="override the agent's effort for this run")
     sp.add_argument("--thinking", choices=["adaptive", "disabled", "between_tools"], help="override the agent's thinking for this run")
     sp.add_argument("--model", help="override the agent's model for this run (one priced in config.json)")

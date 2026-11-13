@@ -397,5 +397,32 @@ class CallModeTests(unittest.TestCase):
         self.assertNotIn("the old boiler", lawn)
 
 
+class SimulateTopicTests(unittest.TestCase):
+    """`simulate --for TOPIC` runs only the scenarios that test one kind of change."""
+    def test_every_topic_names_real_scenarios_and_stays_small(self):
+        from receptionist.simulate import list_scenarios
+        real = {s["id"] for s in list_scenarios(CFG, HVAC)}
+        for topic, ids in HVAC["simulate_for"].items():
+            self.assertTrue(ids and set(ids) <= real, topic)
+            self.assertLessEqual(len(ids), 4, topic)            # the point is a cheap run
+
+    def test_the_no_heat_topic_covers_both_seasons_and_the_stressed_caller(self):
+        from receptionist.simulate import topic_ids
+        self.assertEqual(set(topic_ids(HVAC, ["no-heat"])),
+                         {"no_heat_no_weather", "no_heat_no_weather_july", "no_heat_night", "stressed_no_heat"})
+
+    def test_two_topics_are_joined_without_repeats_and_an_unknown_one_is_refused(self):
+        from receptionist.simulate import topic_ids
+        ids = topic_ids(HVAC, ["no-heat", "safety"])
+        self.assertEqual(len(ids), len(set(ids)))
+        with self.assertRaises(SystemExit) as e:
+            topic_ids(HVAC, ["no-such-topic"])
+        self.assertIn("Topics:", str(e.exception))
+
+    def test_a_new_client_does_not_inherit_this_shops_scenario_names(self):
+        import inspect
+        self.assertIn('"simulate_for"', inspect.getsource(onboarding))
+
+
 if __name__ == "__main__":
     unittest.main()

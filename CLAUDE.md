@@ -6,7 +6,8 @@ for why something is the way it is). Design doc: https://claude.ai/artifact/GtSq
 
 ## Rules the user set
 - **Testing budget: $1 a day of API spend**, enforced by `receptionist/budget.py` (`python -m receptionist budget`). Estimate
-  before any live run; prefer `simulate --quick` or named scenarios while iterating; the full suite only to confirm. Raise
+  before any live run; prefer `simulate --for TOPIC` (the 1 to 4 scenarios that test that kind of change: `--for` alone
+  lists topics and costs; defined per shop as `simulate_for`), `--quick` or named scenarios while iterating; the full suite only to confirm. Raise
   the limit only when the user says so in chat (`budget --raise-today N`). Ad-hoc scripts that call the API count too.
 - **No push without the user's word.** A push deploys to the live phone line. Do not change Retell, Render, Twilio, Google or
   email accounts without a yes. Real keys never go in the repo, chat or memory.

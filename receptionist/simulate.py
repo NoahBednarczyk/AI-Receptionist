@@ -91,6 +91,16 @@ GRADE_SCHEMA = {
 
 
 # Words a caller should never hear: the agent reading out its instructions or tool names.
+def topic_ids(biz: dict, topics: list[str]) -> list[str]:
+    """The scenario ids that test one or more kinds of change (`simulate_for` in the shop file), without repeats."""
+    table = biz.get("simulate_for") or {}
+    unknown = [t for t in topics if t not in table]
+    if unknown:
+        known = ", ".join(sorted(table)) or "none defined for this shop"
+        raise SystemExit(f"No topic {', '.join(unknown)}. Topics: {known}.")
+    return list(dict.fromkeys(i for t in topics for i in table[t]))
+
+
 def list_scenarios(cfg: dict, biz: dict) -> list[dict]:
     return json.loads((Path(cfg["scenarios_dir"]) / f"{biz['vertical']}.json").read_text())
 
