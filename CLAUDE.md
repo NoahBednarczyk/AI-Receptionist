@@ -69,6 +69,10 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   no-heat scenarios twice, the full suite twice, then three test calls by the user (no heat, a price, "are you real").
   Weak point: the first reply on a broken-furnace call is still in easy mode. Retell agent is now version 23: only
   `boosted_keywords` changed (Riley instead of Sam), voice settings untouched; the number points at v23.
+- **Haiku as grader, tested and NOT adopted (2026-11-12):** re-grading the 16 saved hvac transcripts with Haiku 5.5 cost
+  $0.009 (Sonnet: $0.177) but agreed on only 57 of 63 criteria; 5 of the 6 differences were Haiku passing what Sonnet
+  failed, including the invented recording opt-out (a gate failure). Summary on Haiku would save under a cent a call.
+  Keep `models.grader` and `models.postcall` on Sonnet.
 - **Say channel is OFF** (`agent.speech_channel: false`). Full hvac run 2026-11-12: private notes up to 71 words, 77% of
   blocks tagged, so the stop rule (no private note over 12 words) failed; it passed only on lawn_care. The old blocklist
   is the active filter again. The flag is shared with the outbound caller's prompt builder, so the outbound prompt also
