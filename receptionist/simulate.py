@@ -58,6 +58,17 @@ STANDARD_RUBRIC = [
     "Replies sounded natural on the phone and didn't stack several new questions in one turn (reply length is "
     "checked separately). A read-back confirming details counts as one question, and so does asking for name and "
     "address together in an emergency.",
+    # Character (2026-11-12): measured on every call. Each line applies only to the calls it names.
+    "No acknowledgement-only opener (a word such as \"Okay\", \"Perfect\" or \"Got it\" on its own) was used twice in "
+    "the call, and no reply repeated the caller's own words back to them.",
+    "Every question the agent asked was one the booking or message needed, or one asking what the caller wanted when "
+    "their request could not work as stated. None was asked out of curiosity.",
+    "If the call was about a problem (something broken, urgent or upsetting): there was no joke, aside or curiosity "
+    "question before the booking or message was done. If it was not a problem call, this passes.",
+    "If the call was routine (booking a tune-up or a seasonal job, a price or general question, asking whether it is an "
+    "AI): at least one reply opened with a specific reaction to something the caller said. If it was a problem call, "
+    "this passes.",
+    "No two replies in the call opened the same way, and no two closed the same way.",
 ]
 
 GRADE_SCHEMA = {

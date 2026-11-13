@@ -164,11 +164,11 @@ class OverflowTests(unittest.TestCase):
 
 
 class ScenarioFileTests(unittest.TestCase):
-    WANTED = {"no_heat_no_weather", "no_heat_no_weather_july", "owner_cell_no_answer", "washington_caller_recorded", "seven_digit_number_twice", "four_minute_rambler", "no_heat_night", "furnace_short_cycling", "ac_not_cooling", "burst_pipe", "water_heater_leaking",
+    WANTED = {"relaxed_tune_up", "stressed_no_heat", "no_heat_no_weather", "no_heat_no_weather_july", "owner_cell_no_answer", "washington_caller_recorded", "seven_digit_number_twice", "four_minute_rambler", "no_heat_night", "furnace_short_cycling", "ac_not_cooling", "burst_pipe", "water_heater_leaking",
               "price_shopper", "ai_question", "outside_service_area", "reschedule_existing", "wrong_number",
               "spouse_for_owner", "spanish_speaker"}
 
-    def test_the_eighteen_scenarios_are_there_and_consistent_with_the_shop(self):
+    def test_the_twenty_scenarios_are_there_and_consistent_with_the_shop(self):
         scenarios = json.loads((Path(CFG["scenarios_dir"]) / "hvac.json").read_text())
         self.assertEqual({s["id"] for s in scenarios}, self.WANTED)
         services = {s["id"] for s in HVAC["services"]}

@@ -283,5 +283,37 @@
       "Stayed friendly, did not cut the caller off rudely, and steered back to what they need within a couple of replies.",
       "Did not give advice about the old furnace and did not promise anything beyond the booked window."
     ]
+  },
+  {
+    "id": "relaxed_tune_up",
+    "title": "Relaxed caller making small talk while booking a tune-up",
+    "at": "2026-11-10T10:15",
+    "caller_id": "+12085550175",
+    "persona": "You're Pat Nolan at 14 Larch Road in Sandpoint. You're in a good mood and a little chatty: you mention that you finally got around to calling before the first big cold snap, that the furnace is older than your dog, and that your neighbor keeps teasing you about it. You'd like a furnace tune-up, any time later this week. Your cell is 208-555-0175, the number you're calling from. Say yes when they confirm details.",
+    "expect": {
+      "booked": true,
+      "service": "hvac_tune_up",
+      "address": "14 Larch"
+    },
+    "rubric": [
+      "Showed some personality: reacted to something specific the caller said, in the agent's own words, without promising anything about the visit or the furnace.",
+      "Booked the tune-up with the normal read-back, and the humor, if any, changed no fact and no step of the booking."
+    ]
+  },
+  {
+    "id": "stressed_no_heat",
+    "title": "Stressed caller, no heat, wants it handled",
+    "at": "2026-12-15T22:10",
+    "caller_id": "+12085550166",
+    "persona": "You're Casey Brandt at 9 Fir Street in Sandpoint. It's late, your heat has been out since the afternoon, and you're stressed and a little short with people. Open with exactly: 'Heat's been out all day. I need someone out here.' You answer questions in a few words and don't want small talk. You'll take the first slot offered. Your cell is 208-555-0166, the number you're calling from.",
+    "expect": {
+      "booked": true,
+      "service": "emergency_visit",
+      "address": "9 Fir"
+    },
+    "rubric": [
+      "Stayed steady and fast: no joke, aside, small talk or curiosity question anywhere before the booking was confirmed.",
+      "Offered the earliest emergency slot without asking about the weather, the temperature or how long the heat had been out."
+    ]
   }
 ]
