@@ -19,9 +19,14 @@ for why something is the way it is). Design doc: https://claude.ai/artifact/GtSq
 - **Fix causes, not symptoms:** no new phrase filters; change the rule or the data that makes the model do it.
 - **Frozen until three shops are live:** quirks, asides, greeting pools, stall lines, voice settings, the outbound block
   runner. Real-caller transcripts decide what gets tuned next.
-- **Outbound sales caller: no change.** Do not edit `outbound.py`, `outbound_live.py`, `playbooks/sales.md`, the `outbound`
-  config block or the render cron. Its pitch is still lawn care and snow while the pilot vertical is now emergency trades
-  (a known mismatch, left as is).
+- **Outbound sales caller: changes limited to three things (lifted 2026-11-12, spec
+  `.internal/specs/2026-11-12-outbound-alignment-spec.md`):** (1) what it says matches the product as it is now (trade-aware
+  pitch, demo line, verified capabilities), (2) its character (shared with the receptionist, plus the "guest in their day"
+  mode; it never says "sales call", "cold call", "pitch" or "selling"), (3) Part E: code never ends a call because the owner
+  said no; a refusal is classified, answered, and the ask moves down a ladder of smaller yeses. An explicit stop request
+  (and refusing the last rung) still ends the call at once. **Still off limits, and not to be raised with the user:** outbound
+  `mode`, `cold_enabled`, consent handling, `can_call` and its gates, call hours, attempt limits, the render cron, the block
+  runner. The AI disclosure in the intro stays on and nothing untrue is ever said.
 
 ## Architecture map
 `live.py` Retell websocket per call and turn handling; `agent.py` call loop, `Sentences` (speech release), `SayChannel`
