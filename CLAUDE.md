@@ -44,7 +44,7 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
 - **Live line:** +1 208-428-6760 now runs the trades shop (`hvac.json`, "Peak Heating & Plumbing (demo)", agent Riley (was Sam);
   `live_businesses: ["hvac"]`). `lawn_care.json` keeps the placeholder +13125550200. Models: agent Claude Sonnet 5.5
   (`between_tools`), summary and grader Sonnet 5.5, caller sim Haiku 5.5.
-- **Retell (verified against the real API 2026-11-12):** the number points at agent version 23 (22 added post-call analysis off; 23 the Riley keywords) and `post_call_analysis_model`
+- **Retell (verified against the real API 2026-11-12):** the number points at agent version 24 (22 post-call analysis off; 23 Riley keywords; 24 the JSON voice block) and `post_call_analysis_model`
   is null on it. `retell-tune` was NOT run as written: the live agent's voice values (interruption 0.9, speed 1.22,
   temperature 1.1, dynamic speed off) differ from the `voice` block in the shop JSON files, and running it would have
   overwritten the user's dashboard tuning. Only `post_call_analysis_model` and `boosted_keywords` were changed. Do not run
@@ -94,12 +94,10 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   allow one (about 106 untouched leads, inside call hours), so the cron is either not deployed on Render, suspended, or
   failing (a `DASHBOARD_TOKEN` mismatch would give a 404). Render's dashboard (Cron Jobs, `outbound-caller-trigger`, Logs)
   is the only place to see which; the user decides. Never trigger `/admin/outbound/call-next` to test it: it dials.
-- **Live Retell voice vs the JSON `voice` blocks (read-only, 2026-11-12, agent v23):** five differences, identical in
-  `hvac.json` and `lawn_care.json`. Live / JSON: interruption_sensitivity 0.9 / 0.4, voice_speed 1.22 / 1.14,
-  voice_temperature 1.1 / 1.3, enable_dynamic_voice_speed false / true, enable_dynamic_responsiveness false / true. The
-  dashboard values are what callers hear. Nothing changed; the user picks which side is right, then the files or the
-  agent are synced. 0.9 interruption sensitivity makes the agent stop talking at small noises, which may be the "couldn't
-  hear me" report.
+- **Retell voice now matches the JSON blocks (user chose JSON, `retell-tune --business hvac`, 2026-11-12, agent v24, number
+  points at v24):** interruption_sensitivity 0.4 (was 0.9), voice_speed 1.14 (was 1.22), voice_temperature 1.3 (was 1.1),
+  dynamic voice speed and dynamic responsiveness on (were off). Post-call analysis off, Riley keywords kept. The old
+  dashboard values are in the v23 version if the user wants them back (v23 = the previous published version).
 - **Say channel is OFF** (`agent.speech_channel: false`). Full hvac run 2026-11-12: private notes up to 71 words, 77% of
   blocks tagged, so the stop rule (no private note over 12 words) failed; it passed only on lawn_care. The old blocklist
   is the active filter again. The flag is shared with the outbound caller's prompt builder, so the outbound prompt also
