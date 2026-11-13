@@ -26,7 +26,7 @@
     "max_tool_rounds": 6,
     "long_reply_words": 40,
     "reply_word_budget": 40,
-    "speech_channel": true,
+    "speech_channel": false,
     "cache_ttl": "1h"
   },
   "prices_per_mtok": {
@@ -88,7 +88,7 @@
     }
   },
   "live_businesses": [
-    "lawn_care"
+    "hvac"
   ],
   "finance": {
     "live_key_names": [

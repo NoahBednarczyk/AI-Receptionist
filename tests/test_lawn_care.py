@@ -20,7 +20,7 @@ class Shop(unittest.TestCase):
         self.assertIn("(demo)", LAWN["name"])
         self.assertTrue(LAWN["demo"])
         self.assertEqual(LAWN["mode"], "overflow")
-        self.assertEqual(LAWN["phone_numbers"], ["+12084286760"])     # the live number runs this demo for now
+        self.assertEqual(LAWN["phone_numbers"], ["+13125550200"])     # a placeholder; the live number now belongs to hvac.json
         self.assertNotEqual(LAWN["agent_name"], "Sam")
 
     def test_services_cover_the_seasonal_calendar(self):

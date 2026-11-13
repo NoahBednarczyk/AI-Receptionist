@@ -157,10 +157,12 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(prompts.channel_on(CHANNEL_CFG))
         self.assertFalse(prompts.channel_on({"agent": {}}))
 
-    def test_config_json_ships_the_channel_on_after_the_retest_passed(self):
+    def test_config_json_ships_the_channel_off_until_a_full_hvac_run_keeps_private_notes_to_12_words(self):
         import json
         from pathlib import Path
-        self.assertIs(json.loads(Path("config.json").read_text())["agent"]["speech_channel"], True)
+        # 2026-11-12: the full hvac run had private notes up to 71 words, so the stop rule failed. Turn it on only after a
+        # full hvac run with no note over 12 words.
+        self.assertIs(json.loads(Path("config.json").read_text())["agent"]["speech_channel"], False)
 
     def test_both_prompts_agree_on_how_to_stay_silent(self):
         from receptionist import outbound

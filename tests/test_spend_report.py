@@ -153,7 +153,7 @@ class CacheCostTests(unittest.TestCase):
     def test_only_the_live_shops_are_prewarmed_at_startup(self):
         from receptionist.config import all_businesses
         from receptionist.server import prewarm_targets
-        self.assertEqual([b["id"] for b in prewarm_targets(CFG)], ["lawn_care"])
+        self.assertEqual([b["id"] for b in prewarm_targets(CFG)], ["hvac"])
         phoned = {b["id"] for b in all_businesses(CFG) if b.get("phone_numbers")}
         self.assertGreater(len(phoned), 1)                        # demo shops have numbers too, and are not warmed
         self.assertEqual([b["id"] for b in prewarm_targets({**CFG, "live_businesses": []})],

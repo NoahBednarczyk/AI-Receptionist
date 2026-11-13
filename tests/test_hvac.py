@@ -156,7 +156,7 @@ class OverflowTests(unittest.TestCase):
 
     def test_the_live_number_belongs_to_exactly_one_business(self):
         live = "+12084286760"
-        self.assertEqual(business_for_number(CFG, live)["id"], "lawn_care")     # moved 2026-10-28 for the lawn care demo; swap back by moving it to hvac.json
+        self.assertEqual(business_for_number(CFG, live)["id"], "hvac")     # moved to the trades shop (the pilot) 2026-11-12; lawn care keeps a placeholder
         self.assertEqual(CFG["default_business"], "hvac")
         numbers = [n for b in all_businesses(CFG) for n in b.get("phone_numbers", [])]
         self.assertEqual(len(numbers), len(set(numbers)))          # no number routes to two businesses
