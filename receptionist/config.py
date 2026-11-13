@@ -28,11 +28,19 @@ def _folders(cfg: dict) -> list[Path]:
     return [Path(cfg["businesses_dir"])] + ([Path(cfg["clients_dir"])] if cfg.get("clients_dir") else [])
 
 
+def _demo_email(biz: dict) -> dict:
+    """A demo shop in git has no owner email (the repo is public). DEMO_NOTIFY_EMAIL on the server supplies one."""
+    to = os.environ.get("DEMO_NOTIFY_EMAIL")
+    if to and biz.get("demo") and not (biz.get("notify") or {}).get("email"):
+        biz["notify"] = {**(biz.get("notify") or {}), "email": [to]}
+    return biz
+
+
 def load_business(cfg: dict, business_id: str | None = None) -> dict:
     name = f"{business_id or cfg['default_business']}.json"
     for folder in _folders(cfg):
         if (folder / name).exists():
-            return json.loads((folder / name).read_text())
+            return _demo_email(json.loads((folder / name).read_text()))
     raise SystemExit(f"No business config named {name} in {' or '.join(str(f) for f in _folders(cfg))}")
 
 
@@ -42,7 +50,7 @@ def all_businesses(cfg: dict) -> list[dict]:
     found, ids, numbers = [], {}, {}
     for folder in _folders(cfg):
         for p in sorted(folder.glob("*.json")) if folder.exists() else []:
-            biz = json.loads(p.read_text())
+            biz = _demo_email(json.loads(p.read_text()))
             if biz["id"] in ids:
                 raise ValueError(f"Business id {biz['id']!r} is in both {ids[biz['id']]} and {p}")
             ids[biz["id"]] = p

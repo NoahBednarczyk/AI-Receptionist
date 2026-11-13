@@ -37,6 +37,8 @@ services:
         sync: false
       - key: ADMIN_EMAIL
         sync: false
+      - key: DEMO_NOTIFY_EMAIL      # owner email for the demo shop (kept out of the public repo)
+        sync: false
       # Off-box backups (any S3-compatible bucket); leave blank to rely on Render's disk snapshots.
       - key: BACKUP_S3_BUCKET
         sync: false
