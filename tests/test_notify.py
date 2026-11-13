@@ -314,6 +314,20 @@ class MissedOutcome(unittest.TestCase):
         self.n.call_finished(SHOP, "c1", self.empty, "caller hung up")
         self.assertEqual(self.to_admin(), [])
 
+    def test_a_question_answered_from_the_facts_with_nothing_to_follow_up_is_not_a_missed_outcome(self):
+        info = {**self.empty, "outcome": "info_only", "intent": "question", "follow_up": "", "flags": []}
+        self.n.call_finished(SHOP, "c1", info, "caller hung up")
+        self.assertEqual(self.to_admin(), [])
+        self.assertEqual(len(self.n.email.sent), 1)     # the shop still gets its ordinary call email
+
+    def test_information_only_still_alarms_when_there_is_something_to_follow_up_or_the_agent_was_flagged(self):
+        flagged = {**self.empty, "outcome": "info_only", "follow_up": "", "flags": [{"type": "invented_price", "quote": "q", "explanation": "e"}]}
+        wanted = {**self.empty, "outcome": "info_only", "follow_up": "Call back about the quote.", "flags": []}
+        abandoned = {**self.empty, "outcome": "abandoned", "follow_up": "", "flags": []}
+        for i, summary in enumerate((flagged, wanted, abandoned), 1):
+            self.n.call_finished(SHOP, f"c{i}", summary, "caller hung up")
+        self.assertEqual(len(self.to_admin()), 3)
+
     def test_a_failed_summary_with_nothing_saved_still_alarms(self):
         self.n.call_finished(SHOP, "c1", None, "caller hung up")
         self.assertEqual(len(self.to_admin()), 1)

@@ -248,8 +248,11 @@ class Notifier:
     # -- W2.4: a call that ended with nothing to show goes to Noah, not the shop --
     @staticmethod
     def had_outcome(f: dict) -> bool:
+        """A call that needs nothing from anyone has an outcome too: the summary says it was information only (a question
+        answered from the facts), left nothing for the office to do, and flagged nothing the agent said."""
         s = f["summary"]
-        return bool(f["appointments"] or f["messages"] or f["leads"]
+        answered = s.get("outcome") == "info_only" and not (s.get("follow_up") or "").strip() and not s.get("flags")
+        return bool(f["appointments"] or f["messages"] or f["leads"] or answered
                     or s.get("outcome") in ("booked", "transferred", "lead", "message", "spam")
                     or s.get("intent") == "spam" or f["reason"] in ("transferred", "spam"))
 
