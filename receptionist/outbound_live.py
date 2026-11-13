@@ -703,6 +703,18 @@ def agent_payload(cfg: dict, base_url: str, secret: str, voice: dict | None = No
             "post_call_analysis_model": None}
 
 
+PATCH_FIELDS = ("agent_name", "boosted_keywords", "voicemail_option", "end_call_after_silence_ms", "max_call_duration_ms",
+                "post_call_analysis_model")   # what the agent says and hears; never the voice, which is tuned on the dashboard
+
+
+def agent_changes(cfg: dict, live: dict, base_url: str = "https://receptionist-575z.onrender.com") -> dict:
+    """{field: {"live": ..., "new": ...}} for each content field where the Retell outbound agent differs from what
+    agent_payload() would create today. agent_payload only runs when the agent is created, so an agent made before the
+    pitch changed keeps its old keywords and voicemail setting until it is patched."""
+    want = agent_payload(cfg, base_url, "x")
+    return {k: {"live": live.get(k), "new": want[k]} for k in PATCH_FIELDS if live.get(k) != want[k]}
+
+
 def live_call_fn(api_key: str):
     """A real call_fn for place_call(): Retell's REST API over plain urllib, the same request `retell_setup._call`
     makes. Unlike that helper (a CLI tool, fine to SystemExit), this raises RuntimeError so a server request can turn

@@ -339,6 +339,22 @@ def cmd_review_calls(cfg, a):
 
 def cmd_outbound_agent(cfg, a):
     from . import outbound_live, retell_setup
+    if a.diff or a.apply:
+        rec = outbound_live.load_agent_record(cfg)
+        if not rec:
+            raise SystemExit("No outbound agent on record (data/retell_outbound.json).")
+        live = retell_setup._call("GET", f"/get-agent/{rec['agent_id']}")   # a read; nothing changes
+        changes = outbound_live.agent_changes(cfg, live, a.base_url)
+        for k, v in changes.items():
+            print(f"{k}:\n  live: {json.dumps(v['live'])}\n  new:  {json.dumps(v['new'])}")
+        if not changes:
+            print("The Retell outbound agent already matches. Nothing to patch.")
+        elif not a.apply:
+            print("\nNothing was changed. Add --apply to PATCH exactly these fields (a change to the Retell account).")
+        else:
+            retell_setup._call("PATCH", f"/update-agent/{rec['agent_id']}", {k: v["new"] for k, v in changes.items()})
+            print("\nPatched the draft. Publish it in Retell (or run publish) before the number points at it.")
+        return
     voice = outbound_live.receptionist_voice(cfg)   # always the receptionist's voice
     if not a.create:
         print(json.dumps(outbound_live.agent_payload(cfg, a.base_url, "<RETELL_WS_SECRET>", voice), indent=1))
@@ -540,6 +556,8 @@ def main():
     sp.add_argument("--base-url", default="https://receptionist-575z.onrender.com")
     sp.add_argument("--number", help="outbound number, if you already have one (otherwise it stays PENDING)")
     sp.add_argument("--create", action="store_true", help="really create it in Retell (a change to your account)")
+    sp.add_argument("--diff", action="store_true", help="read the live outbound agent and show what a patch would change (read only)")
+    sp.add_argument("--apply", action="store_true", help="PATCH those fields onto the live outbound agent (a change to your account)")
     sp.set_defaults(fn=cmd_outbound_agent)
 
     sp = sub.add_parser("review-calls", help="lint stored outbound calls for tone, invented claims, repeats and slowness (free)")

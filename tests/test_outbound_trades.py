@@ -126,5 +126,16 @@ class NoHardCodedTimesTests(unittest.TestCase):
             self.assertIsNone(re.search(r"\b\d{1,2}:\d{2}\b", const))
 
 
+class RetellPatchTests(unittest.TestCase):
+    def test_only_the_content_fields_that_differ_are_in_the_patch_and_never_the_voice(self):
+        want = ol.agent_payload({}, "https://x.io", "S")
+        live = {**want, "boosted_keywords": ["lawn care"], "voice_speed": 1.5, "voice_id": "other"}
+        changes = ol.agent_changes({}, live, "https://x.io")
+        self.assertEqual(list(changes), ["boosted_keywords"])
+        self.assertEqual(changes["boosted_keywords"]["new"], want["boosted_keywords"])
+        self.assertEqual(ol.agent_changes({}, want, "https://x.io"), {})
+        self.assertFalse({"voice_id", "voice_speed", "voice_model"} & set(ol.PATCH_FIELDS))
+
+
 if __name__ == "__main__":
     unittest.main()
