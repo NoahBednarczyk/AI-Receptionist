@@ -57,8 +57,9 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   shown in `/admin/costs`) and emailed. It was not a real phone call, so Retell audio and the phone path are unverified.
 - **Greeting gap:** the hvac demo greeting has no recording notice and no AI disclosure (`demo: true` waives them). Before
   a real shop takes this number, use a non-demo shop file; `onboarding.check` refuses otherwise.
-- **UptimeRobot** monitors `/health/deep` (user set it up 2026-11-12). The missed-outcome alarm also fires for a pure
-  information call (no booking or message), which will be noisy once real callers ask price questions.
+- **UptimeRobot** monitors `/health/deep` (user set it up 2026-11-12). The missed-outcome alarm no longer fires for a
+  pure information call (summary outcome `info_only`, empty `follow_up`, no flags); an abandoned call, a follow-up or a
+  flagged reply still alarms. Unit-tested only.
 - **Character and no-heat fix (spec `.internal/specs/2026-11-12-character-and-no-heat-spec.md`, commits 62b2d0b,
   c1ff4fe, 78bc243, pushed 2026-11-12 at the user's word, NO scenario run on them: the user tests by ear):** `heating_season` (10-15 to 04-15) in `hvac.json` is read by
   `schedule.in_heating_season`; in season `call_state` says the weather is known and `safety.match(..., heating_season=True)`
@@ -93,6 +94,12 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   allow one (about 106 untouched leads, inside call hours), so the cron is either not deployed on Render, suspended, or
   failing (a `DASHBOARD_TOKEN` mismatch would give a 404). Render's dashboard (Cron Jobs, `outbound-caller-trigger`, Logs)
   is the only place to see which; the user decides. Never trigger `/admin/outbound/call-next` to test it: it dials.
+- **Live Retell voice vs the JSON `voice` blocks (read-only, 2026-11-12, agent v23):** five differences, identical in
+  `hvac.json` and `lawn_care.json`. Live / JSON: interruption_sensitivity 0.9 / 0.4, voice_speed 1.22 / 1.14,
+  voice_temperature 1.1 / 1.3, enable_dynamic_voice_speed false / true, enable_dynamic_responsiveness false / true. The
+  dashboard values are what callers hear. Nothing changed; the user picks which side is right, then the files or the
+  agent are synced. 0.9 interruption sensitivity makes the agent stop talking at small noises, which may be the "couldn't
+  hear me" report.
 - **Say channel is OFF** (`agent.speech_channel: false`). Full hvac run 2026-11-12: private notes up to 71 words, 77% of
   blocks tagged, so the stop rule (no private note over 12 words) failed; it passed only on lawn_care. The old blocklist
   is the active filter again. The flag is shared with the outbound caller's prompt builder, so the outbound prompt also
