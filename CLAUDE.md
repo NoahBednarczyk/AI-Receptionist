@@ -94,6 +94,10 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   allow one (about 106 untouched leads, inside call hours), so the cron is either not deployed on Render, suspended, or
   failing (a `DASHBOARD_TOKEN` mismatch would give a 404). Render's dashboard (Cron Jobs, `outbound-caller-trigger`, Logs)
   is the only place to see which; the user decides. Never trigger `/admin/outbound/call-next` to test it: it dials.
+- **Voice model (2026-11-13, user asked for a more realistic voice):** `hvac.json` voice_model is `eleven_v4_turbo` (was
+  `eleven_v3_conversational`), same voice 11labs-Grace, applied with `retell-tune`, agent v25, number on v25. Retell lists it
+  at $0.08/min, the same as v3 conversational. Chosen from ElevenLabs' and Retell's docs, NOT judged by ear; the user
+  decides. Rollback: point the number at v24 (the previous published version).
 - **Retell voice now matches the JSON blocks (user chose JSON, `retell-tune --business hvac`, 2026-11-12, agent v24, number
   points at v24):** interruption_sensitivity 0.4 (was 0.9), voice_speed 1.14 (was 1.22), voice_temperature 1.3 (was 1.1),
   dynamic voice speed and dynamic responsiveness on (were off). Post-call analysis off, Riley keywords kept. The old
