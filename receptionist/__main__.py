@@ -381,6 +381,20 @@ def cmd_outbound_agent(cfg, a):
     print(f"Created outbound agent {agent['agent_id']} with the receptionist's voice. Number: {a.number or 'PENDING (run outbound-number later)'}. No calls placed.")
 
 
+def cmd_outbound_sim(cfg, a):
+    from . import budget, outbound_sim
+    if a.list:
+        for o in outbound_sim.OWNERS:
+            print(f"  {o['id']:<18} {o['title']}")
+        return
+    n = len(a.ids or outbound_sim.OWNERS)
+    per = outbound_sim.per_call_estimate(cfg)
+    if a.estimate:
+        print(f"{n} call(s) at about ${per:.2f} each: about ${n * per:.2f}. ${budget.remaining(cfg):.2f} of today's ${budget.daily_limit(cfg):.2f} testing budget left. Nothing was run.")
+        return
+    outbound_sim.run_all(cfg, _client(cfg), a.ids, a.report, grade_it=not a.no_grade)
+
+
 def cmd_outbound_number(cfg, a):
     from .speech import normalize_phone
     path = Path(cfg["data_dir"]) / "retell_outbound.json"
@@ -570,6 +584,14 @@ def main():
     sp.add_argument("--diff", action="store_true", help="read the live outbound agent and show what a patch would change (read only)")
     sp.add_argument("--apply", action="store_true", help="PATCH those fields onto the live outbound agent (a change to your account)")
     sp.set_defaults(fn=cmd_outbound_agent)
+
+    sp = sub.add_parser("outbound-sim", help="simulated owners against the discovery caller (spends from the testing budget; --estimate first)")
+    sp.add_argument("ids", nargs="*", help="owner ids (default: all)")
+    sp.add_argument("--list", action="store_true", help="list the owners")
+    sp.add_argument("--estimate", action="store_true", help="price the run and run nothing")
+    sp.add_argument("--no-grade", action="store_true", help="skip the character grader (code checks only)")
+    sp.add_argument("--report", help="where to write the JSON report")
+    sp.set_defaults(fn=cmd_outbound_sim)
 
     sp = sub.add_parser("review-calls", help="lint stored outbound calls for tone, invented claims, repeats and slowness (free)")
     sp.add_argument("--server", default=os.environ.get("PUBLIC_BASE_URL", "https://receptionist-575z.onrender.com"))

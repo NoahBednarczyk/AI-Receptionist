@@ -21,6 +21,7 @@ SYMPATHY = re.compile(r"\b(sorry to hear|oh no|that'?s a bummer|that sounds (fru
 # The caller never names what kind of call it is, even when the owner does ("is this a sales call?").
 SALES_LABEL = re.compile(r"\b(sales (call|pitch|rep)|cold[- ]call(ing|er)?|pitch(ing)?|selling)\b", re.I)
 AI_SELF = re.compile(r"\b(i'?m an? (ai|robot|bot)|ai assistant|virtual assistant|an ai\b)", re.I)
+DISCLOSED_INTRO = re.compile(r"\ban ai assistant calling for\b", re.I)
 PHANTOM = re.compile(r"\b(i'?m told|you asked to hear|you (signed|opted) up|other (shops|companies|owners|businesses) (in|around|are|have)|"
                      r"(many|most|several|a lot of) (shops|owners|businesses|companies)|we'?ve (helped|worked with)|guarantee[sd]?|"
                      r"award|rated|number one|#1|best in)\b", re.I)
@@ -82,7 +83,7 @@ def lint(transcript: str, allowed: str = "", latencies: list[float] | None = Non
             found.append(f"{where}: sympathy boilerplate: {text[:60]!r}")
         if SALES_LABEL.search(text):
             found.append(f"{where}: named the kind of call it is (sales, cold, pitch or selling): {text[:60]!r}")
-        if AI_SELF.search(text) and not ai_asked:
+        if AI_SELF.search(text) and not ai_asked and not DISCLOSED_INTRO.search(text):   # the intro says it on purpose (the disclosure is on)
             found.append(f"{where}: volunteered being an AI: {text[:60]!r}")
         if len(text.split()) > MAX_WORDS:
             found.append(f"{where}: {len(text.split())} words (over {MAX_WORDS})")
