@@ -34,18 +34,39 @@ lines by vertical; `tools.py` the tools; `prompts.py` rule layers (`PLATFORM_RUL
 `simulate.py` test calls; `voicetest.py`. Shops: `businesses/{hvac,lawn_care,acme}.json` (demos, in git);
 real clients in `data/clients/` (server disk, never in git). Scenarios in `scenarios/`, run reports in `data/runs/`.
 
-## Where things stand (2026-11-12, local commits, NOT pushed)
-- **Live line:** +1 208-428-6760 runs the lawn care demo (`lawn_care.json`, `live_businesses: ["lawn_care"]`). Models: agent
-  Claude Sonnet 5.5 (`between_tools`), summary and grader Sonnet 5.5, caller sim Haiku 5.5. Voice and Retell settings are
-  whatever the user set in the Retell dashboard; `lawn_care.json` mirrors them, except that `post_call_analysis_model` is
-  now `null` (see open items). `default_business` is `hvac` (the pilot vertical); moving the live number to it needs the user's word.
-- **Say channel is ON** (`agent.speech_channel: true`), decided on 2026-11-12 from the lawn quick run: 0 untagged blocks per
-  call, longest private note 12 words, 48/56 text blocks tagged. On the hvac quick run the same day the longest private
-  note was 35 words (71 words, 77% tagged on the full run: failed again) and 68 to 87% of blocks were tagged; the stop rule (no private note over 12 words) was NOT met there.
-  Re-measure on the next full run; if it keeps failing, delete the channel (`speech_channel: false` is the rollback). The
-  old blocklist still runs in shadow; delete it after a clean week of real calls.
-- **Tests:** 485 pass in about 13 s with no API key; CI in `.github/workflows/tests.yml` (never run on GitHub).
-- **Simulation, hvac (the pilot), 2026-11-12:** quick 6: 3/6, fixed, 3/3 on rerun. First FULL run (16, budget raised to $2): 10/16, gate NOT met (needs 9/10 twice). Failures: stacked name/address question on top of a time question (3 scenarios, plus the seven-digit one offered 3 windows), an invented recording opt-out (Washington), 'Uh, getting that down' narrating a tool call, emergency windows offered before the town was checked (outside_service_area), and the furnace filter tip graded as work on the furnace (grader noise: the tip is approved). Three prompt rules were then edited (time question ends the reply; exactly two times; never offer an opt-out or workaround for a stated policy). Those edits are UNTESTED: $0.19 of today's $2 is left and a full run costs about $0.95. Next: re-run the full suite (needs another raise), twice, before calling the gate met.
+## Where things stand (2026-11-12, pushed to origin/main at 649f377 and deployed on Render)
+- **Live line:** +1 208-428-6760 now runs the trades shop (`hvac.json`, "Peak Heating & Plumbing (demo)", agent Sam;
+  `live_businesses: ["hvac"]`). `lawn_care.json` keeps the placeholder +13125550200. Models: agent Claude Sonnet 5.5
+  (`between_tools`), summary and grader Sonnet 5.5, caller sim Haiku 5.5.
+- **Retell (verified against the real API 2026-11-12):** the number points at agent version 22 and `post_call_analysis_model`
+  is null on it. `retell-tune` was NOT run as written: the live agent's voice values (interruption 0.9, speed 1.22,
+  temperature 1.1, dynamic speed off) differ from the `voice` block in the shop JSON files, and running it would have
+  overwritten the user's dashboard tuning. Only `post_call_analysis_model` and `boosted_keywords` were changed. Do not run
+  `retell-tune` until the JSON voice blocks are synced to the dashboard (or the user says to overwrite).
+- **Email (verified on Render with real Gmail SMTP):** SMTP_* , ADMIN_EMAIL and DEMO_NOTIFY_EMAIL are set and working; a
+  live-path call produced a per-call email and a missed-outcome email, both `sent` in `/admin/notifications`. Demo shops
+  take their owner email from `DEMO_NOTIFY_EMAIL` (public repo, no address committed).
+- **Live-path test call (verified):** a fake call over the Render websocket as Retell would send it (`to_number` the live
+  number) got the trades greeting, answered a price question from the facts, ended cleanly, was saved (Claude cost $0.0376,
+  shown in `/admin/costs`) and emailed. It was not a real phone call, so Retell audio and the phone path are unverified.
+- **Greeting gap:** the hvac demo greeting has no recording notice and no AI disclosure (`demo: true` waives them). Before
+  a real shop takes this number, use a non-demo shop file; `onboarding.check` refuses otherwise.
+- **UptimeRobot** monitors `/health/deep` (user set it up 2026-11-12). The missed-outcome alarm also fires for a pure
+  information call (no booking or message), which will be noisy once real callers ask price questions.
+- **Say channel is OFF** (`agent.speech_channel: false`). Full hvac run 2026-11-12: private notes up to 71 words, 77% of
+  blocks tagged, so the stop rule (no private note over 12 words) failed; it passed only on lawn_care. The old blocklist
+  is the active filter again. The flag is shared with the outbound caller's prompt builder, so the outbound prompt also
+  went back to its pre-channel form (no outbound file was edited). Turn the channel on only after a full hvac run with no
+  note over 12 words.
+- **Tests:** 487 pass in about 13 s with no API key; CI in `.github/workflows/tests.yml` (never run on GitHub).
+- **Simulation, hvac (the pilot), 2026-11-12:** first FULL run (16 scenarios): 10/16, gate (9/10 on two runs, zero
+  failures on safety, invented prices or policies, AI disclosure) NOT met. Failures: a name/address question stacked on a
+  time question (three scenarios), three windows offered, an invented recording opt-out, "Uh, getting that down"
+  narrating a tool call, emergency windows offered before the town was checked, and a furnace-filter-tip grading that was
+  grader noise (the tip is approved). Prompt rules were then edited (a time question ends the reply; exactly two times;
+  no opt-outs or workarounds for stated policy; the confirmation number is no longer read out unless asked). Those edits
+  are UNTESTED: the day's budget is spent ($1.81 of $2.00), and the raise to $4 for two full runs was blocked, so neither
+  full run has happened. A full run costs about $0.95.
 
 ## Built under the 2026-11-11 market-readiness spec (`.internal/specs/2026-11-11-market-readiness-spec.md`)
 - **W1:** degraded mode, Anthropic client timeouts, `/health/deep`, `backup.py` + `restore --dry-run` (S3 upload tested
@@ -66,17 +87,18 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
 - **W7:** platform-hosted paths, `HANDOFF_PROMPT.md` and the med spa removed (tag `med-spa-archive`), README rewritten.
 
 ## Not verified
-Nothing here has run against a real SMTP server, bucket, Twilio, Retell number change or real Google calendar; no real
-shop has used `new-client` end to end; the landing page and contact form have not been seen in a browser; the weekly
-report and digest only against fakes; GitHub CI never ran; the degraded mode only against fake clients.
+No real phone call has gone through the trades shop (only the websocket path); no bucket, Twilio or Google calendar run;
+no real shop has used `new-client` end to end; the landing page and contact form have not been seen in a browser; the
+weekly report only against fakes; GitHub CI never ran; the degraded mode only against fake clients; the prompt edits after
+the 10/16 run; the new say-channel-off state against a full suite.
 
 ## Open items for the user (nothing below can be done without them)
-1. **Budget:** ask to raise it by about $2 so the full hvac suite can run twice (W3 gate).
-2. **Gmail app password** for SMTP; set `SMTP_HOST/USER/PASSWORD` and `ADMIN_EMAIL` on Render; add `notify.email` per shop.
-3. **UptimeRobot** (free) on `/health/deep`; **backup bucket** (B2/R2 free tier) and `BACKUP_S3_*`.
-4. **Retell:** apply `retell-tune` to set `post_call_analysis_model` null (Retell's `gpt_5_6_terra_text_testing` line was
-   $1.25 of $5.06 in November; it is almost certainly that setting, unconfirmed without the key). Optional `inbound_fallback_number`.
+1. **Budget:** raise today's limit (or wait for tomorrow's $1) so the full hvac suite can run, twice, for the W3 gate.
+2. **Make one real phone call** to the live number and check the greeting, latency and hearing (an earlier test call was
+   slow and hard to hear, probably during a redeploy; unconfirmed).
+3. **Backup bucket** (B2/R2 free tier) and `BACKUP_S3_*` on Render.
+4. **Retell voice settings:** decide whether the dashboard values or the JSON `voice` blocks are right, then sync the files.
 5. **Google:** create the service account (free) and share one test calendar so `calendar-sync` can be proven.
-6. **Decide:** move the live number to the trades shop; the voice swap (`docs/voice-comparison.md`, worth about 6 cents a
-   minute); a lawyer for the pilot agreement; Stripe payment links (by hand); a domain (about $12 a year) for an HTTP email provider.
-7. **Push** when ready: it deploys everything above to the live line.
+6. **Decide:** a non-demo shop file with the recording notice and AI disclosure for the pilot; the voice swap
+   (`docs/voice-comparison.md`, about 6 cents a minute); a lawyer for the pilot agreement; Stripe payment links (by hand);
+   a domain (about $12 a year) for an HTTP email provider; the outbound caller's lawn-care pitch against the trades pilot.
