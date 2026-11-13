@@ -207,7 +207,7 @@ class HonestPitchTests(unittest.TestCase):
         stable = re.sub(r'\*"Send me some info\."\*[^\n]*', "", stable)
         self.assertIsNone(re.search(r"\btext(s|ing|ed)?\b", stable, re.I), re.search(r".{40}\btext(s|ing|ed)?\b.{40}", stable, re.I | re.S))
         self.assertIn("puts every call on the owner's dashboard", stable)
-        self.assertIn("Noah will call from this number", stable)
+        self.assertIn("Noah calls from this number", stable)
 
     def test_no_playful_teasing_of_a_no_remains_in_the_prompt(self):
         stable = outbound.build_prompt({}, NOW, {"outbound": {}})[0]["text"].lower()

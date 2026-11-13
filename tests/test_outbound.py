@@ -90,8 +90,8 @@ class PromptTests(unittest.TestCase):
         self.assertIn("never say you are researching for a different company", self.text.replace("You never", "never"))
 
     def test_has_structure_pushback_and_hard_stop(self):
-        for needle in ("Call structure", "When they hold back", "at most twice", "mark_do_not_call", "Hard stops", "208-428-6760",
-                       "say yes in the same breath", "Persuade; never mislead", "Angry, rude or hostile"):
+        for needle in ("The call", "When they say no", "never end a call because they said no", "mark_do_not_call", "Hard stops", "208-428-6760",
+                       "Say yes in your first words", "Persuade, never mislead", "Angry or rude"):
             self.assertIn(needle, self.text)
 
     def test_call_block_names_the_lead_and_offers_times(self):
@@ -130,10 +130,11 @@ class PromptLintTests(unittest.TestCase):
 
     def test_every_objection_has_an_answer_and_hold_back_has_its_moves(self):
         text = outbound.PLAYBOOK.read_text()
-        for o in ("Not interested", "Send me some info", "already have someone", "How much", "Is this a robot", "don't trust AI", "bad time", "how'd you get my number"):
+        for o in ("Send me some info", "How much", "Is this a robot", "how'd you get my number"):
             self.assertIn(o.lower(), text.lower())
-        for move in ("A no: accept it", "I don't want to talk to an AI", "A bad time", "Another no of any kind"):
-            self.assertIn(move, text)
+        self.assertIn("Notes from code name what the no is about", text)   # the six kinds of no and their answers live in code (outbound_live.ANSWER)
+        from receptionist import outbound_live
+        self.assertEqual(set(outbound_live.KINDS) | {"unclear"}, set(outbound_live.ANSWER))
 
 
 class DetailedNotesTests(unittest.TestCase):
@@ -158,9 +159,13 @@ class DetailedNotesTests(unittest.TestCase):
         self.assertIn("business_info", props)
 
 
+def ol_answers():
+    from receptionist import outbound_live
+    return list(outbound_live.ANSWER.values())
+
+
 class WarmthTests(unittest.TestCase):
-    def test_prompt_tells_riley_to_care_and_never_laugh_at_the_owners_problem(self):
+    def test_prompt_never_lets_riley_laugh_at_the_owners_problem(self):
         text = outbound.build_prompt(LEAD, TUE_10AM, cfg())[0]["text"]
-        self.assertIn("genuinely want to help", text)
-        self.assertIn("Never laugh at", text)
+        self.assertIn("never about their business, a missed call, a lost job or a no", text)
         self.assertNotIn('("ha"', text)

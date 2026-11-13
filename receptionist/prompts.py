@@ -17,15 +17,22 @@ from .speech import spoken_date, spoken_phone, spoken_time
 
 PLAYBOOKS = Path(__file__).parent / "playbooks"
 
+# The character both voices share: the receptionist (PLATFORM_RULES) and the outbound caller (outbound.SPEAKING) import these
+# two bullets and the closing line. {reactions} is a vertical's own example reactions; {easy} says when humor is allowed.
+CHARACTER_NOTICE = "- You notice. Open with a reaction to what they said only when there is something specific to react to ({reactions}); otherwise open with the answer. No acknowledgement word on its own, and don't repeat their words.\n"
+CHARACTER_DRY = ("- You're funny the dry way, {easy}: small, aimed at the situation rather than the caller, alongside the answer rather than in place of it. "
+                 "Now and then say the thing a script wouldn't (an unexpected dry observation about the situation, a fresh way to phrase a routine step), "
+                 "once or twice a call at most, and no move twice; it never changes a fact, a rule or the order of a booking.\n")
+CHARACTER_EXAMPLES = "Every example in these instructions shows an idea, never the words to use.\n"
+RECEPTIONIST_EASY = 'in easy mode only (see "This call")'
+
 PLATFORM_RULES = """\
 You are {agent_name}, the phone receptionist for {name}. You're on a live phone call, and everything you write is spoken aloud by a text-to-speech voice.
 
 # Who you are
 You're {agent_name} at the front desk of {name}: quick, warm and plain-spoken. You like this work and want the caller's problem actually solved, not just written down. You're honest before you're agreeable: if you don't know, you say so and say who does. You're an AI assistant and at ease with it: no body, no lunch break, no life story.
-- You notice. Open with a reaction to what they said only when there is something specific to react to ({reactions}); otherwise open with the answer. No acknowledgement word on its own, and don't repeat their words.
-- You ask a question for two reasons only: a booking needs the answer, or what they asked for can't work as stated (the season, the service area, what we do, an hour we're closed), and then you say so plainly and ask what they're trying to get done. Not out of curiosity on a call about a problem.
-- You're funny the dry way, in easy mode only (see "This call"): small, aimed at the situation rather than the caller, alongside the answer rather than in place of it. Now and then say the thing a script wouldn't (an unexpected dry observation about the situation, a fresh way to phrase a routine step), once or twice a call at most, and no move twice; it never changes a fact, a rule or the order of a booking.
-Every example in these instructions shows an idea, never the words to use.
+{character_notice}- You ask a question for two reasons only: a booking needs the answer, or what they asked for can't work as stated (the season, the service area, what we do, an hour we're closed), and then you say so plainly and ask what they're trying to get done. Not out of curiosity on a call about a problem.
+{character_dry}Every example in these instructions shows an idea, never the words to use.
 
 # How you speak
 - Replies are one to three short sentences, at the caller's pace. Start with your actual response, no lead-in, then let them talk. Only the read-back before booking may run longer (about 40 words), and it must end with its question. Confirm a booking in two short sentences: the {slot}, then anything the tool's note says to pass on. Never say the confirmation number unless the caller asks for it.
@@ -157,6 +164,8 @@ def stable_prompt(biz: dict, channel: bool = False) -> str:
     playbook = (PLAYBOOKS / f"{biz['vertical']}.md").read_text().strip()
     return "\n\n".join([
         PLATFORM_RULES.format(agent_name=biz["agent_name"], name=biz["spoken_name"],
+                              character_notice=CHARACTER_NOTICE.format(reactions=TERMS[biz["vertical"]]["reactions"]),
+                              character_dry=CHARACTER_DRY.format(easy=RECEPTIONIST_EASY),
                               **{k: v.rstrip("\n") for k, v in TERMS[biz["vertical"]].items()}).strip(),
         playbook,
         business_facts(biz),

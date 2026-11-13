@@ -241,7 +241,6 @@ class OpenerAndSlotsTests(Fixture):
             self.s.respond("ok and how much")
         self.assertIn("Ringback", notes[0])
         self.assertIn("an AI assistant calling for Noah at Ringback in Sandpoint", notes[0])
-        self.assertIn("sales call", notes[0])
         self.assertNotIn("Ringback", notes[1] or "")
 
     def test_manager_slots_replace_the_defaults_until_stale(self):

@@ -54,22 +54,20 @@ STOP_LINES = ["Understood, I'll take you off our list. Sorry for the interruptio
               "Got it, you're off our list. Sorry to bother you.",
               "No problem at all, I'll take you off the list. Have a good one."]
 INTRO_NOTE = ("you just asked who you are speaking with and they have answered. In this reply, in the same short breath, say your name and that you "
-              "are with Ringback in Sandpoint, and go straight to your first question about their calls, warmly. Do not say it is a sales call "
-              "or a cold call, do not bring up being an AI unless they ask, and no lead-in about why you are calling. If they said it is a wrong "
-              "person, a bad time or asked who you are, handle that first.")
+              "are with Ringback in Sandpoint, and go straight to your first question about their calls. Do not bring up being an AI unless they ask, "
+              "and no lead-in about why you are calling. If they said it is a wrong person, a bad time or asked who you are, handle that first.")
 INTRO_NOTE_AI = ("you just asked who you are speaking with and they have answered. In this reply, in the same short breath, say your name, that you "
-                 "are an AI assistant calling for {founder} at {company} in {town}, then go straight to your first question about their calls, warmly. "
-                 "Do not say it is a sales call or a cold call, and no lead-in about why you are calling. If they said it is a wrong "
-                 "person, a bad time or asked who you are, handle that first.")
+                 "are an AI assistant calling for {founder} at {company} in {town}, then go straight to your first question about their calls. "
+                 "No lead-in about why you are calling. If they said it is a wrong person, a bad time or asked who you are, handle that first.")
 
 
 def intro_note(s: dict) -> str:
     return INTRO_NOTE_AI.format(**s) if s["disclose_ai_in_intro"] else INTRO_NOTE
 
 
-AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Answer with one quick, funny line of your own "
-           "that says yes, you are an AI assistant, unmistakably (the joke comes with the yes, never instead of it), then use it "
-           "in the same breath to get back to your goal. Never claim to be human.")
+AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Say yes first, unmistakably: you are an AI assistant. "
+           "Then one short dry line of your own about being software, new every time, and back to your question in the same breath. "
+           "Never claim to be human.")
 
 # Words that end the call by themselves; the model is not asked. The softer "don't call again" is skipped when the
 # caller is only picking another time ("don't call me today, try Thursday").
@@ -148,7 +146,7 @@ LAST_RUNG = len(RUNGS) - 1
 FLOOR = {"bad_time": 1, "no_need": 0, "no_trust_ai": 1, "no_money": 3, "tried_before": 2, "dislikes_calls": 4, "unclear": 0}
 # One answer per objection, from the facts only, under 20 words, in their terms. Wording is the model's own each time.
 ANSWER = {
-    "bad_time": "A bad time. Take the time they give; no pitch now.",
+    "bad_time": "A bad time. Take the time they give and nothing else now.",
     "no_need": "They say they have it covered. Believe them and don't argue. The one thing true of the product: it answers only the calls they can't get to.",
     "no_trust_ai": "They don't trust an AI. Say plainly that yes, you are one (never claim to be human). The one thing true: it never promises a price or time they haven't set, and anything it isn't sure of goes to them as a message.",
     "no_money": "Cost is the objection. The one thing true: free for fourteen days on the calls they miss, nothing to cancel, and Noah talks pricing only if it caught real jobs. Never invent a price.",
@@ -485,7 +483,7 @@ def session_cfg(cfg: dict) -> dict:
     dial re-warms it, and the block runner's gaps fit inside, so writes cost 1.25x instead of 2x)."""
     m, a = cfg["models"], cfg.get("agent", {})
     return {**cfg, "models": {**m, "agent": m.get("outbound", m["agent"]), "agent_effort": m.get("outbound_effort", m["agent_effort"])},
-            "agent": {**a, "cache_ttl": outbound.settings(cfg)["cache_ttl"]}}
+            "agent": {**a, "cache_ttl": outbound.settings(cfg)["cache_ttl"], "reply_word_budget": callreview.MAX_WORDS}}
 
 
 def _stable_system(cfg: dict, now: datetime) -> list[dict]:

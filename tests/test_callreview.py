@@ -15,7 +15,7 @@ class LintTests(unittest.TestCase):
         t = ("Caller: Hello.\nAgent: Yes, it's a sales call. I'm told you asked to hear from us. I'm an AI assistant. "
              "Sorry to hear that. We cut missed calls 40 percent for other shops in town.")
         found = " ".join(cr.lint(t))
-        for w in ("sales or cold call", "volunteered being an AI", "sympathy", "I'm told", "figure 40 percent"):
+        for w in ("named the kind of call", "volunteered being an AI", "sympathy", "I'm told", "figure 40 percent"):
             self.assertIn(w, found)
 
     def test_ai_is_fine_when_asked_and_figures_are_fine_when_the_owner_said_them(self):
@@ -33,7 +33,7 @@ class LintTests(unittest.TestCase):
 
 class ToneAndGuardTests(unittest.TestCase):
     def test_tone_note_only_when_the_owner_describes_a_problem(self):
-        self.assertIn("Do not laugh", cr.tone_note("Guess I missed it, they didn't leave a message"))
+        self.assertIn("No joke", cr.tone_note("Guess I missed it, they didn't leave a message"))
         self.assertIsNone(cr.tone_note("We mow about thirty lawns"))
 
     def test_more_stop_phrasings_end_the_call_and_time_picking_does_not(self):

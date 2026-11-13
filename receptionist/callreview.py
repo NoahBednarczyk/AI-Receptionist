@@ -18,7 +18,8 @@ PROBLEM = re.compile(r"\b(missed|miss(es|ing)?|lost|lose|losing|didn'?t (leave|c
 LAUGH = re.compile(r"^\W*(ha(ha)*|heh|hehe|lol|hah)\b", re.I)
 LAUGH_ANYWHERE = re.compile(r"\b(ha ha|haha|hehe|lol)\b|\bha[,!.]", re.I)
 SYMPATHY = re.compile(r"\b(sorry to hear|oh no|that'?s a bummer|that sounds (frustrating|rough|tough)|i understand your concern)\b", re.I)
-SALES_LABEL = re.compile(r"\b(sales call|cold call|selling something)\b", re.I)
+# The caller never names what kind of call it is, even when the owner does ("is this a sales call?").
+SALES_LABEL = re.compile(r"\b(sales (call|pitch|rep)|cold[- ]call(ing|er)?|pitch(ing)?|selling)\b", re.I)
 AI_SELF = re.compile(r"\b(i'?m an? (ai|robot|bot)|ai assistant|virtual assistant|an ai\b)", re.I)
 PHANTOM = re.compile(r"\b(i'?m told|you asked to hear|you (signed|opted) up|other (shops|companies|owners|businesses) (in|around|are|have)|"
                      r"(many|most|several|a lot of) (shops|owners|businesses|companies)|we'?ve (helped|worked with)|guarantee[sd]?|"
@@ -30,8 +31,8 @@ MAX_WORDS = 30
 def tone_note(caller_text: str) -> str | None:
     """A note for the model's next reply when the owner has just described a problem or a loss."""
     if caller_text and PROBLEM.search(caller_text):
-        return ("the owner just described a problem or a loss in their business. Take it seriously and show you want to help: a short, "
-                "warm, attentive reply that picks up what they said. Do not laugh, joke, tease or say 'ha' about it.")
+        return ("the owner just described a problem or a loss in their business. Take it seriously: say it back in their words in a few "
+                "words, then carry on. No joke, no tease, no 'ha', no sympathy phrase.")
     return None
 
 
@@ -79,8 +80,8 @@ def lint(transcript: str, allowed: str = "", latencies: list[float] | None = Non
             found.append(f"{where}: laughed after the owner described a problem: {text[:60]!r}")
         if SYMPATHY.search(text):
             found.append(f"{where}: sympathy boilerplate: {text[:60]!r}")
-        if SALES_LABEL.search(text) and not re.search(r"sales call|cold call|selling", caller_said, re.I):
-            found.append(f"{where}: called itself a sales or cold call: {text[:60]!r}")
+        if SALES_LABEL.search(text):
+            found.append(f"{where}: named the kind of call it is (sales, cold, pitch or selling): {text[:60]!r}")
         if AI_SELF.search(text) and not ai_asked:
             found.append(f"{where}: volunteered being an AI: {text[:60]!r}")
         if len(text.split()) > MAX_WORDS:
