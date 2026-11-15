@@ -134,6 +134,17 @@ VERTICALS = {"home_services": {"en": HOME_SERVICES, "es": HOME_SERVICES_ES},
              "hvac": {"en": HOME_SERVICES + HVAC_WINTER, "es": HOME_SERVICES_ES + HVAC_WINTER_ES},
              "lawn_care": {"en": LAWN_CARE, "es": LAWN_CARE_ES}}
 
+# Tiers that mark the call urgent without a word: code still knows (emergency slot, owner's cell if no slot), but
+# the caller hears no "this is urgent" line, only help (user's word, 2026-11-15: "What's the point of even mentioning?").
+# Their lines stay above for the record and for tests; nothing speaks them.
+UNSPOKEN = {"no_heat_freezing", "frozen_pipe"}
+
+
+def spoken(name: str) -> bool:
+    """Whether code says this tier's line to the caller."""
+    return name not in UNSPOKEN
+
+
 # Gas or CO with the caller still inside: after the line, this, then hang up (the playbook's rule).
 LEAVE_NOW = {"gas", "carbon_monoxide", "allergic_reaction"}
 CALL_BACK = {"en": "Once you're safe outside, you can call us back.",

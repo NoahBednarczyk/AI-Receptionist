@@ -380,7 +380,7 @@ class CallSession:
         t = self.taker
         t.lang = self.ctx.language
         parts, calls = [], []
-        if emergency:
+        if emergency and safety.spoken(emergency[0]):
             parts.append(emergency[1])
         if emergency and t.state not in ("start",):
             line, done = t.last, False   # the safety line interrupts; then the question they were on again
@@ -477,7 +477,11 @@ class CallSession:
             content += ("\n\n(System note: while the caller was still talking you cut in and said: \""
                         + " ".join(self._interjections) + "\" Take it into account and don't say it again.)")
             self._interjections = []
-        if emergency:   # said by code, instantly and word for word; the model continues the emergency flow
+        if emergency and not safety.spoken(emergency[0]):   # urgent, but nothing is said about it
+            content += (f"\n\n(System note: code marked this call urgent ({emergency[0].replace('_', ' ')}). Don't say it's "
+                        "urgent or an emergency, and don't comment on it: help. Give the matching approved tip if one "
+                        "fits, then check the emergency_visit slots and offer the earliest two.)")
+        elif emergency:   # said by code, instantly and word for word; the model continues the emergency flow
             content += (f"\n\n(System note: you have already said the {emergency[0].replace('_', ' ')} safety line to "
                         f"the caller: \"{emergency[1]}\" Don't repeat it or describe the emergency; go straight to the "
                         "playbook's next step.)")
@@ -559,7 +563,7 @@ class CallSession:
         chan = SayChannel(words) if self.channel else None
         said_in: dict = {}
         mark = (set(words.said_once), list(words.recent), list(words.held))   # what counted as said before the held words
-        if emergency:
+        if emergency and safety.spoken(emergency[0]):
             first = 0.0
             emit(emergency[1], True)
             spoken.append(emergency[1])

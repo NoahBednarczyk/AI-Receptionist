@@ -173,3 +173,28 @@ class HelpFirstTests(unittest.TestCase):
         self.assertIn("describing the problem is not asking", acme)        # other shops still wait to be asked
         self.assertIn("except one approved tip", simulate.standard_rubric(HVAC)[0])
         self.assertNotIn("except one approved tip", simulate.standard_rubric(load_business(CFG, "acme"))[0])
+
+
+class QuietUrgentTests(unittest.TestCase):
+    """2026-11-15: "What's the point of even mentioning?" No heat and frozen pipes stay urgent in code, unsaid."""
+
+    def test_no_heat_says_no_urgent_line_but_the_model_knows(self):
+        s = session(now=schedule.local_now(HVAC, "2026-12-15T21:30"))
+        s.client.script = [reply("end_turn", text("You can check that the thermostat is set to heat."))]
+        turn, out = heard(s, "My heat's out.")
+        self.assertNotIn("urgent", out.lower())
+        self.assertNotIn("emergency slot", out.lower())
+        self.assertEqual(out, "You can check that the thermostat is set to heat.")
+        note = s.client.requests[0]["messages"][-1]["content"]
+        self.assertIn("code marked this call urgent", note)
+        self.assertIn("emergency_visit", note)
+        self.assertTrue(s.ctx.safety_given)
+
+    def test_a_frozen_pipe_is_quiet_too_and_a_burst_pipe_is_not(self):
+        s = session()
+        s.client.script = [reply("end_turn", text("Is any water coming out?"))]
+        _, out = heard(s, "I think I have a frozen pipe.")
+        self.assertNotIn("urgent", out.lower())
+        s = session()
+        _, out = heard(s, "A pipe burst in the basement.")
+        self.assertTrue(out.startswith("If it's safe, shut off the main water valve"))

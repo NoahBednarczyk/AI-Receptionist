@@ -93,6 +93,12 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   in `owner_cell_no_answer`). Emergencies no longer hang up in the same turn as "the owner isn't picking up": the caller
   gets to answer first (`playbooks/hvac.md`). Simulated: burst_pipe passed; owner_cell_no_answer now talks normally but
   fails its "no booking" check because she offered an emergency visit once the caller could reply.
+- **No "this is urgent" line (user's word, 2026-11-15):** "No heat in this cold is urgent, so let's find you the earliest
+  emergency slot" and "A frozen pipe can burst, so we're treating this as urgent" are no longer spoken (`safety.UNSPOKEN`).
+  The tiers still fire: the model gets a note that code marked the call urgent and is told to say nothing about it, give
+  the matching tip if one fits and offer the two earliest emergency_visit windows. Real emergencies (gas, CO, burst
+  pipe, sewage, sparks) keep their spoken safety lines. Simulated no_heat_night (passed) and no_heat_no_weather: no
+  urgent line in either; the second failed on an invented "call us and we'll sort it out" after the booking.
 - **Help first on a problem call (user's word, 2026-11-15, after "No hot water is a rotten way to start a Sunday"):**
   the shared "You notice" habit now applies to routine calls only; when something is broken she skips the reaction and
   any sympathy. `hvac.json` has `"tips": "offer"`: the matching approved tip comes unasked in her first reply, then the
