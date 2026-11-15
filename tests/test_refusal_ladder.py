@@ -3,6 +3,7 @@ never ends a call on a no. Only a stop request, or a no to the smallest ask, end
 import json
 import re
 import unittest
+from pathlib import Path
 
 from receptionist import outbound, outbound_live as ol
 from tests import test_outbound_live as _t
@@ -187,3 +188,42 @@ class Calls(_t.ScriptedFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GoodbyeAndIntroTests(_t.ScriptedFixture):
+    """From the 2026-11-14 test calls to a consenting friend (Ponderay Mechanical)."""
+
+    def test_a_goodbye_ends_the_call_politely_and_is_not_worked_as_a_no(self):
+        s = self.make(reply("end_turn", text("Fifteen minutes with Noah, Tuesday or Thursday?")), reply("end_turn", text("Thanks, bye.")))
+        s.respond("Tell me more")
+        turn = s.respond("Why are you calling me? I don't want it. Bye.")
+        sent = note(self.client)
+        self.assertIn("they are ending the call", sent)
+        self.assertNotIn("they said no", sent)
+        self.assertNotIn("mark_do_not_call", [c["name"] for c in turn.tools])
+        self.assertNotIn("+12086102748", s.state.dnc() if hasattr(s, "state") else set())
+
+    def test_asking_us_to_hang_up_is_a_goodbye(self):
+        self.assertTrue(ol.leaving("Yeah. Why don't you hang up?"))
+        self.assertFalse(ol.leaving("How do I know customers won't hang up on a robot?"))
+        self.assertFalse(ol.leaving("No thanks."))
+
+    def test_the_intro_is_never_said_twice(self):
+        s = self.make(reply("end_turn", text("When did a call last get missed?")))
+        self.assertEqual(s.resume_line("(noise)"), s.intro_text)
+        s.respond("Oh, I don't put the")
+        self.assertIn("already heard who you are", note(self.client))
+        self.assertNotIn(s.intro_text, note(self.client))
+
+    def test_the_code_intro_is_skipped_after_a_resend(self):
+        s = self.make()
+        s.resume_line("(noise)")
+        turn = s.respond("Yeah, that's me.")
+        self.assertNotIn(s.intro_text, turn.text)
+
+
+class PlaybookWordingTests(unittest.TestCase):
+    def test_no_internal_label_the_caller_could_hear(self):
+        text = (Path(__file__).resolve().parent.parent / "receptionist" / "playbooks" / "sales.md").read_text()
+        self.assertNotIn("stop request", text)
+        self.assertIn("that is your last sentence", text)

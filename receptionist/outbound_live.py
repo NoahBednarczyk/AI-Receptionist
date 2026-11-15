@@ -65,6 +65,8 @@ def intro_note(s: dict) -> str:
     return INTRO_NOTE_AI.format(**s) if s["disclose_ai_in_intro"] else INTRO_NOTE
 
 
+NOTE_ALREADY_INTRODUCED = ("they have already heard who you are (your name, that you are an AI assistant, Ringback). Don't say it "
+                           "again; answer what they said, then your first question about their calls.")
 AI_NOTE = ("the caller is asking whether you are a robot, an AI or a real person. Say yes first, unmistakably: you are an AI assistant. "
            "Then one short dry line of your own about being software, new every time, and back to your question in the same breath. "
            "Never claim to be human.")
@@ -108,6 +110,17 @@ NO_NEED = re.compile(r"\bwe (always )?(answer|pick up|get) (our|the|every|all)\b
                      r"\b(wife|husband|office|secretary|girl|dispatcher|son|daughter) (answers|picks up|handles|takes)\b|\balready have (someone|somebody|a service|an answering)\b|"
                      r"\bno need\b|\bnot (a problem|an issue)\b", re.I)
 KINDS = ("bad_time", "no_need", "no_trust_ai", "no_money", "tried_before", "dislikes_calls")
+# The owner is ending this call: a goodbye at the end of what they said, or asking us to hang up. Not a no to work on and
+# not a do-not-call request: the model says one short goodbye, logs the call and ends it in the same turn.
+LEAVING = re.compile(r"\b(?:bye|goodbye|bye[- ]bye)\W*$|"
+                     r"\b(?:you|just|please|go ahead and|why don'?t you|can you|could you)\s+hang up\b|"
+                     r"\bi'?m (?:gonna |going to )?hang(?:ing)? up\b|\bend (?:the|this) call\b", re.I)
+NOTE_LEAVING = ("they are ending the call. This is not a no to work on: no question, no ask, no explanation. Say one short, warm "
+                "goodbye, call log_call, then end_call, all in this turn.")
+
+
+def leaving(text: str) -> bool:
+    return bool(LEAVING.search((text or "").strip()))
 
 
 def refusal_kind(text: str) -> str | None:
@@ -644,11 +657,13 @@ class OutboundSession(CallSession):
         if not self._intro_checked:   # the first model turn after the opener
             self._intro_checked = True
             self._person = True   # someone answered our "is this the owner?": from here machine words are ordinary talk
-            intro = intro_note(outbound.settings(self.cfg))
+            intro = NOTE_ALREADY_INTRODUCED if self._resumed else intro_note(outbound.settings(self.cfg))
             note = f"{note} {intro}" if note else intro
         if asked_if_ai(caller_text):
             note = f"{note} {AI_NOTE}" if note else AI_NOTE
-        refused = refusal_kind(caller_text)
+        if leaving(caller_text):
+            note = f"{note} {NOTE_LEAVING}" if note else NOTE_LEAVING
+        refused = None if leaving(caller_text) else refusal_kind(caller_text)
         if refused:
             irritated = bool(IRRITATED.search(caller_text))
             if refused != "bad_time":
@@ -675,12 +690,15 @@ class OutboundSession(CallSession):
         self._intro_checked = True
         self._person = True
         question = self._rng.choice(FIRST_QUESTIONS[trade_of(self.lead)])
+        intro = "" if self._resumed else self.intro_text   # already said once when noise cut in: never twice
         if on_text:
-            on_text(self.intro_text)
-            on_text(" " + question)
-        line = f"{self.intro_text} {question}"
+            if intro:
+                on_text(intro)
+            on_text((" " if intro else "") + question)
+        line = f"{intro} {question}".strip()
         messages = [*self.messages, {"role": "user", "content": caller_text}, {"role": "assistant", "content": self.tag(line)}]
-        self._save(messages, caller_text, {"role": "agent", "text": line, "tools": [], "steps": [{"say": self.intro_text}, {"say": question}]}, None, final=False)
+        steps = ([{"say": intro}] if intro else []) + [{"say": question}]
+        self._save(messages, caller_text, {"role": "agent", "text": line, "tools": [], "steps": steps}, None, final=False)
         return Turn(line, [], 0.0, 0.0, False)
 
     def resume_line(self, heard: str) -> str | None:

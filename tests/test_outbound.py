@@ -90,7 +90,7 @@ class PromptTests(unittest.TestCase):
         self.assertIn("never say you are researching for a different company", self.text.replace("You never", "never"))
 
     def test_has_structure_pushback_and_hard_stop(self):
-        for needle in ("The call", "When they say no", "never end a call because they said no", "mark_do_not_call", "Hard stops", "208-428-6760",
+        for needle in ("The call", "When they say no", "never end a call because they said no", "mark_do_not_call", "Taken off the list", "208-428-6760",
                        "Say yes in your first words", "Persuade, never mislead", "Angry or rude"):
             self.assertIn(needle, self.text)
 
@@ -126,7 +126,7 @@ class PromptLintTests(unittest.TestCase):
         for phrase in ("I'd be happy to assist", "How may I assist"):
             self.assertNotIn(phrase, text)
         self.assertLess(len(text) / 4, 6000)   # roughly tokens: a bigger prompt costs more on every cache write
-        self.assertEqual(text.count("# Hard stops"), 1)
+        self.assertEqual(text.count("# Taken off the list"), 1)
 
     def test_every_objection_has_an_answer_and_hold_back_has_its_moves(self):
         text = outbound.PLAYBOOK.read_text()
