@@ -50,8 +50,9 @@ class SizeAndWordingTests(unittest.TestCase):
             self.assertNotIn(gone, self.prompt)
 
     def test_sympathy_is_for_real_harm_only_and_short(self):
-        self.assertIn("When something bad has happened to the caller (someone hurt, real damage, a loss), say one plain human "
-                      "line of six words or fewer, then get them help. A routine job gets no sympathy at all.", self.prompt)
+        self.assertIn("When something bad has happened to the caller (someone hurt, water damage, a loss), say one plain human "
+                      "line of six words or fewer, then get them help. Something that just stopped working (no heat, no hot "
+                      "water, a leak) and a routine job get no sympathy at all.", self.prompt)
 
     def test_pushback_is_the_curious_form(self):
         self.assertIn("ask one real question about what they're trying to get done", self.prompt)

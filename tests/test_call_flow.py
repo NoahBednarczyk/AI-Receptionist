@@ -5,8 +5,8 @@ the address was said three times and the number twice."""
 import unittest
 
 import tests  # noqa: F401
-from receptionist import schedule
-from receptionist.agent import CallSession, closing
+from receptionist import schedule, tools
+from receptionist.agent import ASK_NAME, CallSession, closing
 from receptionist.store import Store
 from receptionist.tools import ToolContext, run_tool
 from tests.test_hvac import CFG, HVAC
@@ -43,9 +43,8 @@ class ReadBackTests(unittest.TestCase):
         s = session()
         s.client.script = [reply("tool_use", use("t1", "book_appointment", booking(s)))]
         turn, out = heard(s, "The nine to eleven, please.")
-        self.assertTrue(out.startswith("That's "), out)
         self.assertIn("906 Alder Street in Sandpoint", out)
-        self.assertTrue(out.endswith("Shall I book it?"))
+        self.assertTrue(any(out.endswith(q) for q in tools.READBACK_ASK), out)
         self.assertNotIn("208-555-0177", out)            # the caller ID was already confirmed: not said again
         self.assertNotIn("booking it", out.lower())      # no "booking it" stall line before a read-back
         self.assertEqual(s.store.appointments_for_call(s.call_id), [])
@@ -57,9 +56,9 @@ class ReadBackTests(unittest.TestCase):
                            reply("tool_use", use("t2", "book_appointment", booking(s)))]
         heard(s, "The nine to eleven, please.")
         turn, out = heard(s, "Yes.")
-        self.assertIn("You're booked for", out)
+        self.assertTrue(any(o.split("{")[0] in out for o in tools.BOOKED_OPEN), out)
         self.assertIn("calls or texts about 30 minutes before arriving", out)
-        self.assertTrue(out.endswith("Anything else I can help with?"))
+        self.assertTrue(any(out.endswith(q) for q in tools.ANYTHING_ELSE_ASK), out)
         self.assertEqual(len(s.store.appointments_for_call(s.call_id)), 1)
 
     def test_a_number_other_than_the_caller_id_is_read_back(self):
@@ -75,7 +74,7 @@ class ReadBackTests(unittest.TestCase):
         heard(s, "The nine to eleven.")
         _, out = heard(s, "No, it's Howard Street.")
         self.assertIn("906 Howard Street", out)
-        self.assertTrue(out.endswith("Shall I book it?"))
+        self.assertTrue(any(out.endswith(q) for q in tools.READBACK_ASK), out)
         self.assertEqual(s.store.appointments_for_call(s.call_id), [])
 
     def test_shops_without_the_flow_book_at_once(self):
@@ -94,9 +93,10 @@ class OwnerNoAnswerTests(unittest.TestCase):
         s.client.script = [reply("tool_use", use("t1", "take_message", msg)),
                            reply("tool_use", use("t2", "transfer_call", {"target": "owner", "reason": "Burst pipe"}))]
         turn, out = heard(s, "Noah, 906 Alder Street in Sandpoint.")
-        self.assertIn("The owner isn't picking up, but your message is saved and they'll call you back within 15 "
-                      "minutes.", out)
-        self.assertTrue(out.endswith("Is there anything else they should know?"))
+        self.assertIn("within 15 minutes", out)
+        self.assertTrue(any(o.format(who="The owner", who_lower="the owner", when="within 15 minutes") in out
+                            for o in tools.NO_ANSWER), out)
+        self.assertTrue(any(out.endswith(q) for q in tools.NO_ANSWER_ASK), out)
         self.assertFalse(turn.ended)                     # no hang-up in the same breath
         self.assertEqual(len(s.client.requests), 2)
 
@@ -106,7 +106,7 @@ class EmergencyFirstTurnTests(unittest.TestCase):
         s = session()
         turn, out = heard(s, "I've got a burst pipe and water everywhere.")
         self.assertTrue(out.startswith("If it's safe, shut off the main water valve"), out)
-        self.assertTrue(out.endswith("Can I get your name and the address?"))
+        self.assertTrue(any(out.endswith(q) for q in ASK_NAME["en"]), out)
         self.assertEqual(s.client.requests, [])
 
     def test_the_next_turn_is_told_what_comes_next(self):
@@ -198,3 +198,27 @@ class QuietUrgentTests(unittest.TestCase):
         s = session()
         _, out = heard(s, "A pipe burst in the basement.")
         self.assertTrue(out.startswith("If it's safe, shut off the main water valve"))
+
+
+class VariedWordingTests(unittest.TestCase):
+    """2026-11-15: "vary its wording so it doesn't use the same line twice in a call"."""
+
+    def test_no_code_line_repeats_within_a_call_until_the_pool_runs_out(self):
+        c = session().ctx
+        picks = [tools.vary(c, "booked", tools.BOOKED_OPEN) for _ in tools.BOOKED_OPEN]
+        self.assertEqual(sorted(picks), sorted(tools.BOOKED_OPEN))
+
+    def test_two_read_backs_on_one_call_are_worded_differently(self):
+        c = session().ctx
+        a = tools.readback_line(c, "tomorrow between 9 AM and 11 AM", "906 Alder Street", "Sandpoint", CALLER)
+        b = tools.readback_line(c, "tomorrow between 9 AM and 11 AM", "906 Alder Street", "Sandpoint", CALLER)
+        self.assertNotEqual(a, b)
+
+    def test_the_goodbye_still_follows_every_anything_else_wording(self):
+        from receptionist.agent import ANYTHING_ELSE_ASKED
+        for q in tools.ANYTHING_ELSE_ASK + tools.NO_ANSWER_ASK:
+            self.assertTrue(ANYTHING_ELSE_ASKED.search("You're set. " + q), q)
+
+    def test_no_heat_offers_a_visit_before_times(self):
+        from receptionist import prompts
+        self.assertIn("don't list times before they want a visit", prompts.stable_prompt(HVAC))

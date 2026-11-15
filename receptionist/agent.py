@@ -38,7 +38,8 @@ IRREVERSIBLE = {"book_appointment", "reschedule_appointment", "cancel_appointmen
 # writes there is a note to itself and is never sent to text-to-speech (see CallSession.respond).
 SPOKEN_BEFORE = {"transfer_call", "end_call"}
 # Code-run steps of the call (a shop's "call_flow" block; see tools.flow). The emergency question after a safety line:
-ASK_NAME = {"en": "Can I get your name and the address?", "es": "¿Me da su nombre y la dirección?"}
+ASK_NAME = {"en": ["Can I get your name and the address?", "What's your name, and the address there?",
+                  "Can I grab your name and the address?"], "es": ["¿Me da su nombre y la dirección?"]}
 CODE_ASKS_AFTER = {"no_heat_freezing", "frozen_pipe"}   # these tiers go to booking, not to a message and the owner
 ADDRESS_GIVEN = re.compile(r"\b\d+\s+\w+.*\b(?:street|st|road|rd|avenue|ave|lane|ln|drive|dr|way|court|ct|place|pl|"
                            r"boulevard|blvd|highway|hwy|loop|trail)\b", re.I)
@@ -49,6 +50,9 @@ CLOSING_WORDS = {"no", "nope", "nah", "that's", "thats", "it", "all", "everythin
                  "night", "day", "not", "really", "that", "is", "for", "now", "all", "appreciate", "it", "cool"}
 CLOSERS = re.compile(r"\b(?:no|nope|nah|that'?s (?:it|all|everything)|nothing(?: else)?|i'?m (?:good|all set)|"
                      r"we'?re (?:good|all set)|all set|good for now|bye|goodbye)\b", re.I)
+
+
+ANYTHING_ELSE_ASKED = re.compile(r"\banything (?:else|you want me to add)\b[^.?!]*\?\s*$", re.I)
 
 
 def closing(text: str) -> bool:
@@ -350,14 +354,14 @@ class CallSession:
         ctx = self.ctx
         if emergency and tools.flow(ctx, "emergency_ask") and emergency[0] not in CODE_ASKS_AFTER \
                 and not ADDRESS_GIVEN.search(caller_text):
-            line = f"{emergency[1]} {ASK_NAME.get(ctx.language, ASK_NAME['en'])}"
+            line = f"{emergency[1]} {tools.vary(ctx, 'ask_name', ASK_NAME.get(ctx.language, ASK_NAME['en']))}"
             self._next_note = (f"This is an emergency ({emergency[0].replace('_', ' ')}). The safety line and the name "
                                "and address question were already said. Next, take an urgent message (take_message), "
                                "then try the owner's cell (transfer_call, target owner)."
                                + ("" if ctx.caller else " There is no caller ID: ask for the best number first."))
             return line, [], False
         last = self.last_reply()
-        if tools.flow(ctx, "goodbye") and ctx.language == "en" and re.search(r"\banything else\b[^.?!]*\?\s*$", last, re.I) \
+        if tools.flow(ctx, "goodbye") and ctx.language == "en" and ANYTHING_ELSE_ASKED.search(last) \
                 and closing(caller_text):
             line = tools.end_line(ctx, "completed")
             result, err = tools.run_tool(ctx, "end_call", {"reason": "completed"})
@@ -478,9 +482,11 @@ class CallSession:
                         + " ".join(self._interjections) + "\" Take it into account and don't say it again.)")
             self._interjections = []
         if emergency and not safety.spoken(emergency[0]):   # urgent, but nothing is said about it
-            content += (f"\n\n(System note: code marked this call urgent ({emergency[0].replace('_', ' ')}). Don't say it's "
-                        "urgent or an emergency, and don't comment on it: help. Give the matching approved tip if one "
-                        "fits, then check the emergency_visit slots and offer the earliest two.)")
+            content += (f"\n\n(System note: code marked this call urgent ({emergency[0].replace('_', ' ')}). Your reply is "
+                        "help and nothing else: the matching approved tip if one fits, then an offer, in your own fresh "
+                        "words, to get someone out to look at it. No reaction, no sympathy, no comment on the cold, and "
+                        "don't say it's urgent or an emergency. If they already asked for someone, check the "
+                        "emergency_visit slots instead of offering.)")
         elif emergency:   # said by code, instantly and word for word; the model continues the emergency flow
             content += (f"\n\n(System note: you have already said the {emergency[0].replace('_', ' ')} safety line to "
                         f"the caller: \"{emergency[1]}\" Don't repeat it or describe the emergency; go straight to the "
@@ -692,7 +698,7 @@ class CallSession:
                 spoken.append(line)
                 steps.append({"say": line})
                 messages.append({"role": "assistant", "content": self.tag(line)})
-                if ANYTHING_ELSE.search(line):
+                if ANYTHING_ELSE.search(line) or ANYTHING_ELSE_ASKED.search(line):
                     words.said_once.add("anything_else")
                 break
             if self.ctx.ended:

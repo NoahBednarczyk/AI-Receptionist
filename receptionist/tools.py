@@ -123,6 +123,31 @@ def flow(ctx: "ToolContext", step: str) -> bool:
     return bool(ctx.code_flow.get(step))
 
 
+# The lines code says itself come in several wordings, so a call never hears one twice and calls don't all sound
+# alike (user's word, 2026-11-15). vary() picks one this call hasn't used yet.
+READBACK_OPEN = ["That's {when} at {where}", "So that's {when} at {where}", "I've got {when} at {where}",
+                 "Alright, {when} at {where}"]
+READBACK_ASK = ["Shall I book it?", "Want me to lock that in?", "Should I go ahead and book it?", "Good to book?"]
+BOOKED_OPEN = ["You're booked for {when}.", "You're all set for {when}.", "That's on the books for {when}.",
+               "Done, you're in for {when}."]
+ANYTHING_ELSE_ASK = ["Anything else I can help with?", "Anything else you need?", "Is there anything else?",
+                     "Anything else I can do for you?"]
+NO_ANSWER = ["{who} isn't picking up, but your message is saved and they'll call you back {when}.",
+             "{who} didn't pick up. Your message is in, and they'll call you back {when}.",
+             "No answer from {who_lower}, but your message is saved; expect a call back {when}."]
+NO_ANSWER_ASK = ["Is there anything else they should know?", "Anything else they should know before they call?",
+                 "Anything you want me to add to the message?"]
+
+
+def vary(ctx: "ToolContext", key: str, options: list[str], rng=random) -> str:
+    """One of `options` not yet said on this call (the first one once every wording has been used)."""
+    used = ctx.extra.setdefault("said", set())
+    fresh = [o for o in options if (key, o) not in used]
+    choice = rng.choice(fresh) if fresh else options[0]
+    used.add((key, choice))
+    return choice
+
+
 def readback_line(ctx: "ToolContext", spoken: str, street: str, town: str, phone: str) -> str:
     """One read-back, built from the booking itself. The number is left out when it is the caller ID: the caller has
     already been asked whether the number they're calling from is the best one, and hearing it again is noise."""
@@ -130,21 +155,23 @@ def readback_line(ctx: "ToolContext", spoken: str, street: str, town: str, phone
     if ctx.language == "es":
         return (f"Sería {spoken}, en {street}, {town}" + (f", con el {number} para devolverle la llamada" if number else "")
                 + ". ¿Se la reservo?")
-    return (f"That's {spoken} at {street} in {town}" + (f", with {number} as your callback number" if number else "")
-            + ". Shall I book it?")
+    head = vary(ctx, "readback", READBACK_OPEN).format(when=spoken, where=f"{street} in {town}")
+    return (head + (f", with {number} as your callback number" if number else "") + ". "
+            + vary(ctx, "readback_ask", READBACK_ASK))
 
 
 def booked_line(ctx: "ToolContext", spoken: str) -> str:
     extra = ctx.biz["booking"].get("confirm_line_es" if ctx.language == "es" else "confirm_line") or ""
     if ctx.language == "es":
         return f"Listo, queda reservada para {spoken}. {extra} ¿Hay algo más en que le pueda ayudar?".replace("  ", " ")
-    return f"You're booked for {spoken}. {extra} Anything else I can help with?".replace("  ", " ")
+    return " ".join(x for x in (vary(ctx, "booked", BOOKED_OPEN).format(when=spoken), extra,
+                                vary(ctx, "anything_else", ANYTHING_ELSE_ASK)) if x)
 
 
 def no_answer_line(ctx: "ToolContext", target: str) -> str:
     who = {"owner": "The owner", "office": "The office", "on_call": "The on-call technician"}.get(target, "Nobody")
-    return (f"{who} isn't picking up, but your message is saved and they'll call you back {ctx.callback_spoken}. "
-            "Is there anything else they should know?")
+    first = vary(ctx, "no_answer", NO_ANSWER).format(who=who, who_lower=who[0].lower() + who[1:], when=ctx.callback_spoken)
+    return f"{first} {vary(ctx, 'no_answer_ask', NO_ANSWER_ASK)}"
 
 
 def end_line(ctx: "ToolContext", reason: str | None, rng=random) -> str:

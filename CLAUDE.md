@@ -93,6 +93,14 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   in `owner_cell_no_answer`). Emergencies no longer hang up in the same turn as "the owner isn't picking up": the caller
   gets to answer first (`playbooks/hvac.md`). Simulated: burst_pipe passed; owner_cell_no_answer now talks normally but
   fails its "no booking" check because she offered an emergency visit once the caller could reply.
+- **Open with an offer, varied wording (user's word, 2026-11-15):** after "my heat's out" she gives the matching tip and
+  offers, in fresh words, to get someone out; times only once the caller wants a visit (the no-heat note in
+  `agent.respond`, playbook no-heat section, `prompts.TIPS_OFFERED`). Something that just stopped working gets no
+  sympathy line (the sympathy rule now names it). Code-spoken lines come from small pools (`tools.READBACK_OPEN`,
+  `READBACK_ASK`, `BOOKED_OPEN`, `ANYTHING_ELSE_ASK`, `NO_ANSWER`, `NO_ANSWER_ASK`, `agent.ASK_NAME`) and `tools.vary`
+  never repeats one within a call. Simulated no_heat_no_weather: first run opened with "A cold snap on top of a dead
+  furnace is no fun" (fixed by the sympathy rule and a note that says what the reply contains); second run passed,
+  opened with the thermostat tip, but did not add the visit offer in the same reply (the caller asked).
 - **No "this is urgent" line (user's word, 2026-11-15):** "No heat in this cold is urgent, so let's find you the earliest
   emergency slot" and "A frozen pipe can burst, so we're treating this as urgent" are no longer spoken (`safety.UNSPOKEN`).
   The tiers still fire: the model gets a note that code marked the call urgent and is told to say nothing about it, give
