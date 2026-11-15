@@ -22,6 +22,12 @@ class DemoEmailTests(unittest.TestCase):
             os.environ.pop("DEMO_NOTIFY_EMAIL", None)
             self.assertFalse((config.load_business(self.cfg, "lawn_care").get("notify") or {}).get("email"))
 
+    def test_demo_shop_gets_the_text_number_from_the_environment(self):
+        with mock.patch.dict(os.environ, {"DEMO_NOTIFY_SMS": "+12085550999"}):
+            self.assertEqual(config.load_business(self.cfg, "lawn_care")["owner_sms"], "+12085550999")
+        os.environ.pop("DEMO_NOTIFY_SMS", None)
+        self.assertNotEqual(config.load_business(self.cfg, "lawn_care")["owner_sms"], "+12085550999")
+
 
 if __name__ == "__main__":
     unittest.main()

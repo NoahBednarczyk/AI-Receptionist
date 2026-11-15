@@ -247,6 +247,48 @@ class Texts(unittest.TestCase):
                                                          "TWILIO_MESSAGING_SERVICE_SID": "c"}))
 
 
+class InfobipTexts(unittest.TestCase):
+    ENV = {"INFOBIP_BASE_URL": "abc123.api.infobip.com", "INFOBIP_API_KEY": "key-1", "INFOBIP_SENDER": "447491163443"}
+
+    def test_it_posts_the_advanced_text_payload_with_the_app_key(self):
+        seen = []
+        notify.InfobipSender("abc123.api.infobip.com/", "key-1", "SHOP", post=lambda *a: seen.append(a) or 200).send("+1 (208) 555-0142", "Hi")
+        url, headers, payload = seen[0]
+        self.assertEqual(url, "https://abc123.api.infobip.com/sms/2/text/advanced")
+        self.assertEqual(headers["Authorization"], "App key-1")
+        self.assertEqual(payload, {"messages": [{"from": "SHOP", "destinations": [{"to": "12085550142"}], "text": "Hi"}]})
+
+    def test_an_error_status_or_network_failure_is_a_send_error(self):
+        with self.assertRaises(notify.SendError):
+            notify.InfobipSender("h", "k", "s", post=lambda *a: 401).send("+12085550142", "x")
+        def down(*a):
+            raise OSError("unreachable")
+        with self.assertRaises(notify.SendError):
+            notify.InfobipSender("h", "k", "s", post=down).send("+12085550142", "x")
+
+    def test_the_sender_is_picked_from_settings(self):
+        self.assertIsInstance(notify.sms_sender_from_env(self.ENV), notify.InfobipSender)
+        self.assertIsNone(notify.sms_sender_from_env({k: v for k, v in self.ENV.items() if k != "INFOBIP_SENDER"}))
+        twilio = {"TWILIO_ACCOUNT_SID": "a", "TWILIO_AUTH_TOKEN": "b", "TWILIO_MESSAGING_SERVICE_SID": "c"}
+        self.assertIsInstance(notify.sms_sender_from_env(twilio), notify.TwilioSender)
+        self.assertIsInstance(notify.sms_sender_from_env({**twilio, **self.ENV}), notify.InfobipSender)
+
+    def test_the_drain_works_through_an_infobip_sender(self):
+        seen = []
+        store = Store(":memory:")
+        n = notify.Notifier(store, email=FakeEmail(), sms=notify.InfobipSender("h", "k", "s", post=lambda *a: seen.append(a) or 200),
+                            clock=lambda: NOW)
+        biz = {**SHOP, "texting_enabled": True, "owner_sms": "+12085550102"}
+        store.queue_sms(biz["id"], "c1", "+12085550102", "New booking", NOW)
+        self.assertEqual(n.drain_sms(biz), 1)
+        self.assertEqual(seen[0][2]["messages"][0]["destinations"], [{"to": "12085550102"}])
+
+    def test_the_webhook_body_is_read_into_from_and_text(self):
+        body = {"results": [{"from": "12085550142", "text": "STOP", "keyword": "STOP"}, {"to": "x"}, "junk"], "messageCount": 1}
+        self.assertEqual(notify.infobip_inbound(body), [("12085550142", "STOP")])
+        self.assertEqual(notify.infobip_inbound([]), [])
+
+
 class Digest(unittest.TestCase):
     TUE_EVENING = datetime(2026, 11, 3, 18, 30)   # shop time, after closing
 
@@ -377,6 +419,49 @@ class Through_the_server(unittest.TestCase):
         r = self.http.get("/admin/notifications", headers={"Authorization": "Bearer " + "a" * 32})
         self.assertEqual(r.json()["sent_today"], 1)
         self.assertEqual(self.http.get("/admin/notifications").status_code, 404)
+
+
+class InfobipRoute(Through_the_server):
+    """Same app setup as above, plus the secret."""
+
+    def setUp(self):
+        super().setUp()
+        self.env = mock.patch.dict(os.environ, {"INFOBIP_WEBHOOK_SECRET": "s" * 24})
+        self.env.start()
+        self.sent = FakeSms()
+        self.http.app.state.notifier.sms = self.sent
+
+    def tearDown(self):
+        self.env.stop()
+        super().tearDown()
+
+    def post(self, text, secret="s" * 24):
+        return self.http.post(f"/sms/infobip/{secret}", json={"results": [{"from": "12085550142", "text": text}]})
+
+    def test_a_wrong_secret_or_no_secret_is_a_404(self):
+        self.assertEqual(self.post("STOP", "wrong").status_code, 404)
+        with mock.patch.dict(os.environ, {"INFOBIP_WEBHOOK_SECRET": ""}):
+            self.assertEqual(self.post("STOP", "").status_code, 404)
+
+    def test_stop_opts_the_number_out_and_start_brings_it_back(self):
+        n = self.http.app.state.notifier
+        self.assertEqual(self.post("Stop").json(), {"ok": True, "handled": 1})
+        self.assertTrue(n.store._rows("SELECT 1 FROM sms_optout WHERE number=?", ("2085550142",)))
+        self.post("START")
+        self.assertFalse(n.store._rows("SELECT 1 FROM sms_optout WHERE number=?", ("2085550142",)))
+
+    def test_with_texting_off_nothing_is_sent_back(self):
+        with mock.patch("receptionist.server.all_businesses", lambda cfg: [{"id": "x", "texting_enabled": False}]):
+            self.post("STOP")
+        self.assertEqual(self.sent.sent, [])
+
+    def test_with_texting_on_the_confirmation_is_sent(self):
+        with mock.patch("receptionist.server.all_businesses", lambda cfg: [{"id": "x", "texting_enabled": True}]):
+            self.post("STOP")
+        self.assertEqual(self.sent.sent, [("12085550142", notify.STOP_REPLY)])
+
+    def test_a_bad_body_is_a_400(self):
+        self.assertEqual(self.http.post("/sms/infobip/" + "s" * 24, content=b"{nope").status_code, 400)
 
 
 if __name__ == "__main__":

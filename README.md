@@ -59,7 +59,9 @@ Required: `ANTHROPIC_API_KEY`, `RETELL_API_KEY`, `RETELL_WS_SECRET`, `DASHBOARD_
 Email: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Gmail with an app password works with no domain), `ADMIN_EMAIL`; later
 `EMAIL_API_URL`, `EMAIL_API_KEY`, `EMAIL_FROM` for an HTTP provider. Backups: `BACKUP_S3_*`. Calendar: `GOOGLE_SERVICE_ACCOUNT_JSON`.
 A shop gets email with `"notify": {"email": [...]}` in its file (`new-client` asks). Texting is off (`texting_enabled`)
-until Twilio registration is done; see `docs/10dlc-registration.md`.
+until Twilio registration is done; see `docs/10dlc-registration.md`. Infobip instead of Twilio: `INFOBIP_BASE_URL`,
+`INFOBIP_API_KEY`, `INFOBIP_SENDER` (all three win over Twilio's) and `INFOBIP_WEBHOOK_SECRET`; point Infobip's inbound-SMS
+webhook at `/sms/infobip/<that secret>`. Tested against fakes only.
 
 Admin routes (admin key): `/admin/notifications` (emails sent and failed), `/admin/costs` (cost per minute per shop),
 `/admin/latency`. Open to anyone: `/health`, `/health/deep` (point an uptime monitor here), `/`.

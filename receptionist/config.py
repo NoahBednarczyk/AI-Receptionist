@@ -33,6 +33,9 @@ def _demo_email(biz: dict) -> dict:
     to = os.environ.get("DEMO_NOTIFY_EMAIL")
     if to and biz.get("demo") and not (biz.get("notify") or {}).get("email"):
         biz["notify"] = {**(biz.get("notify") or {}), "email": [to]}
+    sms = os.environ.get("DEMO_NOTIFY_SMS")      # same for the owner's text number: the file holds a placeholder
+    if sms and biz.get("demo"):
+        biz["owner_sms"] = sms
     return biz
 
 

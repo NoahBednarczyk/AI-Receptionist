@@ -197,6 +197,30 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
         name = biz.get("spoken_name") or biz.get("name")
         return f"It answers as {name}, {trade_words.get(biz.get('vertical'), 'a local shop')}"
 
+    @app.post("/sms/infobip/{secret}")
+    async def infobip_inbound(secret: str, request: Request):
+        """Infobip's inbound-SMS webhook. It cannot sign requests, so the secret path segment (INFOBIP_WEBHOOK_SECRET)
+        is the lock; without one the route is closed. STOP/START words go to handle_inbound_sms; the confirmation is
+        sent back only when some shop has texting_enabled, so with texting off nothing is ever sent."""
+        wanted = os.environ.get("INFOBIP_WEBHOOK_SECRET")
+        if not wanted or not secrets.compare_digest(secret, wanted):
+            raise HTTPException(404)
+        try:
+            body = json.loads((await request.body())[:100_000] or b"{}")
+        except ValueError:
+            raise HTTPException(400)
+        texting = any(b.get("texting_enabled") for b in all_businesses(cfg))
+        handled = 0
+        for sender, text in notify.infobip_inbound(body):
+            reply = notifier.handle_inbound_sms(sender, text)
+            handled += 1
+            if reply and texting and notifier.sms is not None:
+                try:
+                    notifier.sms.send(sender, reply)
+                except notify.SendError:
+                    log.warning("could not send the opt-out confirmation")
+        return {"ok": True, "handled": handled}
+
     @app.get("/", response_class=HTMLResponse)
     def landing():
         try:

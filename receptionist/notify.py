@@ -10,6 +10,8 @@ Settings (environment, never the repo):
   SMTP_DAILY_CAP                        the provider's daily sending limit, default 500 (Gmail); a warning is logged at 50%
   ADMIN_EMAIL                           where the missed-outcome alarm goes (Noah, not the shop)
   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_MESSAGING_SERVICE_SID   only used when a shop has texting_enabled
+  INFOBIP_BASE_URL, INFOBIP_API_KEY, INFOBIP_SENDER   texting through Infobip instead (wins when all three are set)
+  INFOBIP_WEBHOOK_SECRET                secret path segment of the inbound-text route /sms/infobip/<secret> (closed without it)
 Per shop (business JSON): "notify": {"email": ["owner@example.com"], "max_per_day": 40, "digest": true}
 """
 from __future__ import annotations
@@ -389,10 +391,57 @@ class TwilioSender:
             raise SendError(f"Twilio answered {status}")
 
 
-def sms_sender_from_env(env=None) -> TwilioSender | None:
+class InfobipSender:
+    """Infobip SMS API (`POST {base_url}/sms/2/text/advanced`, key sent as `Authorization: App <key>`). Same
+    `send(to, body)` as TwilioSender. `post` is injected in tests; it takes (url, headers, json-able dict) and returns
+    the HTTP status. The key and base URL come from the environment only."""
+
+    def __init__(self, base_url: str, api_key: str, sender: str, post=None):
+        self.url = base_url.strip().rstrip("/")
+        if "://" not in self.url:
+            self.url = "https://" + self.url      # Infobip shows the host alone, e.g. abc123.api.infobip.com
+        self.sender = sender
+        self.headers = {"Authorization": "App " + api_key, "Content-Type": "application/json", "Accept": "application/json"}
+        self.post = post or self._post
+
+    def _post(self, url: str, headers: dict, payload: dict) -> int:
+        req = urllib.request.Request(url, json.dumps(payload).encode(), headers, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status
+
+    def send(self, to: str, body: str) -> None:
+        payload = {"messages": [{"from": self.sender, "destinations": [{"to": _digits_e164(to)}], "text": body}]}
+        try:
+            status = self.post(self.url + "/sms/2/text/advanced", self.headers, payload)
+        except OSError as e:     # urllib's HTTPError is an OSError too
+            raise SendError(f"{type(e).__name__}: {e}") from e
+        if status >= 300:
+            raise SendError(f"Infobip answered {status}")
+
+
+def infobip_inbound(payload) -> list[tuple[str, str]]:
+    """(from, text) for each message in an Infobip inbound-SMS webhook body ({"results": [{"from", "text", ...}]})."""
+    out = []
+    for r in (payload.get("results") if isinstance(payload, dict) else None) or []:
+        if isinstance(r, dict) and r.get("from"):
+            out.append((str(r["from"]), str(r.get("text") or r.get("cleanText") or "")))
+    return out
+
+
+def sms_sender_from_env(env=None) -> TwilioSender | InfobipSender | None:
+    """Infobip when its three settings are all present, else Twilio when its three are, else no texting at all."""
     env = os.environ if env is None else env
+    ib = ("INFOBIP_BASE_URL", "INFOBIP_API_KEY", "INFOBIP_SENDER")
+    if all(env.get(k) for k in ib):
+        return InfobipSender(*(env[k] for k in ib))
     keys = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_MESSAGING_SERVICE_SID")
     return TwilioSender(*(env[k] for k in keys)) if all(env.get(k) for k in keys) else None
+
+
+def _digits_e164(number: str) -> str:
+    """Infobip wants the number with country code and no plus: a 10-digit US number gets a leading 1."""
+    d = "".join(c for c in (number or "") if c.isdigit())
+    return "1" + d if len(d) == 10 else d
 
 
 def _digits(number: str | None) -> str:
