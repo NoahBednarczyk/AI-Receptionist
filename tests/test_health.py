@@ -22,7 +22,7 @@ class DeepHealth(unittest.TestCase):
     def test_healthy_after_a_start(self):
         r = self.http.get("/health/deep")
         self.assertEqual((r.status_code, r.json()), (200, {"ok": True, "database": True, "model": True}))
-        self.assertEqual(self.http.get("/health").json(), {"ok": True})
+        self.assertEqual(self.http.get("/health").json(), {"ok": True, "commit": ""})
 
     def test_a_database_that_refuses_writes_is_a_503(self):
         import receptionist.store as st

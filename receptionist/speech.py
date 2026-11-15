@@ -15,7 +15,7 @@ SELF_TALK = re.compile(r"^(?:(?:this|that|it)(?:'s| is) (?:an? |just an? )?(?:au
                        r"is (?:being|getting))\b|(?:oh|um|uh),? wait\b|wait\b|hmm+\b|let me (?:think|rethink|reconsider)\b|i should\b|i need to (?:ask|check|find out|"
                        r"figure|first|follow)\b|(?:actually|okay|ok|so),? (?:i should|i need to|let me (?:think|rethink))\b|"
                        r"the caller\b|this caller\b|that'?s (?:the|a) (?:first|second|third) (?:no|ask|soft no)\b|this is a (?:gentle|soft|firm|hard) (?:first |second )?(?:no|ask)\b|"
-                       r"the (?:owner|person|speaker)\b.{0,30}\b(?:said|wants|doesn't|isn't|is not|declined)\b|(?:they|he|she)(?:'ve| has| have)? (?:told me|asked|are asking|is asking|want|wants|wanted|said|are declining|"
+                       r"the (?:owner|person|speaker)\b.{0,30}\b(?:said|wants|doesn't|(?:isn't|is not)(?! (?:picking up|answering|available)\b)|declined)\b|(?:they|he|she)(?:'ve| has| have)? (?:told me|asked|are asking|is asking|want|wants|wanted|said|are declining|"
                        r"is declining|declined|don't want|doesn't want|seem|seems) |this is an emergency\b|per the\b|according to (?:the|my)\b|"
                        r"based on (?:the|my) (?:rules|instructions|playbook)\b|(?:it's|it is) business hours, so\b|"
                        r"the office is open(?: right)? now, so I (?:can|should|will) (?:connect|transfer)\b)", re.I)

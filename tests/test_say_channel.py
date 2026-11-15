@@ -61,7 +61,7 @@ class ChannelTests(unittest.TestCase):
         self.assertEqual(entry["private"], ["They said no once."])
 
     def test_sentences_the_old_blocklist_dropped_are_spoken_inside_say_with_a_shadow_entry(self):
-        lines = ["The owner isn't picking up right now.", "You'll hear from them within thirty minutes."]
+        lines = ["You'll hear from them within thirty minutes."]   # "The owner isn't picking up" is no longer caught
         for line in lines:
             self.assertTrue(unspeakable(line))
             self.assertFalse(channel_guard(line))

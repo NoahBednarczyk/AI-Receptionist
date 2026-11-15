@@ -84,6 +84,15 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   (burst_pipe, furnace_short_cycling) showed notes dropped and replies intact. The 21:49 call that died with
   `error_llm_websocket_runtime` came about 90 s after commit a9524af, so a Render redeploy is the likely cause
   (not confirmed in Render's deploy list).
+- **Second round from the 23:28 and 23:29 live calls (2026-11-14):** both calls behaved like the code BEFORE ec31888
+  (notes spoken, no stall line), so Render had most likely not deployed ec31888; unconfirmed, no Render access from
+  here. `/health` now returns `commit` (from Render's `RENDER_GIT_COMMIT`) so a deploy can be checked. Fixes: "water
+  heater" no longer fires the no-heat line (`(?<!water )heater`, Spanish `calentador(?! de agua)`); at 23:29 that false
+  line made the model argue with its system note out loud. The old filter's "the owner ... isn't" clause no longer drops
+  "The owner isn't picking up" (the playbook's own line; dropping it gave a loop of "Sorry, could you say that again?"
+  in `owner_cell_no_answer`). Emergencies no longer hang up in the same turn as "the owner isn't picking up": the caller
+  gets to answer first (`playbooks/hvac.md`). Simulated: burst_pipe passed; owner_cell_no_answer now talks normally but
+  fails its "no booking" check because she offered an emergency visit once the caller could reply.
 - **Humor trimmed (2026-11-13, after two bad live calls):** the "say the thing a script wouldn't" sentence is gone from the
   shared `CHARACTER_DRY` (also used by the outbound caller). Dry humor is now one small line about the situation, after
   everything the caller asked is answered, never in place of an answer or in a reply that asks a question. Evidence: at

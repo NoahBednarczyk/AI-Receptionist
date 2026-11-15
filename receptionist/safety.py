@@ -79,7 +79,7 @@ HVAC_WINTER = [
     ("no_heat_freezing",
      [r"\bno heat\b", r"\bwithout (?:any )?heat\b",
       r"\b(?:don't|dont|do not|haven't|havent|have not|ain't) (?:got |have )?(?:any )?heat\b(?! (?:issue|problem|question)s?\b)",
-      r"\b(?:furnace|boiler|heater|heat pump|heat|mini ?split|thermostat)(?:['\u2019]s)?\b(?: \S+){0,3} "
+      r"\b(?:furnace|boiler|(?<!water )heater|heat pump|heat|mini ?split|thermostat)(?:['\u2019]s)?\b(?: \S+){0,3} "
       r"(?:out|off|dead|died|quit|stopped|down|broke|broken|not working|won't (?:start|turn on|come on|kick on)|"
       r"doesn't (?:work|start|come on)|not (?:coming|kicking) on|isn't working|stopped working)\b"],
      "No heat in this cold is urgent, so let's find you the earliest emergency slot.",
@@ -90,7 +90,7 @@ HVAC_WINTER = [
 ]
 HVAC_WINTER_ES = [
     ("no_heat_freezing",
-     [r"\bsin calefacci[oó]n\b", r"\bno (?:tengo|tenemos) (?:nada de )?calefacci[oó]n\b", r"\bno hay calefacci[oó]n\b", r"\b(?:calefacci[oó]n|calentador|caldera|horno)\b"
+     [r"\bsin calefacci[oó]n\b", r"\bno (?:tengo|tenemos) (?:nada de )?calefacci[oó]n\b", r"\bno hay calefacci[oó]n\b", r"\b(?:calefacci[oó]n|calentador(?! de agua)|caldera|horno)\b"
       r"(?: \S+){0,3} (?:no funciona|no enciende|se apag[oó]|est[aá] descompuest[oa]|dej[oó] de funcionar)\b"],
      "Sin calefacción con este frío es urgente, así que busquemos la cita de emergencia más pronta.",
      COLD_CUE_ES),

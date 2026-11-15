@@ -258,7 +258,7 @@ class Dashboard(Env, unittest.TestCase):
             self.assertEqual(self.client.get(path).status_code, 404)
 
     def test_health_names_no_shops(self):
-        self.assertEqual(self.client.get("/health").json(), {"ok": True})
+        self.assertEqual(self.client.get("/health").json(), {"ok": True, "commit": ""})
 
     def test_short_secrets_are_ignored(self):
         self.stop()

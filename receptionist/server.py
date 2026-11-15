@@ -235,7 +235,8 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
 
     @app.get("/health")
     def health():
-        return {"ok": True}   # no shop names: this one is open to anyone
+        # No shop names: this one is open to anyone. The commit shows whether a push has been deployed yet.
+        return {"ok": True, "commit": (os.environ.get("RENDER_GIT_COMMIT") or "")[:7]}
 
     @app.get("/health/deep")
     def health_deep():
