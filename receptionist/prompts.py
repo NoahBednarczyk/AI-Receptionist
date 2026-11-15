@@ -37,8 +37,8 @@ You're honest before you're agreeable. If you don't know, you say so and say who
 Every example in these instructions shows an idea, never the words to use.
 
 # How you speak
-- Replies are one to three short sentences, at the caller's pace. Start with your actual response, no lead-in, then let them talk. Only the read-back before booking may run longer (about 40 words), and it must end with its question. Confirm a booking in two short sentences: the {slot}, then anything the tool's note says to pass on. Never say the confirmation number unless the caller asks for it.
-- You respond; you don't run an interview. Many replies just react to or answer what the caller said; a question belongs only where you genuinely want to know something, one at a time, often none. Don't open by asking for their name, address or number, or ask for them before the caller is ready to book or leave a message. Once everything they wanted is dealt with, offer the next step (a visit, a message) and collect what's needed one detail at a time. A read-back counts as one question. In an emergency, ask for name and address together.
+- Replies are one to three short sentences, at the caller's pace. Start with your actual response, no lead-in, then let them talk. {confirm_rules}
+- You respond; you don't run an interview. Many replies just react to or answer what the caller said; a question belongs only where you genuinely want to know something, one at a time, often none. Don't open by asking for their name, address or number, or ask for them before the caller is ready to book or leave a message. Once everything they wanted is dealt with, offer the next step (a visit, a message) and collect what's needed one detail at a time. {readback_q}In an emergency, ask for name and address together.
 - Plain spoken language: no lists, markdown, emoji or symbols. Say times like "2 PM", dates like "Wednesday, October 28th", and phone numbers in groups, like "312-555-0142".
 - Once the caller has given or confirmed a callback number, it's settled: use it everywhere and don't ask or say it again unless they ask, even if a transfer fails. The same goes for their name, address and the day and window they chose.
 - A callback number needs all 10 digits. If you heard fewer, say you missed part of it and ask again; never fill in or guess digits.
@@ -77,8 +77,8 @@ Every example in these instructions shows an idea, never the words to use.
 - A genuine caller with a service need we can serve should end up booked, transferred, as a lead (create_lead) or with a message (take_message). Create no leads for spam, quick questions, callers outside the service area or wanting a service we don't offer.
 - Transfer only with transfer_call, only to the targets listed in the business facts, and only when the rules for that target allow it. If a transfer doesn't connect, take a message.
 - For an existing appointment, use lookup_customer, then reschedule_appointment or cancel_appointment once the caller confirms. From a different number than the one on the account, ask for the name on the account first and pass it to lookup_customer; never read out a record's details before it matches. Only the customer on the appointment can change it; if the tool refuses, don't share the appointment's details.
-- Don't announce check_availability, book_appointment, lookup_customer, reschedule_appointment, cancel_appointment or take_message: the phone system plays a short line the moment you call one. create_lead is an internal note; don't mention it. Before transfer_call, say a short line yourself. For an upset caller: "I'm sorry about that. Let me connect you with the office now." Otherwise: "Let me connect you now."
-- When the call is done, say a short goodbye and call end_call in the same turn. The call is done once everything the caller wanted is finished (booked, changed, answered or a message taken) and the confirmation has been said. After that, "okay", "thanks", "copy that", "yep", "that's it" or "no" means they're finished: reply "You're all set, bye." (or similar, in their language) and call end_call right then. Never answer with just "Great." or "Okay" and leave the line open, and never start anything new.
+- Don't announce a tool call: the phone system plays a short line while it runs, and words written before one are never heard. create_lead is an internal note; don't mention it. Before transfer_call, say a short line yourself. For an upset caller: "I'm sorry about that. Let me connect you with the office now." Otherwise: "Let me connect you now."
+{goodbye_rule}
 
 # Call control
 - Robocalls, recorded messages, and sales or marketing pitches: say exactly "Thanks for calling. Goodbye." and nothing else, and call end_call with reason spam.
@@ -122,7 +122,7 @@ HVAC_ADVICE_EXTRA = (
 HVAC_TIP_RULE = (
     "- Say an approved tip as written (you may shorten it) and add nothing: no \"that's safe\", no \"it's easy\". If the caller has "
     "nothing else, skip the tip and say goodbye.\n")
-TERMS["hvac"] = {**TERMS["home_services"], "reactions": "the old boiler, the crawl space, the third service call this winter", "advice": TERMS["home_services"]["advice"] + HVAC_ADVICE_EXTRA + HVAC_TIP_RULE}
+TERMS["hvac"] = {**TERMS["home_services"], "reactions": "the old boiler, the crawl space, the third service call this winter", "advice": TERMS["home_services"]["advice"] + HVAC_TIP_RULE}   # stoves: the playbook's own section
 
 # Lawn care, landscaping and snow removal: estimate-first booking, and no chemical advice beyond the approved tips.
 LAWN_ADVICE = (
@@ -167,13 +167,44 @@ def channel_on(cfg: dict) -> bool:
     return bool((cfg.get("agent") or {}).get("speech_channel", False))
 
 
+# Rules a shop does not need when code runs that step of its call (businesses/<shop>.json "call_flow", tools.flow).
+RULES_BY_MODEL = {
+    "confirm_rules": "Only the read-back before booking may run longer (about 40 words), and it must end with its question. "
+                     "Confirm a booking in two short sentences: the {slot}, then anything the tool's note says to pass on. "
+                     "Never say the confirmation number unless the caller asks for it.",
+    "readback_q": "A read-back counts as one question. ",
+    "goodbye_rule": '- When the call is done, say a short goodbye and call end_call in the same turn. The call is done once '
+                    'everything the caller wanted is finished (booked, changed, answered or a message taken) and the '
+                    'confirmation has been said. After that, "okay", "thanks", "copy that", "yep", "that\'s it" or "no" means '
+                    'they\'re finished: reply "You\'re all set, bye." (or similar, in their language) and call end_call right '
+                    'then. Never answer with just "Great." or "Okay" and leave the line open, and never start anything new.',
+}
+RULES_BY_CODE = {
+    "readback": {"confirm_rules": "Never say the confirmation number unless the caller asks for it.", "readback_q": "",
+                 "readback": "- Once the caller has picked a {slot} and you have their name, address and number, call "
+                             "book_appointment: it reads the details back to the caller itself and books on their yes, so "
+                             "read nothing back yourself. Call it again with the same details when they say yes.\n"},
+    "goodbye": {"goodbye_rule": '- When the caller is done, say a short goodbye and call end_call in the same turn. Never '
+                                'leave the line open with just "Okay."'},
+}
+
+
+def rule_terms(biz: dict) -> dict:
+    """The vertical's wording, with the rules for steps code runs itself replaced by shorter ones."""
+    terms = {**TERMS[biz["vertical"]], **RULES_BY_MODEL}
+    for step, on in (biz.get("call_flow") or {}).items():
+        if on:
+            terms.update(RULES_BY_CODE.get(step, {}))
+    slot = terms["slot"]
+    return {k: v.replace("{slot}", slot).rstrip("\n") for k, v in terms.items()}
+
+
 def stable_prompt(biz: dict, channel: bool = False) -> str:
     """The cached system prompt. `channel` appends the <say> format; only our own agent loop sets it. The phone platforms'
     hosted models never get it: they would read the tags aloud."""
     playbook = (PLAYBOOKS / f"{biz['vertical']}.md").read_text().strip()
     return "\n\n".join([
-        PLATFORM_RULES.format(agent_name=biz["agent_name"], name=biz["spoken_name"],
-                              **{k: v.rstrip("\n") for k, v in TERMS[biz["vertical"]].items()}).strip(),
+        PLATFORM_RULES.format(agent_name=biz["agent_name"], name=biz["spoken_name"], **rule_terms(biz)).strip(),
         playbook,
         business_facts(biz),
         *([SAY_FORMAT.strip()] if channel else []),

@@ -93,6 +93,25 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   in `owner_cell_no_answer`). Emergencies no longer hang up in the same turn as "the owner isn't picking up": the caller
   gets to answer first (`playbooks/hvac.md`). Simulated: burst_pipe passed; owner_cell_no_answer now talks normally but
   fails its "no booking" check because she offered an emergency visit once the caller could reply.
+- **Receptionist voice = outbound caller's voice (user's word, 2026-11-15):** `hvac.json` voice_speed 1.15 (was 1.22),
+  voice_temperature 1.3 (was 1.1), max_call_duration_ms 600000 (was 479000), the outbound agent's values; voice and model
+  were already the same (11labs-Grace, eleven_v3_conversational). `retell-tune --business hvac` published agent v27 and
+  the number points at it; rollback is v26. Not copied: end_call_after_silence (outbound 15 s, receptionist kept at 30 s
+  so a caller fetching a number isn't hung up on) and the outbound-only voicemail and DTMF settings.
+- **Call structure in code (2026-11-15, user asked for the outbound caller's approach):** a shop's `call_flow` block turns
+  on steps code runs itself (`tools.flow`); only `hvac.json` has it, so acme and lawn_care are unchanged. `readback`:
+  the first `book_appointment` call books nothing and code reads the details back (`tools.readback_line`, the number
+  only if it isn't the caller ID); the next call with the same details books and code says the confirmation
+  (`booking.confirm_line`). `owner_no_answer`: code says "The owner isn't picking up, but your message is saved and
+  they'll call you back <time>. Is there anything else they should know?" and the turn ends. `emergency_ask`: code says
+  the safety line plus "Can I get your name and the address?" with no model call (not no-heat or frozen pipe, not when
+  an address was already given) and the next turn gets a note with the next step. `goodbye`: "no, that's it" after an
+  "anything else?" question gets code's goodbye and end_call (`agent.closing`). Prompt rules for those steps are
+  swapped for short ones (`prompts.RULES_BY_CODE`); hvac stable prompt 5,196 words (was 5,398). Tests in
+  `tests/test_call_flow.py`. Simulated (burst_pipe, owner_cell_no_answer, furnace_short_cycling, ac_not_cooling): every
+  step worked; 1/4 passed, the three failures were character rubric items (a name joke, a repeated callback time, an
+  extra sentence after a tip), none from the new steps. Not run: the full suite. Deeper cuts mean rewording the safety,
+  honesty and tool rules, which needs the full suite twice (about $3) to check.
 - **Repetition (00:04 live call, 2026-11-15):** her address came up three times and the number twice. Causes: the
   mismatch rule added the night before made her ask again after the caller had already corrected the address (now: use
   the caller's address without comment), and the read-back example included the number, so she read back a number the

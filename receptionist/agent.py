@@ -37,6 +37,25 @@ IRREVERSIBLE = {"book_appointment", "reschedule_appointment", "cancel_appointmen
 # (a goodbye, "let me connect you"); before any other tool the phone line plays its own stall line, so whatever the model
 # writes there is a note to itself and is never sent to text-to-speech (see CallSession.respond).
 SPOKEN_BEFORE = {"transfer_call", "end_call"}
+# Code-run steps of the call (a shop's "call_flow" block; see tools.flow). The emergency question after a safety line:
+ASK_NAME = {"en": "Can I get your name and the address?", "es": "¿Me da su nombre y la dirección?"}
+CODE_ASKS_AFTER = {"no_heat_freezing", "frozen_pipe"}   # these tiers go to booking, not to a message and the owner
+ADDRESS_GIVEN = re.compile(r"\b\d+\s+\w+.*\b(?:street|st|road|rd|avenue|ave|lane|ln|drive|dr|way|court|ct|place|pl|"
+                           r"boulevard|blvd|highway|hwy|loop|trail)\b", re.I)
+# A finished caller answering "anything else?": these words only, and at least one that closes the call.
+CLOSING_WORDS = {"no", "nope", "nah", "that's", "thats", "it", "all", "everything", "i'm", "im", "i", "think", "good",
+                 "set", "we're", "were", "nothing", "else", "thanks", "thank", "you", "so", "much", "bye", "goodbye",
+                 "okay", "ok", "alright", "um", "uh", "yeah", "yep", "great", "perfect", "have", "a", "nice", "one",
+                 "night", "day", "not", "really", "that", "is", "for", "now", "all", "appreciate", "it", "cool"}
+CLOSERS = re.compile(r"\b(?:no|nope|nah|that'?s (?:it|all|everything)|nothing(?: else)?|i'?m (?:good|all set)|"
+                     r"we'?re (?:good|all set)|all set|good for now|bye|goodbye)\b", re.I)
+
+
+def closing(text: str) -> bool:
+    """The caller is done: "No, that's it, thanks." A "no, but..." or anything with a new request is not."""
+    words = re.findall(r"[a-z']+", (text or "").lower())
+    return bool(words) and all(w in CLOSING_WORDS for w in words) and bool(CLOSERS.search(text or ""))
+
 REFUSAL_LINE = "I'm sorry, I can't help with that on this line. I can take a message for the office."
 REPEAT_LINE = "Sorry, could you say that again?"
 REPEAT_VARIANTS = [REPEAT_LINE, "Sorry, say that one more time?", "I lost you there, could you repeat that?",
@@ -274,6 +293,7 @@ class Turn:
 
 class CallSession:
     taker: degraded.MessageTaker | None = None   # set when the model fails: code takes messages (degraded.py)
+    _next_note: str | None = None   # what code decided the next turn needs (an emergency's next step)
 
     def __init__(self, client: anthropic.Anthropic, cfg: dict, biz: dict, store: Store, now: datetime,
                  caller: str | None = None, call_id: str | None = None, platform: str = "text",
@@ -293,6 +313,8 @@ class CallSession:
         self.tools = [{**t, "strict": True} for t in tools.schemas(biz)]
         self.ctx = tools.ToolContext(biz, store, now, caller, self.call_id, transfer_outcome,
                                      real_transfers=real_transfers)
+        if self.notes_before_tools_are_private:   # the receptionist only: the sales caller has its own structure
+            self.ctx.code_flow = dict(biz.get("call_flow") or {})
         self.messages: list[dict] = []
         self.transcript: list[dict] = [{"role": "agent", "text": self.greeting}]
         self.usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
@@ -318,6 +340,33 @@ class CallSession:
         """The receptionist's words wait until it is known that no tool call follows them: text before a tool call
         (other than SPOKEN_BEFORE) is a note and is dropped unheard. The sales caller keeps its own handling."""
         return type(self) is CallSession
+
+    def _code_turn(self, caller_text: str, emergency) -> tuple[str, list, bool] | None:
+        """(line, tool calls, call ended) for a step the shop's call_flow gives to code, else None. Two steps, both the
+        same on every call, so a model call there only adds a wait and a chance to wander:
+        - an emergency's first turn (not the no-heat and frozen-pipe tiers, which go to booking): the safety line, then
+          the one question the playbook allows, unless the caller already gave an address;
+        - the goodbye, when the caller answers "anything else?" with nothing else."""
+        ctx = self.ctx
+        if emergency and tools.flow(ctx, "emergency_ask") and emergency[0] not in CODE_ASKS_AFTER \
+                and not ADDRESS_GIVEN.search(caller_text):
+            line = f"{emergency[1]} {ASK_NAME.get(ctx.language, ASK_NAME['en'])}"
+            self._next_note = (f"This is an emergency ({emergency[0].replace('_', ' ')}). The safety line and the name "
+                               "and address question were already said. Next, take an urgent message (take_message), "
+                               "then try the owner's cell (transfer_call, target owner)."
+                               + ("" if ctx.caller else " There is no caller ID: ask for the best number first."))
+            return line, [], False
+        last = self.last_reply()
+        if tools.flow(ctx, "goodbye") and ctx.language == "en" and re.search(r"\banything else\b[^.?!]*\?\s*$", last, re.I) \
+                and closing(caller_text):
+            line = tools.end_line(ctx, "completed")
+            result, err = tools.run_tool(ctx, "end_call", {"reason": "completed"})
+            return line, [{"name": "end_call", "args": {"reason": "completed"}, "result": result, "error": err}], True
+        return None
+
+    def _skip_filler(self, name: str) -> bool:
+        """No "booking it" stall line before a booking call that will only read the details back."""
+        return name == "book_appointment" and tools.flow(self.ctx, "readback") and self.ctx.readback is None
 
     def degrade(self) -> None:
         """The model can't be used for the rest of this call: code takes a message instead."""
@@ -445,6 +494,19 @@ class CallSession:
             return Turn(line, [call], 0.0, 0.0, True)
         if self.taker:   # the model failed earlier in this call
             return self._taker_turn(messages, caller_text, emergency, emit, go_on)
+        fixed = self._code_turn(caller_text, emergency)
+        if fixed:   # a step of the call code runs itself: no model call
+            line, calls, ended = fixed
+            go_on(irreversible=ended)
+            emit(line, True)
+            messages += [{"role": "user", "content": caller_text}, {"role": "assistant", "content": self.tag(line)}]
+            self._save(messages, caller_text, {"role": "agent", "text": line, "tools": calls,
+                                               "steps": [{"say": line}] + [{"tool": c} for c in calls], "code": True},
+                       emergency, final=ended)
+            return Turn(line, calls, 0.0, 0.0, self.ctx.ended)
+        if self._next_note:
+            content += f"\n\n(System note: {self._next_note})"
+            self._next_note = None
         messages.append({"role": "user", "content": content})
         spoken, used, steps = [], [], []   # steps keeps speech and tool calls in the order they happened
         start, first = time.monotonic(), None
@@ -527,7 +589,8 @@ class CallSession:
                         if ev.type == "content_block_start" and ev.content_block.type == "tool_use":
                             if hold:   # now it is known what the words before this tool call were
                                 release() if ev.content_block.name in SPOKEN_BEFORE else discard(ev.content_block.name)
-                            if ev.content_block.name in fillers and not said and not spoken:
+                            if ev.content_block.name in fillers and not said and not spoken \
+                                    and not self._skip_filler(ev.content_block.name):
                                 if first is None:
                                     first = time.monotonic() - start   # the filler line starts playing here
                                 self._filler_line = tools.pick_filler(self.ctx, ev.content_block.name)
@@ -574,7 +637,7 @@ class CallSession:
                            for i, b in enumerate(msg.content) if b.type != "text" or said_in.get(i)]
             if content:
                 messages.append({"role": "assistant", "content": content})
-            results = []
+            results, code_lines = [], []
             for i, b in enumerate(msg.content):
                 if b.type == "text" and said_in.get(i):
                     spoken.append(said_in[i])
@@ -586,13 +649,16 @@ class CallSession:
                         emit(line, True)
                         spoken.append(line)
                         steps.append({"say": line})
-                    elif not spoken and b.name in fillers:
+                    elif not spoken and b.name in fillers and (self._filler_line or not self._skip_filler(b.name)):
                         # The phone platforms play a fixed line while a tool runs; so do we, so the caller
                         # never waits through a tool call in silence. It's speech only, not model history.
                         line = self._filler_line or tools.pick_filler(self.ctx, b.name)
                         spoken.append(line)
                         steps.append({"say": line})
+                    self.ctx.code_line = None
                     result, is_error = tools.run_tool(self.ctx, b.name, b.input)
+                    if self.ctx.code_line:
+                        code_lines.append(self.ctx.code_line)
                     call = {"name": b.name, "args": b.input, "result": result, "error": is_error}
                     used.append(call)
                     steps.append({"tool": call})
@@ -614,6 +680,17 @@ class CallSession:
                 continue
             messages.append({"role": "user", "content": results})
             words.new_reply()
+            if code_lines and not self.ctx.ended:   # a tool's own line (a read-back, a confirmation): code says it, the turn ends
+                line = " ".join(code_lines)
+                emit(line, True)
+                if first is None:
+                    first = time.monotonic() - start
+                spoken.append(line)
+                steps.append({"say": line})
+                messages.append({"role": "assistant", "content": self.tag(line)})
+                if ANYTHING_ELSE.search(line):
+                    words.said_once.add("anything_else")
+                break
             if self.ctx.ended:
                 break
 

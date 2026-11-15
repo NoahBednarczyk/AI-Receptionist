@@ -33,6 +33,11 @@ class ToolContext:
     last_filler: str | None = None       # the last spoken stall line, so the next one is different
     calendar_problems: list = field(default_factory=list)   # calendars the last availability check could not read
     extra: dict = field(default_factory=dict)   # per-call data for tools outside the receptionist (the outbound caller)
+    # The call flow code runs itself (the shop's "call_flow" block, receptionist only; see flow()):
+    code_flow: dict = field(default_factory=dict)
+    code_line: str | None = None         # a line a tool wants said word for word; it ends the model's turn
+    callback_spoken: str | None = None   # when the office calls back, as the last message promised ("within 15 minutes")
+    readback: tuple | None = None        # the booking details last read back to the caller, awaiting their yes
 
 
 # Lines the phone system plays the moment a tool call starts, so the caller doesn't wait in silence. They play
@@ -109,6 +114,37 @@ COMPLETED_VARIANTS = {
     "es": ["Gracias por llamar. Adiós.", "Que le vaya bien, hasta luego.", "Listo, gracias por llamar. Cuídese.",
            "Gracias, que tenga buen día."],
 }
+
+
+def flow(ctx: "ToolContext", step: str) -> bool:
+    """Whether code runs this step of the call itself (businesses/<shop>.json "call_flow"): "readback" (the read-back
+    before a booking and the confirmation after it), "owner_no_answer" (what the caller hears when a transfer rings
+    out), "emergency_ask" and "goodbye" (agent.py)."""
+    return bool(ctx.code_flow.get(step))
+
+
+def readback_line(ctx: "ToolContext", spoken: str, street: str, town: str, phone: str) -> str:
+    """One read-back, built from the booking itself. The number is left out when it is the caller ID: the caller has
+    already been asked whether the number they're calling from is the best one, and hearing it again is noise."""
+    number = "" if phone == normalize_phone(ctx.caller) else spoken_phone(phone)
+    if ctx.language == "es":
+        return (f"Sería {spoken}, en {street}, {town}" + (f", con el {number} para devolverle la llamada" if number else "")
+                + ". ¿Se la reservo?")
+    return (f"That's {spoken} at {street} in {town}" + (f", with {number} as your callback number" if number else "")
+            + ". Shall I book it?")
+
+
+def booked_line(ctx: "ToolContext", spoken: str) -> str:
+    extra = ctx.biz["booking"].get("confirm_line_es" if ctx.language == "es" else "confirm_line") or ""
+    if ctx.language == "es":
+        return f"Listo, queda reservada para {spoken}. {extra} ¿Hay algo más en que le pueda ayudar?".replace("  ", " ")
+    return f"You're booked for {spoken}. {extra} Anything else I can help with?".replace("  ", " ")
+
+
+def no_answer_line(ctx: "ToolContext", target: str) -> str:
+    who = {"owner": "The owner", "office": "The office", "on_call": "The on-call technician"}.get(target, "Nobody")
+    return (f"{who} isn't picking up, but your message is saved and they'll call you back {ctx.callback_spoken}. "
+            "Is there anything else they should know?")
 
 
 def end_line(ctx: "ToolContext", reason: str | None, rng=random) -> str:
@@ -350,6 +386,18 @@ def book_appointment(ctx: ToolContext, a: dict) -> dict:
                                                               **schedule.emergency_rules(biz, service))}
     if wid not in open_ids and not keeps_own_window:
         raise ToolError("That window isn't available. Call check_availability again and offer a current window.")
+    if flow(ctx, "readback"):
+        details = (wid, service["id"], street.strip().lower(), town, phone)
+        same_visit = earlier is not None and (wid, street.strip().lower(), town) == (
+            earlier["window_id"], (earlier.get("address") or "").strip().lower(), earlier.get("town"))
+        if not same_visit and ctx.readback != details:
+            ctx.readback = details
+            ctx.code_line = readback_line(ctx, schedule.spoken_window(biz, wid, ctx.now, ctx.language), street, town, phone)
+            return {"status": "read_back", "said": ctx.code_line,
+                    "note": "Not booked yet. The details above were just read back to the caller. When they say yes, "
+                            "call book_appointment again with exactly the same details; if they change one, call it with "
+                            "the new details and it reads them back again."}
+        ctx.readback = None
     if earlier:
         ctx.store.update_appointment(earlier["id"], wid, service["id"], street, town,
                                      a["problem_summary"], a.get("access_notes"))
@@ -378,6 +426,10 @@ def book_appointment(ctx: ToolContext, a: dict) -> dict:
     _text(ctx, biz["owner_sms"], f"New booking {confirmation}: {name}, {spoken_phone(phone)}, "
                                  + (f"{street}, {town}. " if street else "") + f"{service['name']}: {a['problem_summary']} "
                                  f"Window: {schedule.spoken_window(biz, wid, ctx.now)}.")
+    if flow(ctx, "readback"):
+        ctx.code_line = booked_line(ctx, spoken)
+        return {"status": "booked", "confirmation": confirmation, "window": spoken, "said": ctx.code_line,
+                "note": "The caller just heard the confirmation above. " + _sent_note(ctx, "confirmation")}
     return {"status": "booked", "confirmation": confirmation, "window": spoken, "note": _sent_note(ctx, "confirmation")}
 
 
@@ -470,14 +522,16 @@ def take_message(ctx: ToolContext, a: dict) -> dict:
     _text(ctx, ctx.biz["owner_sms"], f"{'URGENT ' if a['urgent'] else ''}Message from {a['caller_name']}, "
                                      f"{spoken_phone(phone)}: {a['message']}")
     if a["urgent"]:
-        promise = f"within {ctx.biz['emergency_callback_minutes']} minutes"
+        promise = spoken = f"within {ctx.biz['emergency_callback_minutes']} minutes"
     elif schedule.is_open(ctx.biz, ctx.now):
-        promise = "later today, during business hours"
+        promise = spoken = "later today, during business hours"
     else:
         opens = schedule.next_opening(ctx.biz, ctx.now)
-        promise = (f"the office is closed right now; someone will call back after it opens "
-                   f"{spoken_date(opens.date(), ctx.now.date())} at {spoken_time(opens.strftime('%H:%M'))}"
-                   if opens else "the office is closed right now; someone will call back when it reopens")
+        when = f"{spoken_date(opens.date(), ctx.now.date())} at {spoken_time(opens.strftime('%H:%M'))}" if opens else ""
+        promise = (f"the office is closed right now; someone will call back after it opens {when}" if opens
+                   else "the office is closed right now; someone will call back when it reopens")
+        spoken = f"after the office opens {when}" if opens else "when the office reopens"
+    ctx.callback_spoken = spoken
     return {"status": "saved", "callback": promise}
 
 
@@ -498,6 +552,11 @@ def transfer_call(ctx: ToolContext, a: dict) -> dict:
                         f"{target['label']} is reachable only after hours. Use another target or take a message.")
     # A live call can't ring a placeholder number (555-01xx); treat it as nobody picking up.
     if ctx.transfer_outcome != "connected" or (ctx.real_transfers and fictional_phone(target["number"])):
+        if flow(ctx, "owner_no_answer") and ctx.callback_spoken and ctx.language == "en":
+            ctx.code_line = no_answer_line(ctx, a["target"])
+            return {"status": "no_answer", "said": ctx.code_line,
+                    "note": "Nobody picked up. The caller just heard the line above; their message is already saved. "
+                            "Answer what they say next, and once they're done, say goodbye and end the call."}
         return {"status": "no_answer", "note": "Nobody picked up. Tell the caller exactly that, in plain words and without "
                                                "apologizing (\"The office isn't picking up.\"). Then take a message "
                                                "(urgent if it's an emergency) and tell the caller when to expect a callback."}
