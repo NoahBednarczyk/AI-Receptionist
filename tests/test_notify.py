@@ -258,6 +258,10 @@ class InfobipTexts(unittest.TestCase):
         self.assertEqual(headers["Authorization"], "App key-1")
         self.assertEqual(payload, {"messages": [{"from": "SHOP", "destinations": [{"to": "12085550142"}], "text": "Hi"}]})
 
+    def test_a_phone_number_sender_is_sent_as_digits_and_a_name_is_left_alone(self):
+        self.assertEqual(notify.InfobipSender("h", "k", "+44 7491 163443").sender, "447491163443")
+        self.assertEqual(notify.InfobipSender("h", "k", "ShopName").sender, "ShopName")
+
     def test_an_error_status_or_network_failure_is_a_send_error(self):
         with self.assertRaises(notify.SendError):
             notify.InfobipSender("h", "k", "s", post=lambda *a: 401).send("+12085550142", "x")

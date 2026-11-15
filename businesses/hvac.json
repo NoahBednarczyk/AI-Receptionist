@@ -184,7 +184,7 @@
     }
   },
   "owner_sms": "+12085550101",
-  "texting_enabled": true,
+  "texting_enabled": false,
   "emergency_callback_minutes": 15,
   "speech_keywords": [
     "furnace",

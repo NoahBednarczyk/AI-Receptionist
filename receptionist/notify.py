@@ -400,7 +400,9 @@ class InfobipSender:
         self.url = base_url.strip().rstrip("/")
         if "://" not in self.url:
             self.url = "https://" + self.url      # Infobip shows the host alone, e.g. abc123.api.infobip.com
-        self.sender = sender
+        digits = "".join(c for c in sender if c.isdigit())
+        # A phone-number sender goes as digits only ("447491163443"), whatever way it was typed; a name like SHOP stays.
+        self.sender = digits if digits and all(c in "+- ()" or c.isdigit() for c in sender.strip()) else sender.strip()
         self.headers = {"Authorization": "App " + api_key, "Content-Type": "application/json", "Accept": "application/json"}
         self.post = post or self._post
 

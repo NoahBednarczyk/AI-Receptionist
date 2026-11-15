@@ -176,11 +176,11 @@ def create_app(cfg: dict, client: anthropic.Anthropic | None = None, warm_cache:
             return
         store.save_summary(call_id, summary)
         _save_cost(call_id, usage, post)
-        notifier.call_finished(biz, call_id, summary, reason)   # never raises
         if biz.get("texting_enabled"):   # otherwise the owner reads it on the dashboard
             store.queue_sms(biz["id"], call_id, biz["owner_sms"],
                             f"Call from {spoken_phone(summary.get('callback_number')) if summary.get('callback_number') else 'unknown'}: "
                             f"{summary['summary']}", schedule.local_now(biz))
+        notifier.call_finished(biz, call_id, summary, reason)   # never raises; sends what is queued, so queue first
 
     # ---- the landing page and its contact form (served by this server: free, same origin) -------------
     contact_limit = access.FailureLimit(per_minute=3)
