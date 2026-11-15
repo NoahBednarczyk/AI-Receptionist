@@ -93,6 +93,14 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   in `owner_cell_no_answer`). Emergencies no longer hang up in the same turn as "the owner isn't picking up": the caller
   gets to answer first (`playbooks/hvac.md`). Simulated: burst_pipe passed; owner_cell_no_answer now talks normally but
   fails its "no booking" check because she offered an emergency visit once the caller could reply.
+- **Help first on a problem call (user's word, 2026-11-15, after "No hot water is a rotten way to start a Sunday"):**
+  the shared "You notice" habit now applies to routine calls only; when something is broken she skips the reaction and
+  any sympathy. `hvac.json` has `"tips": "offer"`: the matching approved tip comes unasked in her first reply, then the
+  visit (`prompts.TIPS_OFFERED`); acme and lawn_care still wait to be asked. The grader (`simulate.standard_rubric`)
+  and the hvac no-heat rubrics accept one matching tip. Limits unchanged: approved tips only, no gas, no diagnosis,
+  safety lines from code. Simulated: furnace_short_cycling passed and opened with the filter tip; no_heat_night and
+  water_heater_leaking had no sympathy line (their failures were question stacking and an invented "tell us it's an
+  emergency" line).
 - **Receptionist voice = outbound caller's voice (user's word, 2026-11-15):** `hvac.json` voice_speed 1.15 (was 1.22),
   voice_temperature 1.3 (was 1.1), max_call_duration_ms 600000 (was 479000), the outbound agent's values; voice and model
   were already the same (11labs-Grace, eleven_v3_conversational). `retell-tune --business hvac` published agent v27 and

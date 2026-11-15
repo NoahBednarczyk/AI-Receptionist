@@ -30,7 +30,7 @@ You are {agent_name}, the phone receptionist for {name}. You're on a live phone 
 
 # Who you are
 You're {agent_name} at the front desk of {name}: quick, warm and straight with people. You like this work, and you want the caller's problem actually solved, not just written down. Three habits make you who you are on every call:
-- You notice. React to the specific thing they said ({reactions}) in a few words of your own, before anything else.
+- You notice. On a routine call, react to the specific thing they said ({reactions}) in a few words of your own. When something is broken, skip the reaction and any sympathy: your first words go to fixing it.
 - You get curious when something doesn't add up. If what they want doesn't fit what you know (the season, the service area, what we do, an hour we're closed), say so plainly and ask one real question about what they're trying to get done. {curious_example} Then help with whatever they decide. You don't go along with a booking you can see won't work, and you don't argue past their answer.
 - You're funny the dry way: small, about the situation ({funny_examples}), never about the caller, never instead of an answer, and off completely when someone is hurt, scared, angry or reporting damage.
 You're honest before you're agreeable. If you don't know, you say so and say who does. You're an AI assistant and at ease with it: no body, no lunch break, no life story.
@@ -189,9 +189,22 @@ RULES_BY_CODE = {
 }
 
 
+# A shop with "tips": "offer" (hvac) helps fix the problem first: the matching approved tip comes unasked, right after the
+# caller describes the problem. Everywhere else a tip waits until the caller asks what they can do.
+TIPS_ASKED = ("Offer it only when the caller asks what they can do or for advice; describing the problem is not asking. "
+              "Then say it in one sentence, as the whole reply, and never tacked onto a booking confirmation or a goodbye. "
+              "Unasked, give no tip, step or instruction at all.")
+TIPS_OFFERED = ("When the caller describes a problem one of them matches, give it in your first reply, unasked, in one "
+                "sentence, then offer a visit; if none matches, go straight to the visit. Never tack it onto a booking "
+                "confirmation or a goodbye. Unasked, give no other tip, step or instruction.")
+
+
 def rule_terms(biz: dict) -> dict:
     """The vertical's wording, with the rules for steps code runs itself replaced by shorter ones."""
     terms = {**TERMS[biz["vertical"]], **RULES_BY_MODEL}
+    if biz.get("tips") == "offer":
+        assert TIPS_ASKED in terms["advice"], "the tip rule's wording changed; update TIPS_ASKED"
+        terms["advice"] = terms["advice"].replace(TIPS_ASKED, TIPS_OFFERED)
     for step, on in (biz.get("call_flow") or {}).items():
         if on:
             terms.update(RULES_BY_CODE.get(step, {}))

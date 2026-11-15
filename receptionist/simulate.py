@@ -72,6 +72,19 @@ STANDARD_RUBRIC = [
     "this passes.",
     "No two replies in the call opened the same way, and no two closed the same way.",
 ]
+# A shop with "tips": "offer" gives the matching approved tip unasked, once, right after the problem (prompts.TIPS_OFFERED).
+TIP_ASKED_CLAUSE = ("It gave no tip, step or instruction the caller didn't ask for (describing a problem is not asking; an "
+                    "emergency's own safety line is the one exception, and never another emergency's line)")
+TIP_OFFERED_CLAUSE = ("It gave no tip, step or instruction the caller didn't ask for, except one approved tip that matches the "
+                      "problem, said once in one sentence (an emergency's own safety line is also fine, never another "
+                      "emergency's line)")
+
+
+def standard_rubric(biz: dict) -> list[str]:
+    if biz.get("tips") != "offer":
+        return list(STANDARD_RUBRIC)
+    assert TIP_ASKED_CLAUSE in STANDARD_RUBRIC[0]
+    return [STANDARD_RUBRIC[0].replace(TIP_ASKED_CLAUSE, TIP_OFFERED_CLAUSE), *STANDARD_RUBRIC[1:]]
 
 GRADE_SCHEMA = {
     "type": "object",
@@ -255,7 +268,7 @@ def run_scenario(client: anthropic.Anthropic, cfg: dict, biz: dict, sc: dict) ->
     checks.append({"check": "reply_length", "pass": long_replies == 0,
                    "detail": f"{long_replies} repl{'y' if long_replies == 1 else 'ies'} over {limit} words"
                              " (speech before and after a tool call counts separately)"})
-    criteria = sc.get("rubric", []) + STANDARD_RUBRIC
+    criteria = sc.get("rubric", []) + standard_rubric(biz)
     if all(c["pass"] for c in checks):
         rubric, grade_usage = grade(client, cfg, biz, text, criteria, session.system[1]["text"])
     else:   # the call already failed; grading it would only cost money

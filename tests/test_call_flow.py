@@ -157,3 +157,19 @@ class GoodbyeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HelpFirstTests(unittest.TestCase):
+    """2026-11-15 live call: "No hot water is a rotten way to start a Sunday, Noah." The caller wanted help fixing it."""
+
+    def test_problem_calls_skip_the_reaction_and_the_trades_shop_offers_the_tip(self):
+        from receptionist import prompts, simulate
+        from receptionist.config import load_business
+        hvac, acme = prompts.stable_prompt(HVAC), prompts.stable_prompt(load_business(CFG, "acme"))
+        for p in (hvac, acme):
+            self.assertIn("When something is broken, skip the reaction and any sympathy", p)
+            self.assertNotIn("in a few words of your own, before anything else", p)
+        self.assertIn("give it in your first reply, unasked", hvac)
+        self.assertIn("describing the problem is not asking", acme)        # other shops still wait to be asked
+        self.assertIn("except one approved tip", simulate.standard_rubric(HVAC)[0])
+        self.assertNotIn("except one approved tip", simulate.standard_rubric(load_business(CFG, "acme"))[0])

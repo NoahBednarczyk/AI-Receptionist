@@ -5,6 +5,7 @@
   "agent_name": "Riley",
   "vertical": "hvac",
   "mode": "overflow",
+  "tips": "offer",
   "heating_season": {"from": "10-15", "to": "04-15"},
   "timezone": "America/Los_Angeles",
   "phone_numbers": [
