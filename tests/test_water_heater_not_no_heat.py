@@ -22,6 +22,14 @@ class WaterHeaterTests(unittest.TestCase):
         self.assertIsNotNone(safety.match("hvac", "There's smoke coming from my water heater.", "en", heating_season=True))
 
 
+    def test_asking_whether_to_turn_it_off_is_not_no_heat(self):
+        # simulated furnace_short_cycling, 2026-11-15: the no-heat line fired after the visit was already booked
+        for said in ("Should I turn the furnace off or leave it running?", "Should I shut my furnace off?",
+                     "Is it okay to leave the furnace on?"):
+            self.assertIsNone(safety.match("hvac", said, "en", heating_season=True), said)
+        self.assertIsNotNone(safety.match("hvac", "My furnace is off and won't come on.", "en", heating_season=True))
+
+
 class OwnerNotPickingUpTests(unittest.TestCase):
     """The playbook makes her say the owner isn't picking up; the old phrase filter dropped that whole reply, and the
     caller heard "Sorry, could you say that again?" over and over (owner_cell_no_answer, 2026-11-14)."""

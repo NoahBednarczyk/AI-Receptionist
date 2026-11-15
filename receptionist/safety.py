@@ -169,6 +169,14 @@ def _negated(sentence: str, at: int) -> bool:
     return any(w in NEGATIONS for w in clause[-3:])
 
 
+# "Should I turn the furnace off?" is the caller asking about doing something, not the furnace being out.
+CALLER_ACTION = re.compile(r"\b(?:turn|turning|shut|shutting|switch|switching|leave|leaving|keep|keeping)(?: (?:the|my|it|that))?\W*$")
+
+
+def _their_action(sentence: str, at: int) -> bool:
+    return bool(CALLER_ACTION.search(sentence[:at]))
+
+
 def match(vertical: str, text: str, language: str = "en", heating_season: bool = False) -> tuple[str, str] | None:
     """(emergency name, safety line) if the caller describes one, else None. Ignores negated phrases
     ("I don't smell gas") so nobody gets an alarming instruction by mistake. In the shop's heating season the season
@@ -177,7 +185,8 @@ def match(vertical: str, text: str, language: str = "en", heating_season: bool =
     for name, patterns, line, *rest in VERTICALS.get(vertical, {}).get(language, []):
         for pattern in patterns:
             for s in sentences:
-                if any(not _negated(s, m.start()) for m in re.finditer(pattern, s)):
+                if any(not _negated(s, m.start()) and not (name == "no_heat_freezing" and _their_action(s, m.start()))
+                       for m in re.finditer(pattern, s)):
                     # Some tiers also need a cue elsewhere in what the caller said (no heat AND cold weather).
                     if rest and not (heating_season and name == "no_heat_freezing") \
                             and not any(re.search(rest[0], t) for t in sentences):

@@ -93,6 +93,13 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   in `owner_cell_no_answer`). Emergencies no longer hang up in the same turn as "the owner isn't picking up": the caller
   gets to answer first (`playbooks/hvac.md`). Simulated: burst_pipe passed; owner_cell_no_answer now talks normally but
   fails its "no booking" check because she offered an emergency visit once the caller could reply.
+- **Repetition (00:04 live call, 2026-11-15):** her address came up three times and the number twice. Causes: the
+  mismatch rule added the night before made her ask again after the caller had already corrected the address (now: use
+  the caller's address without comment), and the read-back example included the number, so she read back a number the
+  caller had just confirmed (now: the read-back leaves out what was confirmed; the example shows no number). The no-heat
+  line also no longer fires on the caller's own action ("should I turn the furnace off?", `safety.CALLER_ACTION`).
+  Simulated: the read-back no longer carries the number; furnace_short_cycling did not book because the caller sim
+  hung up after the read-back question was cut for length. Hvac stable prompt 5,398 of the 5,400-word ceiling.
 - **Humor trimmed (2026-11-13, after two bad live calls):** the "say the thing a script wouldn't" sentence is gone from the
   shared `CHARACTER_DRY` (also used by the outbound caller). Dry humor is now one small line about the situation, after
   everything the caller asked is answered, never in place of an answer or in a reply that asks a question. Evidence: at
