@@ -72,6 +72,18 @@ real clients in `data/clients/` (server disk, never in git). Scenarios in `scena
   no-heat scenarios twice, the full suite twice, then three test calls by the user (no heat, a price, "are you real").
   Weak point: the first reply on a broken-furnace call is still in easy mode. Retell agent is now version 23: only
   `boosted_keywords` changed (Riley instead of Sam), voice settings untouched; the number points at v23.
+- **Notes before a tool call are never spoken (2026-11-14, after the 22:10 live call):** Riley read out "The record on
+  file says Howard Street, but the caller said Olive Street. I'll use what they gave me..." because it was written before
+  `take_message` and everything before a tool call was streamed to the voice; the say channel is off and the phrase list
+  did not match. Now `CallSession.respond` holds a reply until it knows what follows it: before any tool except
+  `transfer_call` and `end_call` (`agent.SPOKEN_BEFORE`) the words are dropped, logged ("note before X (not spoken)") and
+  kept out of the model's history, and the stall line plays; otherwise they are spoken. Cost: a reply starts when its
+  text block is complete, not at its first sentence (logged per reply as "held N words M ms"). Inbound only
+  (`notes_before_tools_are_private`); the outbound caller is unchanged. `call_state` also tells her to ask once when the
+  address given differs from the one on file. Tests in `tests/test_pretool_barrier.py`; two real-model scenarios
+  (burst_pipe, furnace_short_cycling) showed notes dropped and replies intact. The 21:49 call that died with
+  `error_llm_websocket_runtime` came about 90 s after commit a9524af, so a Render redeploy is the likely cause
+  (not confirmed in Render's deploy list).
 - **Humor trimmed (2026-11-13, after two bad live calls):** the "say the thing a script wouldn't" sentence is gone from the
   shared `CHARACTER_DRY` (also used by the outbound caller). Dry humor is now one small line about the situation, after
   everything the caller asked is answered, never in place of an answer or in a reply that asks a question. Evidence: at

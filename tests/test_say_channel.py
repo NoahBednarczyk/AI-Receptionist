@@ -92,7 +92,8 @@ class ChannelTests(unittest.TestCase):
                                use("t1", "check_availability", {"service_id": "leak_repair"})),
                          reply("end_turn", text("<say>I have 2 PM today.</say> done")))
         turn, out = spoke(s, "can someone come today")
-        self.assertEqual(" ".join(out), "One moment. I have 2 PM today.")
+        self.assertNotIn("One moment", " ".join(out))   # even a <say> before a tool call is replaced by the stall line
+        self.assertTrue(" ".join(out).endswith("I have 2 PM today."))
         self.assertEqual([t["name"] for t in turn.tools], ["check_availability"])
         for m in s.messages:
             self.assertNotIn("and then check", str(m))

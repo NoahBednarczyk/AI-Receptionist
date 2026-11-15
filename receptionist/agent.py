@@ -33,6 +33,10 @@ except ImportError:
 # Tools whose effects stay after the call (or end it): a turn that has run one is kept, never dropped or reverted.
 IRREVERSIBLE = {"book_appointment", "reschedule_appointment", "cancel_appointment", "create_lead", "take_message",
                 "transfer_call", "end_call"}
+# The barrier between the model's notes and the caller's ear. The rules ask for a spoken line before these two tools only
+# (a goodbye, "let me connect you"); before any other tool the phone line plays its own stall line, so whatever the model
+# writes there is a note to itself and is never sent to text-to-speech (see CallSession.respond).
+SPOKEN_BEFORE = {"transfer_call", "end_call"}
 REFUSAL_LINE = "I'm sorry, I can't help with that on this line. I can take a message for the office."
 REPEAT_LINE = "Sorry, could you say that again?"
 REPEAT_VARIANTS = [REPEAT_LINE, "Sorry, say that one more time?", "I lost you there, could you repeat that?",
@@ -309,6 +313,12 @@ class CallSession:
         failure handling."""
         return type(self) is CallSession
 
+    @property
+    def notes_before_tools_are_private(self) -> bool:
+        """The receptionist's words wait until it is known that no tool call follows them: text before a tool call
+        (other than SPOKEN_BEFORE) is a note and is dropped unheard. The sales caller keeps its own handling."""
+        return type(self) is CallSession
+
     def degrade(self) -> None:
         """The model can't be used for the rest of this call: code takes a message instead."""
         if self.taker is None:
@@ -439,15 +449,54 @@ class CallSession:
         spoken, used, steps = [], [], []   # steps keeps speech and tool calls in the order they happened
         start, first = time.monotonic(), None
 
+        hold = self.notes_before_tools_are_private
+        pending: list[str] = []      # sentences waiting to learn whether a tool call follows them
+        undecided: list[int] = []    # the text blocks those sentences came from
+        ready = None                 # when the first held sentence was complete (for the log)
+
         def speak(sentence: str) -> None:
-            nonlocal first
+            nonlocal first, ready
+            if hold:
+                ready = ready if pending else time.monotonic()
+                pending.append(sentence)
+                return
             if first is None:
                 first = time.monotonic() - start   # a whole sentence is ready for text-to-speech
             emit(sentence, True)
 
+        def release() -> None:
+            """No tool call follows (or one the rules want a line before): the held sentences are speech."""
+            nonlocal first, mark
+            if pending:
+                if first is None:
+                    first = time.monotonic() - start
+                log.info("call %s: held %d words %.0f ms until the reply was known to be speech", self.call_id,
+                         sum(len(p.split()) for p in pending), (time.monotonic() - ready) * 1000)
+                for sentence in pending:
+                    emit(sentence, True)
+                pending.clear()
+            undecided.clear()
+            mark = (set(words.said_once), list(words.recent), list(words.held))
+
+        def discard(tool: str) -> None:
+            """A tool call follows: what came before it was a note to self. Nothing of it is heard, kept in the
+            model's history or counted as said."""
+            nonlocal mark
+            if pending:
+                log.warning("call %s: note before %s (not spoken): %s", self.call_id, tool, " ".join(pending))
+                words.dropped.extend(pending)
+                pending.clear()
+            for i in undecided:
+                said_in[i] = ""
+            undecided.clear()
+            words.said_once, words.recent, words.held = set(mark[0]), list(mark[1]), list(mark[2])
+            words.used, words.cut = 0, False
+
         words = Sentences(speak, a.get("reply_word_budget"), self._said_once, self._recent_acks)
         words.channel = self.channel
         chan = SayChannel(words) if self.channel else None
+        said_in: dict = {}
+        mark = (set(words.said_once), list(words.recent), list(words.held))   # what counted as said before the held words
         if emergency:
             first = 0.0
             emit(emergency[1], True)
@@ -476,6 +525,8 @@ class CallSession:
                         if control and control.dropped:
                             break   # closing the stream stops generation; go_on() below raises
                         if ev.type == "content_block_start" and ev.content_block.type == "tool_use":
+                            if hold:   # now it is known what the words before this tool call were
+                                release() if ev.content_block.name in SPOKEN_BEFORE else discard(ev.content_block.name)
                             if ev.content_block.name in fillers and not said and not spoken:
                                 if first is None:
                                     first = time.monotonic() - start   # the filler line starts playing here
@@ -488,6 +539,9 @@ class CallSession:
                                 words.add(ev.delta.text)
                         elif ev.type == "content_block_stop" and ev.content_block.type == "text":
                             said_in[ev.index] = (chan or words).close()
+                            undecided.append(ev.index)
+                        elif ev.type == "message_delta":   # the message is over and no tool call followed the words
+                            release()
                     go_on()
                     msg = stream.get_final_message()
             except TurnDropped:
@@ -496,10 +550,12 @@ class CallSession:
                 if not self.can_degrade:
                     raise
                 failed = e
+                pending.clear()   # held words of a reply that never finished: the caller hears the message taker instead
                 break
             self._count(msg.usage)
             if words.buf.strip() or (chan and chan.dirty):   # cut off mid-block
                 said_in[max((i for i, b in enumerate(msg.content) if b.type == "text"), default=0)] = (chan or words).close()
+            release()
             text = " ".join(t for t in said_in.values() if t)
 
             if msg.stop_reason in ("refusal", "max_tokens"):

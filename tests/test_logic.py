@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import tests  # noqa: F401  (runs tests/__init__.py: the older tests use the <say> channel's rollback setting)
 from receptionist import prompts, retell_hooks, schedule
-from receptionist.agent import REFUSAL_LINE, CallSession, transcript_text
+from receptionist.agent import REFUSAL_LINE, REPEAT_VARIANTS, CallSession, transcript_text
 from receptionist.config import business_for_number, load_business, load_config
 from receptionist.simulate import run_checks
 from receptionist.speech import normalize_phone, ordinal, spoken_date, spoken_time
@@ -287,9 +287,11 @@ class AgentLoopTests(FillerAssertions, unittest.TestCase):
                           use("t1", "check_availability", {"service_id": "leak_repair"})),
                     reply("end_turn", text("I have tomorrow between 10 AM and noon.")))
         turn = s.respond("My sink is leaking.")
-        self.assertEqual(turn.text, "One moment while I check. I have tomorrow between 10 AM and noon.")
+        # Words before a tool call are a note, never speech: the stall line plays in their place (test_pretool_barrier).
+        self.assertFiller(turn.text, "check_availability", "I have tomorrow between 10 AM and noon.")
         self.assertEqual([t["name"] for t in turn.tools], ["check_availability"])
         self.assertEqual([m["role"] for m in s.messages], ["user", "assistant", "user", "assistant"])
+        self.assertEqual([b.type for b in s.messages[1]["content"]], ["tool_use"])   # the note is not in the history
         result = s.messages[2]["content"][0]
         self.assertEqual(result["tool_use_id"], "t1")
         self.assertIn("2026-10-27T14:00", result["content"])
@@ -311,10 +313,10 @@ class AgentLoopTests(FillerAssertions, unittest.TestCase):
         self.assertFiller(turn.text, "check_availability", "I have 2 PM today.")
         self.assertIsNotNone(turn.first_text_s)
         self.assertEqual(s.messages[1]["content"][0].type, "tool_use")   # the filler never enters model history
-        # No filler when the agent already spoke; a silent transfer gets its own line.
+        # Words before the tool are dropped, so the stall line still plays; a silent transfer gets its own line.
         s = session(reply("tool_use", text("Sure."), use("t1", "check_availability", {"service_id": "leak_repair"})),
                     reply("end_turn", text("I have 2 PM today.")))
-        self.assertEqual(s.respond("Today?").text, "Sure. I have 2 PM today.")
+        self.assertFiller(s.respond("Today?").text, "check_availability", "I have 2 PM today.")
         s = session(reply("tool_use", use("t1", "transfer_call", {"target": "office", "reason": "x"})))
         self.assertFiller(s.respond("A person please.").text, "transfer_call", "")
         s = session(reply("tool_use", use("t1", "create_lead", {"customer_name": "x", "callback_number": "3125550100",
@@ -381,8 +383,11 @@ class AgentLoopTests(FillerAssertions, unittest.TestCase):
         self.assertEqual(s.respond("...").text, REFUSAL_LINE)
         self.assertEqual(s.messages[-1], {"role": "assistant", "content": REFUSAL_LINE})
         s = session(reply("max_tokens", text("Let me"), use("t1", "check_availability", {"service_id": "leak_repair"})))
-        self.assertEqual(s.respond("...").text, "Let me")
-        self.assertEqual(s.messages[-1], {"role": "assistant", "content": "Let me"})   # no dangling tool_use
+        said = s.respond("...").text   # the words led into a tool call that was cut off: a note, so ask again
+        self.assertIn(said, REPEAT_VARIANTS)
+        self.assertEqual(s.messages[-1], {"role": "assistant", "content": said})   # no dangling tool_use
+        s = session(reply("max_tokens", text("The fee is $95, and it's waived if")))
+        self.assertEqual(s.respond("...").text, "The fee is $95, and it's waived if")   # a cut-off answer is still speech
 
     def test_transcript_and_cost(self):
         s = session(reply("end_turn", text("Happy to help.")))

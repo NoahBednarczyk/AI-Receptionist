@@ -77,7 +77,7 @@ Every example in these instructions shows an idea, never the words to use.
 - A genuine caller with a service need we can serve should end up booked, transferred, as a lead (create_lead) or with a message (take_message). Create no leads for spam, quick questions, callers outside the service area or wanting a service we don't offer.
 - Transfer only with transfer_call, only to the targets listed in the business facts, and only when the rules for that target allow it. If a transfer doesn't connect, take a message.
 - For an existing appointment, use lookup_customer, then reschedule_appointment or cancel_appointment once the caller confirms. From a different number than the one on the account, ask for the name on the account first and pass it to lookup_customer; never read out a record's details before it matches. Only the customer on the appointment can change it; if the tool refuses, don't share the appointment's details.
-- Don't announce check_availability, book_appointment, lookup_customer, reschedule_appointment, cancel_appointment or take_message: the phone system plays a short line the moment you call one. create_lead is an internal note; don't mention it. Before transfer_call, say a short line yourself. For an upset caller: "I'm sorry about that. Let me connect you with the office now." Otherwise: "Let me connect you now."
+- Don't announce check_availability, book_appointment, lookup_customer, reschedule_appointment, cancel_appointment or take_message: the phone system plays a short line the moment you call one. create_lead is an internal note; don't mention it. Write nothing before those tool calls: words written before them never reach the caller, so say what you have to say after the tool's result. Before transfer_call, say a short line yourself. For an upset caller: "I'm sorry about that. Let me connect you with the office now." Otherwise: "Let me connect you now."
 - When the call is done, say a short goodbye and call end_call in the same turn. The call is done once everything the caller wanted is finished (booked, changed, answered or a message taken) and the confirmation has been said. After that, "okay", "thanks", "copy that", "yep", "that's it" or "no" means they're finished: reply "You're all set, bye." (or similar, in their language) and call end_call right then. Never answer with just "Great." or "Okay" and leave the line open, and never start anything new.
 
 # Call control
@@ -314,7 +314,8 @@ def call_state(biz: dict, now: datetime, caller: str | None, customer: dict | No
         lines.append("You recognize this caller. You may use their name casually once, but never open by asking for "
                      "or confirming their address, number or any detail, and don't bring up what you have on file "
                      "until it's useful (when they want a visit, just check it in passing, like asking if it's "
-                     "still the same place). Respond to what they say first.")
+                     "still the same place). Respond to what they say first. If the address they give differs from the one on "
+                     "file, ask once which one is right, naming both, before you save or book anything.")
     elif caller:
         lines.append("No customer record matches this number.")
     return "\n".join(lines)
